@@ -216,9 +216,9 @@ function repoWithWorktree(name: string) {
 }
 
 describe("[SH-077 AC-7] git status показывает кириллицу без восьмеричных кодов", () => {
-  it("[SH-077 AC-7] prepare запускает scripts/setup-git.mjs", () => {
+  it("[SH-077 AC-7] postinstall запускает scripts/setup-git.mjs", () => {
     const pkg = JSON.parse(read("package.json"));
-    expect(pkg.scripts.prepare).toContain("scripts/setup-git.mjs");
+    expect(pkg.scripts.postinstall).toContain("scripts/setup-git.mjs");
   });
 
   it("[SH-077 AC-7] в новом worktree после setup-git путь виден как есть", () => {

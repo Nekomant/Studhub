@@ -8,9 +8,11 @@
   },
   "scripts": {
     "prepare": "lefthook install",
+    "postinstall": "node scripts/setup-git.mjs",
     "check": "biome ci . && tsc -b",
     "gen:openapi": "pnpm --filter @studhub/api gen:openapi",
     "test": "vitest run",
+    "verify": "node scripts/verify.mjs",
     "format": "biome check --write .",
     "db:up": "docker compose up -d --wait",
     "db:down": "docker compose down",

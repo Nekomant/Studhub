@@ -1,10 +1,11 @@
 ---
 id: SH-077
 title: Агент sh-worker для задач и экономия контекста
-status: Ready
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-11T20:53:00Z'
-updated_date: '2026-11-11T21:07:00Z'
+updated_date: '2026-11-11T21:13:00Z'
 labels:
   - infra
   - docs
@@ -94,3 +95,26 @@ API и БД не меняются. Новые файлы: `.claude/agents/sh-wor
 - [ ] #6 PR слит в main через squash, изменения выложены в prod (после появления деплоя)
 - [ ] #7 В заметках задачи записаны оценка и фактическое время, решения по ходу работы и итоговое резюме
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Сверить поля субагента с документацией (сделано: tools, skills, hooks, model, effort, maxTurns, autoCompactWindow работают как задумано; Claude Code 2.1.319).
+2. Спросить владельца о способе AC-8 (переменные окружения в новом worktree).
+3. Красные тесты в tools/tests/sh-worker.test.ts по AC-1, 2, 4, 5, 6, 7, 8; отдельный коммит.
+4. .claude/agents/sh-worker.md: tools Read, Edit, Write, Bash, Grep, Glob; skills: sh-task; hooks PreToolUse на Edit|Write -> scripts/hooks/block-backlog-edit.mjs; model, effort, maxTurns, autoCompactWindow; точки остановки в теле.
+5. .claude/skills/sh-task/SKILL.md: чеклисты старта и финиша по process.md §7, §10 и DoD.
+6. scripts/task.mjs (backlog task view --json без dependencyGraph), scripts/doc.mjs (раздел документа по номеру или ID).
+7. scripts/verify.mjs и pnpm verify: pnpm check плюс vitest с репортёром minimal; при успехе только итог.
+8. core.quotepath false через скрипт prepare при pnpm install.
+9. AC-8 выбранным способом.
+10. Живой запуск sh-worker на SH-006 (Backlog): проверить остановку, замерить первый запрос по транскрипту.
+11. docs/process.md §7 и CLAUDE.md.
+12. pnpm check, pnpm test, /code-review, PR, статус Review.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Оценка: 6 ч
+<!-- SECTION:NOTES:END -->
