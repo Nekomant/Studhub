@@ -1,0 +1,25 @@
+# Локальное окружение: Postgres 18 (и MinIO, см. SH-003). Запуск: `pnpm db:up`.
+# Значения по умолчанию совпадают с `.env.example`. Свой `.env` compose читает сам.
+name: studentshub
+
+services:
+  postgres:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-studentshub}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-local}
+      POSTGRES_DB: ${POSTGRES_DB:-studentshub}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    # Postgres 18 хранит данные в подпапке версии, поэтому монтируем родительскую папку.
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  postgres-data:
