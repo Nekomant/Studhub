@@ -51,6 +51,7 @@ describe("[SH-002 AC-3] commit-msg проверяет Conventional Commits", () 
     "Merge branch 'main' into sh-002-monorepo",
     'Revert "feat(auth): SH-017 вход"',
     "fixup! feat(auth): SH-017 вход",
+    "fix: SH-002 сообщение с CRLF\r\n\r\nТело.\r\n",
   ])("[SH-002 AC-3] пропускает сообщение %j", (message) => {
     const result = check(message);
     expect(result.stderr).toBe("");

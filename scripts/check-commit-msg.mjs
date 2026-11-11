@@ -17,8 +17,9 @@ if (!file) {
 
 const header =
   readFileSync(file, "utf8")
-    .split("\n")
-    .find((line) => line.trim() !== "" && !line.startsWith("#")) ?? "";
+    .split(/\r?\n/)
+    .find((line) => line.trim() !== "" && !line.startsWith("#"))
+    ?.trimEnd() ?? "";
 
 if (!HEADER.test(header) && !GIT_GENERATED.test(header)) {
   console.error(

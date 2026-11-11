@@ -89,6 +89,7 @@ const violations: Record<string, string[]> = {
     "apps/api/src/modules/schedule/http/pg-driver.bad.ts",
     "apps/api/src/platform/drizzle.bad.ts",
     "apps/api/src/modules/students/domain/postgres-driver.bad.ts",
+    "apps/api/src/modules/schedule/http/platform-db.bad.ts",
   ],
 };
 
