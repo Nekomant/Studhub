@@ -19,7 +19,9 @@
     "db:up": "docker compose up -d --wait",
     "db:down": "docker compose down",
     "db:reset-test": "node --env-file-if-exists=.env scripts/db-reset-test.mjs",
-    "git:prune": "node scripts/git-prune.mjs"
+    "git:prune": "node scripts/git-prune.mjs",
+    "sync": "node scripts/sync.mjs",
+    "status": "node scripts/status.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.6",
