@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-11T08:58:00Z'
-updated_date: '2026-11-11T13:30:00Z'
+updated_date: '2026-11-11T13:35:00Z'
 labels:
   - infra
   - db
@@ -84,4 +84,11 @@ ordinal: 1000
 
 <!-- SECTION:NOTES:BEGIN -->
 Оценка: 4 ч
+
+Решения и факты по ходу работы:
+- Официальные образы MinIO на Docker Hub не публикуются с осени 2025 (сообщения о прекращении выпуска community-образов). Образ minio/mc тоже. Поэтому MinIO-сервис в compose пока не добавлен. Ждёт владельца: выбор S3-сервера для локального окружения (см. ниже).
+- Postgres 18 поднят (postgres:18, именованный том postgres-data, данные переживают restart). Проверено: БД 18.6, строка сохранилась после docker compose restart.
+- db:reset-test пересоздаёт studentshub_test, dev-БД не затронута (проверено; отказ при совпадении имён и при имени без _test).
+- На порту 5432 у владельца уже работает контейнер start-db (postgres:16-alpine). Проверки шли на 5433 через POSTGRES_PORT. Порт по умолчанию не менял.
+- .env.example написан, но коммит заблокирован хуком block-bad-commands (сработал на путь .env.example). Ждёт владельца: закоммитить файл вручную или разрешить.
 <!-- SECTION:NOTES:END -->
