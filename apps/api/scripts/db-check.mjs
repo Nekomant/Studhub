@@ -3,7 +3,7 @@
 // потом генерируем миграцию во временной копии папки drizzle/. Репозиторий при этом не меняется.
 // Если схема отличается от миграций, генератор создаёт файл в копии, и проверка падает с кодом 1.
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -78,7 +78,10 @@ function compareWithSchema(tempRoot) {
 
 // Временная папка внутри apiRoot: drizzle-kit принимает --out только относительный путь.
 // process.exit не вызываем внутри try: он пропускает finally и оставил бы временную папку.
-const tempRoot = mkdtempSync(join(apiRoot, "node_modules/.cache/db-check-"));
+// Родительскую папку создаём сами: в чистом клоне node_modules/.cache может отсутствовать.
+const cacheDir = join(apiRoot, "node_modules/.cache");
+mkdirSync(cacheDir, { recursive: true });
+const tempRoot = mkdtempSync(join(cacheDir, "db-check-"));
 let code;
 try {
   code = compareWithSchema(tempRoot);

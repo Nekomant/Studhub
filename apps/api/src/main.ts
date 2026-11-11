@@ -7,13 +7,6 @@ import { createLogger } from "./platform/logger/index.ts";
 
 // Точка входа: проверяем окружение, поднимаем HTTP-сервер. Фоновый воркер добавит задача pg-boss (SH-007).
 const config = runStartupConfigCheck(process.env, { log: console.error, exit: (code) => process.exit(code) });
-// PORT читаем отдельно от схемы конфигурации: это порт процесса, не настройка приложения. По умолчанию 3000.
-const port = Number(process.env.PORT ?? 3000);
-if (config && (!Number.isInteger(port) || port < 1 || port > 65535)) {
-  console.error("Неверная конфигурация окружения:\n- PORT: задан неверно");
-  process.exit(1);
-}
-
 // `migrate` применяет миграции и завершает процесс: так их запускает CD (ТД §12).
 if (config && process.argv[2] === "migrate") {
   try {
@@ -24,6 +17,14 @@ if (config && process.argv[2] === "migrate") {
   }
   console.log("Миграции применены");
   process.exit(0);
+}
+
+// PORT нужен только серверу: миграции его не читают, поэтому проверяем его после ветки migrate.
+// PORT читаем отдельно от схемы конфигурации: это порт процесса, не настройка приложения. По умолчанию 3000.
+const port = Number(process.env.PORT ?? 3000);
+if (config && (!Number.isInteger(port) || port < 1 || port > 65535)) {
+  console.error("Неверная конфигурация окружения:\n- PORT: задан неверно");
+  process.exit(1);
 }
 
 if (config) {
