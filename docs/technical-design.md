@@ -20,11 +20,12 @@ flowchart TB
   subgraph clients["Клиенты"]
     pwa["PWA преподавателя<br/>app.studhub.ru"]
     visitor["Посетитель лендинга<br/>studhub.ru"]
+    admin["Сотрудник платформы<br/>admin.studhub.ru, стадия 3"]
     cal["Внешний календарь<br/>подписка на .ics"]
   end
 
   subgraph vps["VPS в РФ · Docker Compose"]
-    caddy["Caddy<br/>TLS, статика лендинга и SPA,<br/>прокси /api и /ical"]
+    caddy["Caddy<br/>TLS, статика лендинга, SPA и админки,<br/>прокси /api и /ical"]
     app["app · Node 24 + Hono<br/>API, iCal-лента, воркер pg-boss"]
     pg[("PostgreSQL 18<br/>данные, очередь, поиск")]
   end
@@ -41,6 +42,7 @@ flowchart TB
 
   pwa --> caddy
   visitor --> caddy
+  admin --> caddy
   cal --> caddy
   caddy --> app
   app --> pg
@@ -227,7 +229,7 @@ sequenceDiagram
 ### 4.2 Пользователи, вход, кабинеты
 
 **`user`** — человек.
-`id`, `display_name`, `avatar_url`, `email` (от провайдера, nullable), `timezone` (IANA), `is_platform_admin bool`, `deletion_requested_at`, `created_at`.
+`id`, `display_name`, `avatar_url`, `email` (от провайдера, nullable), `timezone` (IANA), `deletion_requested_at`, `created_at`.
 
 **`auth_identity`** — способ входа.
 `id`, `user_id`, `provider` (`yandex` | `vk`; позже `telegram`, `email`), `provider_user_id`, `email`, `email_verified`, `created_at`.
@@ -246,6 +248,10 @@ sequenceDiagram
 **`workspace_member`**
 `workspace_id`, `user_id`, `role` (`owner`; позже `admin` | `teacher` | `assistant`), `ical_token_hash`, `ical_anonymized bool DEFAULT true`, `created_at`.
 `PK (workspace_id, user_id)`.
+
+**`platform_staff`** — сотрудники платформы, вход в админку ([ADR-0009](adr/0009-platform-admin.md)). Появляется вместе с каркасом админки (SH-076).
+`user_id` (PK), `role` (`superadmin` | `support`), `totp_secret_enc` (ключ TOTP в зашифрованном виде, ключ шифрования берётся из окружения), `created_at`, `disabled_at`.
+Роль платформы не связана с `workspace_member.role`: одна не даёт другую.
 
 **Инварианты:**
 - В MVP у пользователя ровно один кабинет с ролью `owner`. Он создаётся при первом входе.
@@ -445,8 +451,9 @@ balance = COALESCE(SUM(p.amount_minor) FILTER (WHERE p.voided_at IS NULL), 0)
 **`product_event`**
 `id`, `workspace_id`, `user_id`, `name` (из закрытого списка), `props jsonb` (без ПДн), `occurred_at`.
 
-**`admin_audit`**
-`id`, `admin_user_id`, `action`, `workspace_id`, `at`.
+**`admin_audit`** — журнал запросов к `/api/admin/v1` (ADR-0009).
+`id`, `staff_user_id` (`NULL` — система, например задача удаления аккаунта), `session_id`, `action`, `object_type`, `object_id` (только технические ID), `workspace_id` (без внешнего ключа: запись переживает удаление кабинета), `result` (`ok` | `denied` | `error`), `ip`, `user_agent`, `details jsonb` (что изменила команда, без ПДн), `at`.
+Пишется на каждый запрос, и на чтение, и на команду, в одной транзакции с командой. У приложения право только `INSERT`. Хранится 1 год.
 
 **`waitlist_entry`** — после запуска API. До этого лист ожидания в Яндекс Формах.
 
@@ -570,6 +577,7 @@ generate(slot, until):
 - Пока запрошено удаление аккаунта, изменяющие запросы возвращают `403` с `code: account_deletion_pending` (§4.2).
 - Пагинация курсорная: `?cursor=…&limit=…` → `{ items, nextCursor }`.
 - Аутентификация — cookie `sh_session` (`httpOnly`, `Secure`, `SameSite=Lax`) или `Authorization: Bearer`. На изменяющих запросах с cookie проверяется заголовок `Origin`.
+- Админка платформы: префикс `/api/admin/v1`, своя спецификация OpenAPI и свой сгенерированный клиент. Аутентификация только по cookie `sh_admin_session`: она живёт 8 часов без продления, выдаётся после входа через Яндекс или VK и кода TOTP и действует на `admin.studhub.ru`. Сессия `sh_session` админку не открывает, `sh_admin_session` не открывает `/api/v1`. Команды, которые что-то меняют, просят код TOTP ещё раз.
 - Чужой или несуществующий ресурс — `404`.
 - Изменения API только добавляют поля и эндпоинты. При несовместимом клиенте сервер отвечает `426`, и клиент перезагружается.
 
@@ -589,7 +597,7 @@ generate(slot, until):
 | Материалы | `GET/POST …/materials` (поиск `q`, фильтр `tagIds`, `studentId` → отметка «уже проходил»), `GET/PATCH/DELETE …/materials/{id}`, `POST …/files/uploads` (presign), `POST …/files/{id}/complete`, `GET …/files/{id}/url`, `POST/DELETE …/attachments` |
 | Справочники | `GET/POST/PATCH/DELETE …/tags`, `GET/POST/PATCH/DELETE …/message-templates`, `POST …/message-templates/{id}/reset` |
 | Служебные | `POST /events`, `POST /client-errors`, `GET /healthz`, `GET /ical/{token}.ics` (публичная), позже `POST /waitlist` |
-| Администратор платформы | `GET /admin/metrics/{report}`: только агрегаты |
+| Админка платформы | `/api/admin/v1/…`: отдельная спецификация, описывается в SH-076 |
 
 ## 7. Экраны MVP
 
@@ -629,7 +637,8 @@ generate(slot, until):
 - **Доступ:**
   - к prod — только у основателя, по SSH-ключу; firewall пропускает только 22, 80 и 443; автоматические обновления безопасности;
   - Postgres наружу не открыт;
-  - администратор платформы не видит данные учеников, его действия пишутся в `admin_audit`.
+  - сотрудники платформы работают в отдельной админке (ADR-0009). Данные преподавателей (имя, email, провайдеры входа, тариф, часовой пояс) им открыты. Данные учеников маскирует сервер: имя → «Ученик 7F3A», телефон, Telegram, email и место встречи → последние 2 символа; заметки, итоги, планы, ДЗ, цели, описания и файлы материалов скрыты, видны наличие, длина и дата. Деньги, цены, статусы, даты и счётчики открыты. Снять маску нельзя;
+  - вход сотрудника: Яндекс ID или VK ID плюс TOTP, сессия 8 часов, каждый запрос пишется в `admin_audit`.
 - **Минимизация:** в обезличенной iCal-ленте (по умолчанию) нет имён учеников и мест встреч. Нет полей для особых категорий, в оферте просьба не вносить такие данные. В логах нет ПДн (маскировка pino), в `product_event` тоже.
 - **Права субъектов:** экспорт кабинета и отдельного ученика (JSON и CSV), удаление ученика навсегда, удаление аккаунта через 30 дней (`deletion_requested_at` → задача pg-boss удаляет кабинет и префикс в S3). Бэкапы хранятся 30 дней, это указано в политике.
 - **Защита веб-приложения:**
@@ -669,7 +678,7 @@ generate(slot, until):
   - воронка онбординга (регистрация → ученик → слот → первый проведённый урок → 5 учеников);
   - использование функций (заметки, план, ДЗ, материалы).
 - **`product_event`** — закрытый список событий: `login`, `lesson_opened`, `next_lesson_opened`, `template_copied`, `messenger_opened`, `pwa_installed`, … Большая часть пишется на сервере, клиентские приходят пачкой через `POST /events`.
-- **`/admin/metrics`** — таблицы по представлениям.
+- **Просмотр метрик:** до каркаса админки (SH-076) владелец запускает запросы из `scripts/metrics.sql` по SSH. Потом тот же набор станет экраном Э-18 в `apps/admin`.
 - **Яндекс Метрика** — только на лендинге.
 
 ## 12. Инфраструктура и эксплуатация
@@ -733,6 +742,7 @@ studhub/
 ├─ apps/
 │  ├─ landing/            Astro: лендинг, юридические страницы
 │  ├─ web/                React SPA (только UI)
+│  ├─ admin/              React SPA админки платформы (стадия 3, ADR-0009)
 │  └─ api/
 │     ├─ src/modules/<feature>/{domain,db,http}/
 │     ├─ src/db/          подключение к БД и запуск миграций (`migrate`); драйверы БД только здесь и в */db/
@@ -758,7 +768,7 @@ studhub/
 ```
 
 **Правила границ:**
-1. `web`, `client-core` и `tests/*` не зависят от `apps/api`: связь только через сгенерированный клиент OpenAPI.
+1. `web`, `admin`, `client-core` и `tests/*` не зависят от `apps/api`: связь только через сгенерированный клиент OpenAPI.
 2. `domain/` не импортирует `db/`, `http/`, Hono и Drizzle.
 3. `http/` обращается к данным только через функции модуля.
 4. Модули общаются друг с другом через публичный `index.ts`.
@@ -788,7 +798,7 @@ studhub/
 | 4. Статусы и деньги | Переходы статусов, автоматические «Идёт» и «Проведён», начисления, журнал, идемпотентность, оплаты, баланс, выписка, долги, «Доходы за месяц» + CSV | 1,5 недели |
 | 5. Контекст урока | Итог урока, план урока, ДЗ, теги навыков, лента ученика, экран «Следующий урок», дашборд | 1 неделя |
 | 6. Материалы | Загрузка в S3, квоты, миниатюры, ссылки и oEmbed, теги, поиск, прикрепления, «уже проходил» | 1 неделя |
-| 7. Сообщения и финиш | Шаблоны, deep links, шаблоны согласий. Полировка PWA (сохранение кэша, плашка без сети, обновление версии). `product_event` и `/admin/metrics`. Экспорт и удаление аккаунта. Юридические тексты. Покрытие E2E. Запуск у партнёра-преподавателя | 1–1,5 недели |
+| 7. Сообщения и финиш | Шаблоны, deep links, шаблоны согласий. Полировка PWA (сохранение кэша, плашка без сети, обновление версии). `product_event`, представления `analytics` и `scripts/metrics.sql`. Экспорт и удаление аккаунта. Юридические тексты. Покрытие E2E. Запуск у партнёра-преподавателя | 1–1,5 недели |
 
 **Критерий готовности MVP:** преподаватель-партнёр может перенести всех учеников из таблицы и 4 недели вести их только в Studhub (критерий стадии 1).
 
@@ -824,3 +834,4 @@ studhub/
 - [0006 — Вход только через Яндекс ID и VK ID](adr/0006-auth-yandex-vk.md)
 - [0007 — VPS + Docker Compose + wal-g вместо управляемых сервисов](adr/0007-vps-hosting.md)
 - [0008 — Garage вместо MinIO локально, без версионирования файлов](adr/0008-garage-local-s3.md)
+- [0009 — Отдельная админка платформы, сотрудники в `platform_staff`, маскировка ПДн](adr/0009-platform-admin.md)
