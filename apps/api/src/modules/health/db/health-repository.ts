@@ -12,8 +12,5 @@ export function createHealthRepository(databaseUrl: string, logger: Logger) {
     async ping(): Promise<void> {
       await pool.query("select 1");
     },
-    async close(): Promise<void> {
-      await pool.end();
-    },
   };
 }
