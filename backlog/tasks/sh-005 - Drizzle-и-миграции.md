@@ -1,11 +1,11 @@
 ---
 id: SH-005
 title: Drizzle и миграции
-status: Review
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-11T08:58:00Z'
-updated_date: '2026-11-11T19:37:00Z'
+updated_date: '2026-11-11T20:11:00Z'
 labels:
   - backend
   - db
@@ -100,6 +100,8 @@ ordinal: 5000
 - В схему модуля health добавлен пустой src/modules/health/db/schema.ts: drizzle-kit падает, если по пути схем нет файлов.
 - Миграция 0000_init_extensions: CREATE EXTENSION IF NOT EXISTS pg_trgm.
 - .env не создавали: хук блокирует команды с файлом .env; переменные передаём через окружение.
+
+PR #8 слит владельцем в main (merge c7c4d88, 2026-11-11 20:10 UTC). Задача закрыта. DoD #6 (выкладка в prod) закроется, когда появится деплой (SH-011).
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
