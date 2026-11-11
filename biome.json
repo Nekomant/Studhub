@@ -7,7 +7,7 @@
   },
   "files": {
     "ignoreUnknown": true,
-    "includes": ["**", "!**/*.md", "!tools/boundary-fixtures", "!.claude", "!backlog"]
+    "includes": ["**", "!**/*.md", "!tools/boundary-fixtures", "!.claude", "!backlog", "!apps/api/openapi.json"]
   },
   "formatter": {
     "enabled": true,
@@ -46,14 +46,14 @@
                 "patterns": [
                   {
                     "group": [
-                      "@studentshub/api",
-                      "@studentshub/api/**",
+                      "@studhub/api",
+                      "@studhub/api/**",
                       "**/apps/api",
                       "**/apps/api/**",
                       "**/api/src",
                       "**/api/src/**"
                     ],
-                    "message": "ТД §13, правило 1: клиент и тесты не зависят от apps/api. Используйте сгенерированный клиент OpenAPI из @studentshub/client-core."
+                    "message": "ТД §13, правило 1: клиент и тесты не зависят от apps/api. Используйте сгенерированный клиент OpenAPI из @studhub/client-core."
                   }
                 ]
               }

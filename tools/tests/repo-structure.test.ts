@@ -10,13 +10,13 @@ const repoRoot = resolve(import.meta.dirname, "../..");
 const read = (path: string) => readFileSync(join(repoRoot, path), "utf8");
 
 const workspacePackages = {
-  "apps/api": "@studentshub/api",
-  "apps/web": "@studentshub/web",
-  "apps/landing": "@studentshub/landing",
-  "packages/client-core": "@studentshub/client-core",
-  "packages/ui-tokens": "@studentshub/ui-tokens",
-  "tests/api": "@studentshub/tests-api",
-  "tests/e2e": "@studentshub/tests-e2e",
+  "apps/api": "@studhub/api",
+  "apps/web": "@studhub/web",
+  "apps/landing": "@studhub/landing",
+  "packages/client-core": "@studhub/client-core",
+  "packages/ui-tokens": "@studhub/ui-tokens",
+  "tests/api": "@studhub/tests-api",
+  "tests/e2e": "@studhub/tests-e2e",
 };
 
 describe("[SH-002 AC-1] структура репозитория по ТД §13", () => {
@@ -66,8 +66,8 @@ describe("[SH-002 AC-1] структура репозитория по ТД §13
     for (const dir of ["apps/web", "tests/api"]) {
       const pkg = JSON.parse(read(`${dir}/package.json`));
       const tsconfig = JSON.parse(read(`${dir}/tsconfig.json`));
-      expect(pkg.dependencies?.["@studentshub/client-core"]).toBe("workspace:*");
-      expect(pkg.dependencies?.["@studentshub/api"]).toBeUndefined();
+      expect(pkg.dependencies?.["@studhub/client-core"]).toBe("workspace:*");
+      expect(pkg.dependencies?.["@studhub/api"]).toBeUndefined();
       expect(tsconfig.references).toContainEqual({ path: "../../packages/client-core" });
     }
   });

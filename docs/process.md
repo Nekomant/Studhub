@@ -1,4 +1,4 @@
-# StudentsHub — процесс разработки
+# Studhub — процесс разработки
 
 > Статус: согласовано (2026-11-11). Документ описывает, **как** мы делаем продукт. Что делаем — в [`product-concept.md`](product-concept.md), [`use-cases.md`](use-cases.md), [`screens.md`](screens.md), [`technical-design.md`](technical-design.md).
 

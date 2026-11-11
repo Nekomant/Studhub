@@ -1,4 +1,4 @@
-# StudentsHub
+# Studhub
 
 Веб-приложение (PWA) для частных репетиторов: ученики, расписание, оплаты, контекст уроков, материалы.
 Документы:
@@ -22,10 +22,20 @@ pnpm install
 
 ## Запуск
 
-Приложения пока пустые. Команды запуска добавят задачи:
+SPA пока пустая, её запуск добавит задача «Каркас SPA и E2E-харнесс» (SH-008).
 
-- «Каркас API» (SH-004): сервер;
-- «Каркас SPA и E2E-харнесс» (SH-008): SPA.
+### API (сервер)
+
+Нужны запущенный Postgres (раздел ниже) и файл `.env`.
+
+```bash
+pnpm --filter @studhub/api start    # читает .env из корня; слушает PORT (по умолчанию 3000)
+curl http://localhost:3000/healthz      # {"status":"ok","db":"ok"}; 503 в формате problem+json, если БД недоступна
+pnpm gen:openapi                        # пишет apps/api/openapi.json (OpenAPI 3.1 из zod-схем маршрутов)
+```
+
+Маршруты кабинета и прочие API живут под `/api/v1`. Ошибки отдаются как `application/problem+json` с полем `code`.
+Логи пишутся в JSON (pino) в stdout. Поля с ПДн и секреты (имена, телефоны, email, заметки, токены, cookie, Authorization) маскируются.
 
 ### Локальное окружение: Postgres 18 и Garage (S3)
 
@@ -50,6 +60,17 @@ pnpm db:down            # останавливает контейнеры; да�
 ```bash
 pnpm db:reset-test      # пересоздаёт только тестовую БД; dev-БД не трогает
 ```
+
+Миграции БД (Drizzle, [ADR-0002](docs/adr/0002-postgres-drizzle.md)) лежат в `apps/api/drizzle/`. Команды запускайте после `pnpm db:up`:
+
+```bash
+pnpm --filter @studhub/api db:migrate     # применяет миграции к DATABASE_URL; повторный запуск ничего не меняет
+pnpm --filter @studhub/api db:check       # падает, если схема изменена без миграции
+pnpm --filter @studhub/api db:generate    # генерирует миграцию по схеме модулей
+pnpm --filter @studhub/api start migrate  # то же самое через приложение: так миграции запускает CD
+```
+
+Соглашения схемы БД описаны в [`apps/api/src/modules/README.md`](apps/api/src/modules/README.md).
 
 Если порты 5432 или 3900 заняты, задайте `POSTGRES_PORT` или `S3_PORT` в `.env` и поправьте адреса в `DATABASE_URL`,
 `TEST_DATABASE_URL`, `S3_ENDPOINT`.

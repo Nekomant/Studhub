@@ -7,3 +7,4 @@ packages:
 # git-хуки своим postinstall, у нас это делает скрипт prepare в package.json.
 allowBuilds:
   lefthook: false
+  esbuild: false

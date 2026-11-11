@@ -1,4 +1,4 @@
-# StudentsHub — экраны MVP
+# Studhub — экраны MVP
 
 > Статус: согласовано (2026-11-11). Вопросы В-1…В-4, В-14 и В-15 решены, после согласования добавлены решения Р-12 и Р-13, допущения В-5…В-13 подтверждены. Решения и предложения по API (раздел 6) перенесены в ТД, сценарии и концепцию 2026-11-11.
 > Функционал описан в [`product-concept.md`](product-concept.md), сценарии — в [`use-cases.md`](use-cases.md) (ссылки «UC-xx»), правила, модель данных и API — в [`technical-design.md`](technical-design.md) (ссылки «ТД §x»).
@@ -115,7 +115,7 @@
 | `/more/payments?month=YYYY-MM` | Э-12 Оплаты и отчёт | Сессия |
 | `/more/templates`, `/more/templates/{id}` | Э-14 Шаблоны, Э-15 Шаблон | Сессия |
 | `/more/settings/profile\|workspace\|login\|calendar\|data` | Э-17 Настройки | Сессия |
-| `admin.studentshub.ru/metrics/{report}` | Э-18 Метрики платформы (в `apps/admin`, стадия 3) | Сессия `sh_admin_session` (вход через OAuth и TOTP), иначе 404 |
+| `admin.studhub.ru/metrics/{report}` | Э-18 Метрики платформы (в `apps/admin`, стадия 3) | Сессия `sh_admin_session` (вход через OAuth и TOTP), иначе 404 |
 
 Шторки Ш-xx и модальные окна М-xx собственного адреса не имеют.
 
@@ -123,7 +123,7 @@
 
 ```mermaid
 flowchart TD
-  open(["Открыть app.studentshub.ru"]) --> hasSession{"Есть сессия?"}
+  open(["Открыть app.studhub.ru"]) --> hasSession{"Есть сессия?"}
   hasSession -- "нет" --> login["Э-01 Вход"]
   login --> oauth["Яндекс ID или VK ID"]
   oauth --> isNew{"Новый пользователь?"}
@@ -1172,7 +1172,7 @@ flowchart LR
 ### I. Платформа
 
 #### Э-18 Метрики платформы
-`admin.studentshub.ru/metrics/{report}` · приложение `apps/admin` · стадия 3 (задача SH-076) · UC-P1
+`admin.studhub.ru/metrics/{report}` · приложение `apps/admin` · стадия 3 (задача SH-076) · UC-P1
 
 До этого метрики смотрят запросами из `scripts/metrics.sql` (ТД §11).
 
