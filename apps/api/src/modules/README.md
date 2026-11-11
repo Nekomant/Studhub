@@ -17,6 +17,7 @@
 Фрагмент для ориентира. Модуля `workspaces` и таблицы `groups` в этом примере нет, их добавят соответствующие задачи.
 
 ```ts
+// Фрагмент: workspaces и groups появятся в своих модулях, здесь они только показаны для ориентира.
 import { sql } from "drizzle-orm";
 import { bigint, char, check, foreignKey, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
 import { workspaces } from "../../workspaces/index.ts";

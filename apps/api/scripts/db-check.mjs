@@ -30,7 +30,6 @@ if (chain.status !== 0) {
   process.exit(1);
 }
 
-// Временная папка внутри apiRoot: drizzle-kit принимает --out только относительный путь.
 function compareWithSchema(tempRoot) {
   const tempDrizzle = join(tempRoot, "drizzle");
   cpSync(drizzleDir, tempDrizzle, { recursive: true });
@@ -77,6 +76,7 @@ function compareWithSchema(tempRoot) {
   return 0;
 }
 
+// Временная папка внутри apiRoot: drizzle-kit принимает --out только относительный путь.
 // process.exit не вызываем внутри try: он пропускает finally и оставил бы временную папку.
 const tempRoot = mkdtempSync(join(apiRoot, "node_modules/.cache/db-check-"));
 let code;
