@@ -20,7 +20,7 @@ const LABEL = /\[(SH-\d+)\s+(AC-\d+(?:\s*,\s*AC-\d+)*)\]/gi;
 
 function section(text, begin, end) {
   const from = text.indexOf(begin);
-  const to = text.indexOf(end);
+  const to = from === -1 ? -1 : text.indexOf(end, from + begin.length);
   return from === -1 || to === -1 ? "" : text.slice(from + begin.length, to);
 }
 
