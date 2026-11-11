@@ -24,7 +24,8 @@ const env: NodeJS.ProcessEnv = {
   GIT_COMMITTER_EMAIL: "t@t",
 };
 
-const git = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, env, encoding: "utf8" });
+const git = (cwd: string, ...args: string[]) =>
+  execFileSync("git", args, { cwd, env, encoding: "utf8", stdio: "pipe" });
 
 // Ветки в клоне:
 // - gone: ушла с GitHub после слияния, должна попасть в список;
