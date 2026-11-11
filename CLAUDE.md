@@ -30,6 +30,12 @@
 - Ошибки API — `application/problem+json` с полем `code`.
 - Миграции только вперёд, «расширить → сжать».
 
+## Агент sh-worker и экономия контекста
+
+- Рабочая сессия отдаёт работу по задаче субагенту `sh-worker`: «Новый старт SH-NNN». Агент не спрашивает владельца, а возвращает блок `СТОП SH-NNN` с вопросом. Сессия спрашивает владельца и передаёт ответ дословно: SendMessage агенту «Ответ владельца: …» или новый вызов «Продолжение SH-NNN. Ответ владельца: …». Ревью, пуш, PR и статус Review делает сессия. Подробно: `docs/process.md` §7.1.
+- Задача: `node scripts/task.mjs SH-NNN` вместо `backlog task view`. Документы по разделам: `node scripts/doc.mjs td 4.1`, `uc UC-01`, `screens Э-01`; ТД, `use-cases.md` и `screens.md` целиком не читаем. Проверки: `pnpm verify`.
+- Локальные переменные окружения берутся из `.env` основной папки хуком SessionStart, только из списка в `scripts/hooks/session-env.mjs`: `POSTGRES_PORT`, `DATABASE_URL`, `TEST_DATABASE_URL`. `.env` агент не создаёт и не читает.
+
 ## Коммиты и PR
 
 Conventional Commits (`feat(schedule): …`, `test(auth): …`) с ID задачи. PR: `SH-NNN: <название>`, слияние squash при зелёном CI. Коммитить и пушить — только когда владелец просит или это шаг согласованного процесса задачи.
