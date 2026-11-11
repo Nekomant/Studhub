@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-11T08:58:00Z'
-updated_date: '2026-11-11T15:06:00Z'
+updated_date: '2026-11-11T15:13:00Z'
 labels:
   - backend
 milestone: m-0
@@ -52,18 +52,18 @@ ordinal: 1000
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 `GET /healthz` отвечает 200, когда БД доступна, и 503 в формате `problem+json`, когда нет
-- [ ] #2 Ошибка валидации, неизвестный маршрут и необработанное исключение возвращаются как `application/problem+json` с полями `type`, `title`, `status`, `code`; стек и внутренние детали в ответ не попадают
-- [ ] #3 `pnpm gen:openapi` генерирует спецификацию OpenAPI 3.1 из zod-схем маршрутов в `apps/api/openapi.json`; файл проходит валидацию
-- [ ] #4 Логи пишутся в JSON (pino); поля с ПДн (имя, телефон, email, telegram, тексты заметок, токены, cookie, заголовок Authorization) маскируются
-- [ ] #5 Ответы содержат заголовки безопасности из ТД §9: CSP с `default-src 'self'`, `frame-ancestors 'none'`
+- [x] #1 `GET /healthz` отвечает 200, когда БД доступна, и 503 в формате `problem+json`, когда нет
+- [x] #2 Ошибка валидации, неизвестный маршрут и необработанное исключение возвращаются как `application/problem+json` с полями `type`, `title`, `status`, `code`; стек и внутренние детали в ответ не попадают
+- [x] #3 `pnpm gen:openapi` генерирует спецификацию OpenAPI 3.1 из zod-схем маршрутов в `apps/api/openapi.json`; файл проходит валидацию
+- [x] #4 Логи пишутся в JSON (pino); поля с ПДн (имя, телефон, email, telegram, тексты заметок, токены, cookie, заголовок Authorization) маскируются
+- [x] #5 Ответы содержат заголовки безопасности из ТД §9: CSP с `default-src 'self'`, `frame-ancestors 'none'`
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 Каждый критерий приёмки покрыт тестом, в названии теста есть ID критерия (AC-n), все тесты зелёные
+- [x] #1 Каждый критерий приёмки покрыт тестом, в названии теста есть ID критерия (AC-n), все тесты зелёные
 - [ ] #2 CI зелёный: Biome, tsc, Vitest, API-тесты, E2E, миграции и OpenAPI-клиент актуальны (с момента, когда эти проверки появились в CI)
-- [ ] #3 Документы (use-cases, screens, technical-design, ADR) обновлены в этом же PR, если поведение или решения изменились
+- [x] #3 Документы (use-cases, screens, technical-design, ADR) обновлены в этом же PR, если поведение или решения изменились
 - [ ] #4 Новые эндпоинты покрыты тестом изоляции (чужой кабинет → 404); в логах и product_event нет ПДн; деньги только в minor units
 - [ ] #5 Пройдено ревью (/code-review и просмотр диффа владельцем), замечания закрыты
 - [ ] #6 PR слит в main через squash, изменения выложены в prod (после появления деплоя)
@@ -87,4 +87,12 @@ ordinal: 1000
 <!-- SECTION:NOTES:BEGIN -->
 Оценка: 6 ч
 Решения по ходу: healthz на корне (/healthz, как в ТД §6.2 и мониторинге), остальные маршруты под /api/v1. Для проверки БД — драйвер pg (node-postgres), SH-005 подключит Drizzle поверх него; ADR не нужен, решение не меняет ТД/ADR.
+
+Проверено: pnpm check (Biome, tsc) и pnpm test зелёные на чистом клоне ветки (127 тестов, 9 файлов). Живой прогон: API на Postgres 18 (docker compose, порт 5433): GET /healthz → 200 {"status":"ok","db":"ok"}; при неверном порту БД → 503 problem+json code db_unavailable без деталей подключения. Заголовки CSP и X-Content-Type-Options видны в живом ответе. Ревью /code-review (medium): исправлен нигде не вызываемый close(); замечание про Error в логах (стек с текстом ошибки проходит без маски) не исправлено — нужно решение владельца: маскировать текст ошибки или сохранить стек для отладки. Не сделано: DoD #2 (CI появится в SH-009), DoD #4 (эндпоинтов кабинета пока нет), DoD #6 (слияние). Решения: healthz на корне, остальное под /api/v1; драйвер pg для проверки БД (Drizzle придёт в SH-005, пул там будет отдельным); @hono/node-server для запуска; PORT читается в main.ts, а не в схеме конфигурации (чтобы не трогать .env.example, см. ниже); biome.json исключает generated openapi.json.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Сделано: каркас API на Hono в apps/api. GET /healthz (200 при доступной БД, 503 problem+json db_unavailable иначе) на корне; остальные маршруты под /api/v1. Ошибки (404, 400 валидации, 500) в формате application/problem+json с полем code, без стека и внутренних деталей. Логгер pino в JSON с рекурсивной маскировкой ПДн и секретов по именам полей. Заголовки безопасности: CSP default-src 'self', frame-ancestors 'none'. OpenAPI 3.1 из zod-схем, команда pnpm gen:openapi пишет apps/api/openapi.json; тест проверяет валидность и актуальность файла. Модуль-пример modules/health с domain/db/http и публичным index.ts. Проверки: 127 тестов и pnpm check зелёные на чистом клоне. Риски и хвосты: замечание ревью про маскировку Error в логах открыто, решение за владельцем; CI и изоляция кабинета (DoD 2 и 4) станут проверяемыми позже; .env.example не менялся (см. заметки).
+<!-- SECTION:FINAL_SUMMARY:END -->
