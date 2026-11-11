@@ -1,0 +1,270 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    "ignoreUnknown": true,
+    "includes": ["**", "!**/*.md", "!tools/boundary-fixtures", "!.claude", "!backlog"]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 120
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended"
+    }
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "double"
+    }
+  },
+  "assist": {
+    "enabled": true,
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["apps/web/**", "packages/client-core/**", "tests/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": [
+                      "@studentshub/api",
+                      "@studentshub/api/**",
+                      "**/apps/api",
+                      "**/apps/api/**",
+                      "**/api/src",
+                      "**/api/src/**"
+                    ],
+                    "message": "ТД §13, правило 1: клиент и тесты не зависят от apps/api. Используйте сгенерированный клиент OpenAPI из @studentshub/client-core."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["apps/api/src/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": [
+                      "**/../*/domain",
+                      "**/../*/domain/**",
+                      "**/../*/db",
+                      "**/../*/db/**",
+                      "**/../*/http",
+                      "**/../*/http/**",
+                      "!../domain",
+                      "!../domain/**",
+                      "!../../domain",
+                      "!../../domain/**",
+                      "!../../../domain",
+                      "!../../../domain/**",
+                      "!../../../../domain",
+                      "!../../../../domain/**",
+                      "!../db",
+                      "!../db/**",
+                      "!../../db",
+                      "!../../db/**",
+                      "!../../../db",
+                      "!../../../db/**",
+                      "!../../../../db",
+                      "!../../../../db/**",
+                      "!../http",
+                      "!../http/**",
+                      "!../../http",
+                      "!../../http/**",
+                      "!../../../http",
+                      "!../../../http/**",
+                      "!../../../../http",
+                      "!../../../../http/**",
+                      "**/modules/*/domain",
+                      "**/modules/*/domain/**",
+                      "**/modules/*/db",
+                      "**/modules/*/db/**",
+                      "**/modules/*/http",
+                      "**/modules/*/http/**"
+                    ],
+                    "message": "ТД §13, правило 4: модули общаются через публичный index.ts. Импортируйте модуль целиком, а не его domain/, db/ или http/."
+                  },
+                  {
+                    "group": [
+                      "drizzle-orm",
+                      "drizzle-orm/**",
+                      "pg",
+                      "pg/**",
+                      "postgres",
+                      "postgres/**",
+                      "**/platform/db",
+                      "**/platform/db/**"
+                    ],
+                    "message": "ТД §13, правило 5: прямой доступ к БД есть только в */db/. Вызовите функцию модуля или репозиторий из db/."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["apps/api/src/**/db/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": [
+                      "**/../*/domain",
+                      "**/../*/domain/**",
+                      "**/../*/db",
+                      "**/../*/db/**",
+                      "**/../*/http",
+                      "**/../*/http/**",
+                      "!../domain",
+                      "!../domain/**",
+                      "!../../domain",
+                      "!../../domain/**",
+                      "!../../../domain",
+                      "!../../../domain/**",
+                      "!../../../../domain",
+                      "!../../../../domain/**",
+                      "!../db",
+                      "!../db/**",
+                      "!../../db",
+                      "!../../db/**",
+                      "!../../../db",
+                      "!../../../db/**",
+                      "!../../../../db",
+                      "!../../../../db/**",
+                      "!../http",
+                      "!../http/**",
+                      "!../../http",
+                      "!../../http/**",
+                      "!../../../http",
+                      "!../../../http/**",
+                      "!../../../../http",
+                      "!../../../../http/**",
+                      "**/modules/*/domain",
+                      "**/modules/*/domain/**",
+                      "**/modules/*/db",
+                      "**/modules/*/db/**",
+                      "**/modules/*/http",
+                      "**/modules/*/http/**",
+                      "!**/platform/db",
+                      "!**/platform/db/**"
+                    ],
+                    "message": "ТД §13, правило 4: модули общаются через публичный index.ts. Импортируйте модуль целиком, а не его domain/, db/ или http/."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["apps/api/src/modules/*/domain/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": [
+                      "**/../*/domain",
+                      "**/../*/domain/**",
+                      "**/../*/db",
+                      "**/../*/db/**",
+                      "**/../*/http",
+                      "**/../*/http/**",
+                      "!../domain",
+                      "!../domain/**",
+                      "!../../domain",
+                      "!../../domain/**",
+                      "!../../../domain",
+                      "!../../../domain/**",
+                      "!../../../../domain",
+                      "!../../../../domain/**",
+                      "!../db",
+                      "!../db/**",
+                      "!../../db",
+                      "!../../db/**",
+                      "!../../../db",
+                      "!../../../db/**",
+                      "!../../../../db",
+                      "!../../../../db/**",
+                      "!../http",
+                      "!../http/**",
+                      "!../../http",
+                      "!../../http/**",
+                      "!../../../http",
+                      "!../../../http/**",
+                      "!../../../../http",
+                      "!../../../../http/**",
+                      "**/modules/*/domain",
+                      "**/modules/*/domain/**",
+                      "**/modules/*/db",
+                      "**/modules/*/db/**",
+                      "**/modules/*/http",
+                      "**/modules/*/http/**"
+                    ],
+                    "message": "ТД §13, правило 4: модули общаются через публичный index.ts. Импортируйте модуль целиком, а не его domain/, db/ или http/."
+                  },
+                  {
+                    "group": [
+                      "hono",
+                      "hono/**",
+                      "@hono/**",
+                      "drizzle-orm",
+                      "drizzle-orm/**",
+                      "pg",
+                      "pg/**",
+                      "postgres",
+                      "postgres/**"
+                    ],
+                    "message": "ТД §13, правила 2 и 5: domain/ не импортирует Hono, Drizzle и драйверы БД. Правила домена пишутся на чистом TypeScript."
+                  },
+                  {
+                    "group": ["**/db", "**/db/**", "**/http", "**/http/**"],
+                    "message": "ТД §13, правило 2: domain/ не импортирует db/ и http/."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

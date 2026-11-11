@@ -22,7 +22,10 @@ describe("[SH-002 AC-4] README и версия Node", () => {
     expect(read("README.md")).toMatch(new RegExp(`^${heading}`, "m"));
   });
 
-  it.each(["nvm use", "pnpm install", "pnpm check", "pnpm test"])("[SH-002 AC-4] README называет команду %s", (command) => {
-    expect(read("README.md")).toContain(command);
-  });
+  it.each(["nvm use", "pnpm install", "pnpm check", "pnpm test"])(
+    "[SH-002 AC-4] README называет команду %s",
+    (command) => {
+      expect(read("README.md")).toContain(command);
+    },
+  );
 });
