@@ -22,10 +22,20 @@ pnpm install
 
 ## Запуск
 
-Приложения пока пустые. Команды запуска добавят задачи:
+SPA пока пустая, её запуск добавит задача «Каркас SPA и E2E-харнесс» (SH-008).
 
-- «Каркас API» (SH-004): сервер;
-- «Каркас SPA и E2E-харнесс» (SH-008): SPA.
+### API (сервер)
+
+Нужны запущенный Postgres (раздел ниже) и файл `.env`.
+
+```bash
+pnpm --filter @studentshub/api start    # читает .env из корня; слушает PORT (по умолчанию 3000)
+curl http://localhost:3000/healthz      # {"status":"ok","db":"ok"}; 503 в формате problem+json, если БД недоступна
+pnpm gen:openapi                        # пишет apps/api/openapi.json (OpenAPI 3.1 из zod-схем маршрутов)
+```
+
+Маршруты кабинета и прочие API живут под `/api/v1`. Ошибки отдаются как `application/problem+json` с полем `code`.
+Логи пишутся в JSON (pino) в stdout. Поля с ПДн и секреты (имена, телефоны, email, заметки, токены, cookie, Authorization) маскируются.
 
 ### Локальное окружение: Postgres 18 и Garage (S3)
 
