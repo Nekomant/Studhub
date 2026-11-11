@@ -4,7 +4,7 @@ title: Docker-образ и деплой
 status: Backlog
 assignee: []
 created_date: '2026-11-11T08:58:00Z'
-updated_date: '2026-11-11T09:15:00Z'
+updated_date: '2026-11-11T22:20:00Z'
 labels:
   - infra
 milestone: m-0
@@ -50,6 +50,7 @@ ordinal: 11000
 - [ ] #2 Слияние в `main` публикует образ с тегом SHA в GHCR и выкатывает его в prod: миграции → обновление → проверка `/healthz`; при неудачной проверке job красный
 - [ ] #3 `infra/deploy.sh <tag>` выкатывает указанный предыдущий тег (откат проверен в prod)
 - [ ] #4 Секреты не попадают в образ и репозиторий: они в GitHub Secrets и в `.env` на сервере с правами 600
+- [ ] #5 В CI добавлена сборка образа без публикации на каждый PR (workflow создаёт SH-009)
 <!-- AC:END -->
 
 ## Definition of Done

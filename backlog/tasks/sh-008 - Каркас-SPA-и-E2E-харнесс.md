@@ -4,7 +4,7 @@ title: Каркас SPA и E2E-харнесс
 status: Backlog
 assignee: []
 created_date: '2026-11-11T08:58:00Z'
-updated_date: '2026-11-11T10:21:00Z'
+updated_date: '2026-11-11T22:20:00Z'
 labels:
   - frontend
   - pwa
@@ -62,6 +62,7 @@ ordinal: 8000
 - [ ] #3 Приложение не обращается к внешним доменам (шрифты, иконки, CDN) — проверено в E2E по сетевым запросам
 - [ ] #4 `pnpm test:e2e` запускает Playwright против собранного приложения; smoke-тест находит элементы по ролям и текстам
 - [ ] #5 Приложение отдаёт web manifest и регистрирует service worker, который кэширует только статику
+- [ ] #6 В CI добавлен шаг Playwright E2E с кэшем браузеров (workflow создаёт SH-009)
 <!-- AC:END -->
 
 ## Definition of Done
