@@ -39,7 +39,8 @@ const tests = run("pnpm", ["exec", "vitest", "run", "--reporter=minimal", ...vit
 if (tests.status === 0) {
   const summary = compact(tests.output)
     .split("\n")
-    .filter((line) => /^\s*(Test Files|Tests|Duration)\s/.test(line));
+    .filter((line) => /^\s*(Test Files|Tests|Duration)\s/.test(line))
+    .map((line) => line.trim());
   process.stdout.write(`тесты: ок\n${summary.join("\n")}\n`);
 } else {
   process.stdout.write(`тесты: ошибка\n${compact(tests.output)}\n`);
