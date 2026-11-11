@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-11T20:53:00Z'
-updated_date: '2026-11-11T21:13:00Z'
+updated_date: '2026-11-11T21:20:00Z'
 labels:
   - infra
   - docs
@@ -117,4 +117,17 @@ API и БД не меняются. Новые файлы: `.claude/agents/sh-wor
 
 <!-- SECTION:NOTES:BEGIN -->
 Оценка: 6 ч
+
+Решение: поля субагента сверены с документацией (Claude Code 2.1.319). skills вкладывает скилл целиком без инструмента Skill; hooks в файле агента работают только пока агент активен и только в доверенной папке; autoCompactWindow от 100000 и действует, только если ниже окна сессии. Agent в tools не дал: документы агент читает через scripts/doc.mjs, вложенные агенты добавили бы свой контекст.
+Решение: Grep и Glob в tools оставлены, но в текущей сборке Claude Code этих инструментов нет (их нет и у обычной сессии), Claude Code их пропускает. В транскрипте у агента инструменты Read, Edit, Write, Bash.
+Решение: setup-git.mjs запускается из postinstall, а не из prepare: тест SH-002 AC-3 требует prepare ровно «lefthook install». На pnpm install с актуальным lockfile («Already up to date») pnpm 12 скрипты не запускает; в новом worktree node_modules нет, установка полная, скрипт срабатывает.
+Решение: при статусе In Progress агент продолжает работу, только если сессия задачи сказала «продолжение»; любой другой статус кроме Ready при новом старте ведёт к остановке.
+AC-7 вручную: свежий клон, новый worktree, pnpm install. До: core.quotepath пусто, git status показывает "\320\267...md"; после: core.quotepath=false, git status показывает «?? задача.md».
+AC-3 вручную: новая headless-сессия (claude -p, сессия 18f29e00) вызвала sh-worker с «Новый старт задачи SH-006.» (SH-006 в Backlog). Агент вернул «СТОП SH-006: задача в статусе Backlog, а не Ready…» с вопросом и вариантами А/Б и «Сделано: ничего не менял». Проверка: HEAD тот же, git status пуст, md5 файла SH-006 не изменился.
+AC-2 вживую: headless-сессия 4af8b008, sh-worker вызвал Write в backlog/tasks/probe-hook.md и получил «PreToolUse:Write hook error: … Файлы в backlog/ правятся только через CLI backlog…», файл не создан; Write вне backlog/ прошёл.
+AC-9 замер первого запроса по транскриптам (input + cache_creation + cache_read):
+- sh-worker (opus, субагент agent-adcf67b3d5dce0cd8): 9 830 токенов; системный промпт агента 4 894 знака, скилл sh-task вложен; весь запуск на SH-006: 3 запроса, последний 12 570.
+- база, обычная сессия задачи (эта сессия ee4a93ef, opus): 76 949 токенов; в аудите 74–77 тыс.
+- для сравнения headless-сессия на sonnet без истории (18f29e00): 34 681 токен.
+Итого стартовый контекст sh-worker в 7,8 раза меньше обычной сессии.
 <!-- SECTION:NOTES:END -->
