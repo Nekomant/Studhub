@@ -1,4 +1,4 @@
-# Локальное окружение: Postgres 18 (и MinIO, см. SH-003). Запуск: `pnpm db:up`.
+# Локальное окружение: Postgres 18 и Garage (S3 API). Запуск: `pnpm db:up`.
 # Значения по умолчанию совпадают с `.env.example`. Свой `.env` compose читает сам.
 name: studentshub
 
@@ -21,5 +21,30 @@ services:
       timeout: 3s
       retries: 20
 
+  # Garage — локальный S3 (замена MinIO, ADR-0008). Бакет и ключ создаются при старте
+  # флагами --single-node и --default-bucket, отдельный контейнер для этого не нужен.
+  garage:
+    image: dxflrs/garage:v2.5.0
+    restart: unless-stopped
+    command: ["/garage", "server", "--single-node", "--default-bucket"]
+    environment:
+      GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      GARAGE_DEFAULT_ACCESS_KEY: ${S3_ACCESS_KEY_ID:-GKc0ffee000000000000000000}
+      GARAGE_DEFAULT_SECRET_KEY: ${S3_SECRET_ACCESS_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      GARAGE_DEFAULT_BUCKET: ${S3_BUCKET:-studentshub-files}
+    ports:
+      - "${S3_PORT:-3900}:3900"
+    volumes:
+      - ./infra/garage/garage.toml:/etc/garage.toml:ro
+      - garage-meta:/var/lib/garage/meta
+      - garage-data:/var/lib/garage/data
+    healthcheck:
+      test: ["CMD", "/garage", "status"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
 volumes:
   postgres-data:
+  garage-meta:
+  garage-data:

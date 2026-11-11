@@ -9,7 +9,7 @@ const repoRoot = resolve(import.meta.dirname, "../..");
 const read = (path: string) => readFileSync(join(repoRoot, path), "utf8");
 
 type Compose = {
-  services: Record<string, { image?: string; volumes?: string[]; depends_on?: unknown; restart?: string }>;
+  services: Record<string, { image?: string; volumes?: string[]; command?: string[]; environment?: unknown }>;
   volumes: Record<string, unknown>;
 };
 
@@ -26,21 +26,22 @@ describe("локальное окружение: docker-compose.yml", () => {
     expect(volumeName).not.toMatch(/^[./]/);
   });
 
-  it("[SH-003 AC-1] minio — данные в именованном томе", () => {
-    const minio = compose.services.minio;
-    expect(minio).toBeDefined();
-    const mount = minio?.volumes?.find((v) => v.includes("/data"));
-    expect(mount).toBeDefined();
-    expect(Object.keys(compose.volumes)).toContain(mount?.split(":")[0] ?? "");
+  it("[SH-003 AC-1] garage — S3 API, данные и метаданные в именованных томах", () => {
+    const garage = compose.services.garage;
+    expect(garage?.image).toMatch(/^dxflrs\/garage:v\d/);
+    for (const path of ["/var/lib/garage/data", "/var/lib/garage/meta"]) {
+      const mount = garage?.volumes?.find((v) => v.endsWith(`:${path}`));
+      expect(mount, `нет тома для ${path}`).toBeDefined();
+      const volumeName = mount?.split(":")[0] ?? "";
+      expect(Object.keys(compose.volumes)).toContain(volumeName);
+    }
   });
 
-  it("[SH-003 AC-1] одноразовый сервис создаёт бакет после того, как MinIO готов", () => {
-    const bucket = Object.entries(compose.services).find(([name]) => name.includes("bucket"));
-    expect(bucket).toBeDefined();
-    const [, service] = bucket ?? ["", {}];
-    expect(JSON.stringify(service.depends_on)).toMatch(/minio/);
-    expect(JSON.stringify(service.depends_on)).toMatch(/service_healthy/);
-    expect(service.restart ?? "no").toBe("no");
+  it("[SH-003 AC-1] бакет и ключ создаются при старте Garage, имя бакета берётся из S3_BUCKET", () => {
+    const garage = compose.services.garage;
+    expect(garage?.command).toContain("--default-bucket");
+    expect(garage?.command).toContain("--single-node");
+    expect(JSON.stringify(garage?.environment)).toContain("S3_BUCKET");
   });
 });
 
