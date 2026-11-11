@@ -32,7 +32,7 @@ function branchesInWorktrees() {
 
 function goneBranches() {
   const inWorktrees = branchesInWorktrees();
-  return git(["for-each-ref", "--format=%(refname:short)%09%(upstream:track,nobracket)", "refs/heads"])
+  return git(["for-each-ref", "--format=%(refname:lstrip=2)%09%(upstream:track,nobracket)", "refs/heads"])
     .split("\n")
     .map((line) => line.split("\t"))
     .filter(([name, track]) => name && track === "gone")
