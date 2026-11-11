@@ -10,7 +10,7 @@ description: Чеклисты старта и финиша задачи Studhub 
 ## Старт
 
 1. `node scripts/task.mjs SH-NNN`: статус Ready, зависимости в Done, есть критерии и план тестов.
-2. Ветка `sh-NNN-slug` в worktree: `git branch --show-current`.
+2. Ветка `sh-NNN-slug` в worktree от актуального `origin/main`, где задача уже в Ready: `git branch --show-current`. Файл задачи из основной папки не переноси, Ready не коммить.
 3. `backlog task edit SH-NNN -s "In Progress" -a @claude`.
 4. Прочитай разделы ТД, UC и экранов из «Контекста» задачи через `node scripts/doc.mjs`. Посмотри код, который задача меняет.
 5. План: `backlog task edit SH-NNN --plan "1. …"`. Оценка первой строкой заметок: `--notes "Оценка: N ч"`.
@@ -49,5 +49,6 @@ description: Чеклисты старта и финиша задачи Studhub 
 1. После `/code-review`: `backlog task edit SH-NNN -s Review`, коммит `chore(backlog): SH-NNN на ревью`, пуш, PR.
 2. Владелец смотрит дифф и пишет, что готов слить. До этого Done не ставь.
 3. `backlog task edit SH-NNN -s Done --check-dod 2 --check-dod 5 --check-dod 6`: пункты DoD «CI зелёный», «ревью» и «PR слит». Номера взяты из `backlog/config.yml`; перед отметкой сверь их с выводом `node scripts/task.mjs SH-NNN`. Последний коммит ветки: `chore(backlog): SH-NNN в Done`. Пуш.
-4. Владелец сливает PR через squash.
+4. Владелец сливает PR через squash и пишет об этом сессии (шаг 6).
 5. Владелец просит правки после коммита Done: `backlog task edit SH-NNN -s Review --uncheck-dod 2 --uncheck-dod 5 --uncheck-dod 6` (снять отметки, поставленные вместе с Done), коммит, правки, пуш. Done ставь снова, только когда владелец опять напишет, что готов слить.
+6. Владелец сливает PR сам и пишет об этом сессии. Сессия проверяет: `gh pr view --json state,mergedAt` показывает `MERGED`; после `git fetch origin main` команда `git grep -n "^status:" origin/main -- "backlog/tasks/sh-NNN*"` печатает `status: Done`. Обе проверки прошли: `git switch --detach origin/main`, `git branch -D sh-NNN-slug` (после squash `-d` не сработает), `archive_session` с `self` (приложение спросит подтверждение). Проверка не прошла или `git switch` отказал: ничего не удаляй, не архивируй себя, сообщи владельцу, что не так.
