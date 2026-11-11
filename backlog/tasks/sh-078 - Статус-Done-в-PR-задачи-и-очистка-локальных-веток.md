@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-11T21:55:00Z'
-updated_date: '2026-11-11T22:03:00Z'
+updated_date: '2026-11-11T22:05:00Z'
 labels:
   - infra
   - docs
@@ -99,6 +99,8 @@ API и БД не меняются. Новая команда очистки ве
 Решение: CLAUDE.md (порядок работы и абзац про sh-worker) поправлен под новое правило, чтобы не расходился с process.md §7.
 AC-1 и AC-5 проверены чтением диффа docs/process.md, скилла sh-task и README. AC-2 закрывает сессия задачи коммитом Done в этой ветке; после него отмечаются AC-2 и DoD #1, #2, #5, #6.
 Факт: 1 ч
+
+Ревью: скрипт печатает SHA каждой удалённой ветки (вернуть: git branch <имя> <SHA>), fetch идёт с --all; тест создаёт main явно для git до 2.31. В §7 и скилле при возврате в Review снимаются отметки DoD 2, 5, 6; номера DoD в скилле сверяются с task.mjs.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
