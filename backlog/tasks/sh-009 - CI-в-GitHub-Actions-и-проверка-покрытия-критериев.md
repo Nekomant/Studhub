@@ -1,10 +1,11 @@
 ---
 id: SH-009
 title: CI в GitHub Actions и проверка покрытия критериев
-status: Ready
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-11T08:58:00Z'
-updated_date: '2026-11-11T22:21:00Z'
+updated_date: '2026-11-11T22:23:00Z'
 labels:
   - infra
 milestone: m-0
@@ -69,3 +70,24 @@ ordinal: 1000
 - [ ] #7 В заметках задачи записаны оценка и фактическое время, решения по ходу работы и итоговое резюме
 - [ ] #8 Владелец создал приватный репозиторий на GitHub и включил защиту `main`: слияние только через PR при зелёном CI
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Корневой скрипт db:check (алиас на pnpm --filter @studhub/api db:check), как gen:openapi.
+2. Красный юнит-тест [SH-009 AC-2] на фикстурах задач и тестов в tools/tests/check-ac-coverage.test.ts; отдельный коммит.
+3. scripts/check-ac-coverage.mjs: читает backlog/tasks/*.md (frontmatter status, список критериев), ищет метки [SH-NNN AC-n] и [SH-NNN AC-n, AC-m] в тестовых файлах, печатает непокрытые и выходит с кодом 1. Правило для ручных критериев — по ответу владельца.
+4. .github/workflows/ci.yml: on pull_request и push в main; job check: checkout, pnpm/action-setup, setup-node с cache pnpm и .nvmrc, pnpm install --frozen-lockfile, pnpm check, pnpm db:check, check-ac-coverage, pnpm test с сервисом postgres:18 и TEST_DATABASE_URL.
+5. .github/pull_request_template.md по process §9–10.
+6. Документы: process §8.2 и §9 (CI, шаблон PR, правило покрытия), README.
+7. Ручная проверка на тестовом PR: сломать Biome, tsc, тест, миграцию — каждый красный; время прогона в заметки.
+8. Владелец: защита main с обязательной проверкой.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Оценка: 4 ч
+
+Ждёт владельца: как check-ac-coverage обходится с критериями, которые по плану тестов проверяются вручную или ревью (сейчас без меток SH-075 AC-1..6, SH-077 AC-3, 9, 10, SH-078 AC-1, 2, 5; у самой SH-009 AC-1, 3, 4).
+<!-- SECTION:NOTES:END -->
