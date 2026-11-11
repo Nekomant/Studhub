@@ -1,11 +1,11 @@
 ---
 id: SH-003
 title: 'Локальное окружение: Postgres 18 и MinIO'
-status: Review
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-11T08:58:00Z'
-updated_date: '2026-11-11T14:12:00Z'
+updated_date: '2026-11-11T14:51:00Z'
 labels:
   - infra
   - db
@@ -106,6 +106,8 @@ ordinal: 1000
 Факт: 5 ч
 
 AC-3 подтверждён: шаблон переменных закоммичен владельцем, на чистом клоне ветки тест [SH-003 AC-3] зелёный (114 тестов, pnpm check без ошибок). Ждёт владельца снят.
+
+Закрыто: PR #3 слит в main (merge 82ce823), ветка sh-003-local-env удалена. Проверка prod по DoD #6 и CI по DoD #2 пока не выполнены: деплоя и CI ещё нет (SH-009, SH-011).
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
