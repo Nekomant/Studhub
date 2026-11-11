@@ -2,6 +2,10 @@
   "name": "@studentshub/api",
   "private": true,
   "type": "module",
+  "scripts": {
+    "start": "node --env-file-if-exists=../../.env src/main.ts",
+    "gen:openapi": "node src/gen-openapi.ts"
+  },
   "dependencies": {
     "@hono/node-server": "^2.1.6",
     "@hono/zod-openapi": "^1.6.3",
