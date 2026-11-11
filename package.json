@@ -1,5 +1,5 @@
 {
-  "name": "studentshub",
+  "name": "studhub",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@12.18.0",
@@ -9,7 +9,7 @@
   "scripts": {
     "prepare": "lefthook install",
     "check": "biome ci . && tsc -b",
-    "gen:openapi": "pnpm --filter @studentshub/api gen:openapi",
+    "gen:openapi": "pnpm --filter @studhub/api gen:openapi",
     "test": "vitest run",
     "format": "biome check --write .",
     "db:up": "docker compose up -d --wait",

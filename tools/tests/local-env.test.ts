@@ -55,18 +55,18 @@ describe("локальное окружение: скрипты баз данн�
 
   it("[SH-003 AC-4] сброс затрагивает только тестовую БД, имя которой отличается от dev", () => {
     const plan = planTestDatabaseReset({
-      DATABASE_URL: "postgres://u:p@localhost:5432/studentshub",
-      TEST_DATABASE_URL: "postgres://u:p@localhost:5432/studentshub_test",
+      DATABASE_URL: "postgres://u:p@localhost:5432/studhub",
+      TEST_DATABASE_URL: "postgres://u:p@localhost:5432/studhub_test",
     });
-    expect(plan.database).toBe("studentshub_test");
-    expect(plan.database).not.toBe("studentshub");
+    expect(plan.database).toBe("studhub_test");
+    expect(plan.database).not.toBe("studhub");
   });
 
   it("[SH-003 AC-4] сброс отказывается работать, если тестовая БД совпадает с dev", () => {
     expect(() =>
       planTestDatabaseReset({
-        DATABASE_URL: "postgres://u:p@localhost:5432/studentshub",
-        TEST_DATABASE_URL: "postgres://u:p@localhost:5432/studentshub",
+        DATABASE_URL: "postgres://u:p@localhost:5432/studhub",
+        TEST_DATABASE_URL: "postgres://u:p@localhost:5432/studhub",
       }),
     ).toThrow(/dev/i);
   });
@@ -74,8 +74,8 @@ describe("локальное окружение: скрипты баз данн�
   it("[SH-003 AC-4] сброс отказывается работать, если имя тестовой БД не оканчивается на _test", () => {
     expect(() =>
       planTestDatabaseReset({
-        DATABASE_URL: "postgres://u:p@localhost:5432/studentshub",
-        TEST_DATABASE_URL: "postgres://u:p@localhost:5432/studentshub_copy",
+        DATABASE_URL: "postgres://u:p@localhost:5432/studhub",
+        TEST_DATABASE_URL: "postgres://u:p@localhost:5432/studhub_copy",
       }),
     ).toThrow(/_test/);
   });
@@ -83,8 +83,8 @@ describe("локальное окружение: скрипты баз данн�
   it("[SH-003 AC-4] сброс отказывается работать с не локальным хостом", () => {
     expect(() =>
       planTestDatabaseReset({
-        DATABASE_URL: "postgres://u:p@localhost:5432/studentshub",
-        TEST_DATABASE_URL: "postgres://u:p@db.example.com:5432/studentshub_test",
+        DATABASE_URL: "postgres://u:p@localhost:5432/studhub",
+        TEST_DATABASE_URL: "postgres://u:p@db.example.com:5432/studhub_test",
       }),
     ).toThrow(/локальн/);
   });

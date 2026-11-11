@@ -1,3 +1,3 @@
-import { createClient } from "@studentshub/client-core";
+import { createClient } from "@studhub/client-core";
 
 export const ok = createClient;

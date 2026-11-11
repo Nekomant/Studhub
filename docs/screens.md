@@ -1,4 +1,4 @@
-# StudentsHub — экраны MVP
+# Studhub — экраны MVP
 
 > Статус: согласовано (2026-11-11). Вопросы В-1…В-4, В-14 и В-15 решены, после согласования добавлены решения Р-12 и Р-13, допущения В-5…В-13 подтверждены. Решения и предложения по API (раздел 6) перенесены в ТД, сценарии и концепцию 2026-11-11.
 > Функционал описан в [`product-concept.md`](product-concept.md), сценарии — в [`use-cases.md`](use-cases.md) (ссылки «UC-xx»), правила, модель данных и API — в [`technical-design.md`](technical-design.md) (ссылки «ТД §x»).
@@ -123,7 +123,7 @@
 
 ```mermaid
 flowchart TD
-  open(["Открыть app.studentshub.ru"]) --> hasSession{"Есть сессия?"}
+  open(["Открыть app.studhub.ru"]) --> hasSession{"Есть сессия?"}
   hasSession -- "нет" --> login["Э-01 Вход"]
   login --> oauth["Яндекс ID или VK ID"]
   oauth --> isNew{"Новый пользователь?"}

@@ -1,5 +1,5 @@
 {
-  "name": "@studentshub/api",
+  "name": "@studhub/api",
   "private": true,
   "type": "module",
   "scripts": {

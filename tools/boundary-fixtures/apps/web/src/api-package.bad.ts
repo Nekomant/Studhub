@@ -1,3 +1,3 @@
-import { app } from "@studentshub/api";
+import { app } from "@studhub/api";
 
 export const a = app;

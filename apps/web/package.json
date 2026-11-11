@@ -1,8 +1,8 @@
 {
-  "name": "@studentshub/web",
+  "name": "@studhub/web",
   "private": true,
   "type": "module",
   "dependencies": {
-    "@studentshub/client-core": "workspace:*"
+    "@studhub/client-core": "workspace:*"
   }
 }

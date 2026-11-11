@@ -1,5 +1,5 @@
 {
-  "name": "@studentshub/client-core",
+  "name": "@studhub/client-core",
   "private": true,
   "type": "module",
   "exports": {

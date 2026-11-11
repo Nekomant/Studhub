@@ -1,3 +1,3 @@
-import { routes } from "@studentshub/api/src/modules/students/http/routes.ts";
+import { routes } from "@studhub/api/src/modules/students/http/routes.ts";
 
 export const r = routes;
