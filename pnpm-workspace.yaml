@@ -1,0 +1,9 @@
+packages:
+  - apps/*
+  - packages/*
+  - tests/*
+
+# Сборочные скрипты зависимостей запрещены по умолчанию. lefthook ставит
+# git-хуки своим postinstall, у нас это делает скрипт prepare в package.json.
+allowBuilds:
+  lefthook: false

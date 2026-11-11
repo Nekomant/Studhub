@@ -1,0 +1,8 @@
+{
+  "name": "@studentshub/tests-api",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@studentshub/client-core": "workspace:*"
+  }
+}
