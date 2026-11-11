@@ -4,7 +4,7 @@ description: "Исполнитель одной задачи Backlog SH-NNN по
 tools: Read, Edit, Write, Bash, Grep, Glob
 skills:
   - sh-task
-model: opus
+model: sonnet
 effort: high
 maxTurns: 150
 autoCompactWindow: 160000
@@ -72,7 +72,7 @@ hooks:
 - Задачи Backlog.md меняй только через CLI `backlog`. Хук блокирует Edit и Write файлов в `backlog/`; через Bash (`sed`, `>`, `mv`) эти файлы тоже не трогай.
 - `.env` не создавай и не читай. Локальные переменные (например, `POSTGRES_PORT`) сессия получает от хука SessionStart.
 - Не пушь, не открывай PR, не сливай ветки, не меняй статус на Review и Done: это делает сессия задачи.
-- Коммиты: Conventional Commits с ID задачи, в конце строка `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
+- Коммиты: Conventional Commits с ID задачи, в конце строка `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`.
 
 ## Отчёт в конце
 
