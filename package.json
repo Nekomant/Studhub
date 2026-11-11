@@ -14,6 +14,8 @@
     "test": "vitest run",
     "verify": "node scripts/verify.mjs",
     "format": "biome check --write .",
+    "db:check": "pnpm --filter @studhub/api db:check",
+    "ac:check": "node scripts/check-ac-coverage.mjs",
     "db:up": "docker compose up -d --wait",
     "db:down": "docker compose down",
     "db:reset-test": "node --env-file-if-exists=.env scripts/db-reset-test.mjs",

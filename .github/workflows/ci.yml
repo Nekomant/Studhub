@@ -1,0 +1,70 @@
+# Проверки на каждый PR и push в main (ТД §12, docs/process.md §9).
+# Обязательная проверка для защиты main — задача `checks`.
+# Шаги после установки выполняются, даже если предыдущая проверка упала: в одном прогоне видны все ошибки.
+# Новые проверки добавляют задачи, которые их создают: OpenAPI-клиент и API-тесты (SH-006), E2E (SH-008), образ (SH-011).
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      # Тестовая БД только для этого прогона. Пароль не секрет: контейнер живёт до конца задачи.
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: studhub
+          POSTGRES_PASSWORD: change-me-local
+          POSTGRES_DB: studhub_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U studhub -d studhub_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgres://studhub:change-me-local@localhost:5432/studhub_test
+    steps:
+      - uses: actions/checkout@v5
+
+      # Версию pnpm берёт из поля packageManager в package.json.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Установка зависимостей
+        id: install
+        run: pnpm install --frozen-lockfile
+
+      - name: Biome и tsc
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: pnpm check
+
+      - name: Миграции соответствуют схеме
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: pnpm db:check
+
+      - name: Критерии приёмки покрыты тестами
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: pnpm ac:check
+
+      - name: Vitest на Postgres 18
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: pnpm test
