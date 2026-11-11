@@ -43,19 +43,24 @@ describe("конфигурация окружения", () => {
   });
 
   it("[SH-003 AC-2] пустой секрет считается отсутствующим и не попадает в текст ошибки", () => {
-    const result = configSchema.safeParse({ ...validEnv, S3_SECRET_ACCESS_KEY: "" });
+    const env = { ...validEnv, S3_SECRET_ACCESS_KEY: "" };
+    const result = configSchema.safeParse(env);
     expect(result.success).toBe(false);
     if (result.success) return;
-    const text = formatConfigIssues(result.error.issues);
-    expect(text).toContain("S3_SECRET_ACCESS_KEY");
+    const text = formatConfigIssues(result.error.issues, env);
+    expect(text).toContain("S3_SECRET_ACCESS_KEY: не задана");
     expect(text).not.toContain("local-secret-key");
+    expect(() => loadConfig({ ...validEnv, S3_BUCKET: "" })).toThrow(/S3_BUCKET: не задана/);
   });
 
   it("[SH-003 AC-2] список проблем: одна строка на переменную", () => {
-    const result = configSchema.safeParse({ DATABASE_URL: "bad", S3_ENDPOINT: "bad" });
+    const env = { DATABASE_URL: "bad", S3_ENDPOINT: "bad" };
+    const result = configSchema.safeParse(env);
     expect(result.success).toBe(false);
     if (result.success) return;
-    const lines = formatConfigIssues(result.error.issues).split("\n");
+    const lines = formatConfigIssues(result.error.issues, env).split("\n");
+    expect(lines).toContain("- DATABASE_URL: задана неверно");
+    expect(lines).toContain("- S3_BUCKET: не задана");
     expect(lines.length).toBeGreaterThanOrEqual(3);
     expect(lines.every((line) => line.startsWith("- "))).toBe(true);
   });
@@ -85,6 +90,20 @@ describe("конфигурация окружения", () => {
       const previous = lines[index - 1] ?? "";
       expect(previous.startsWith("#"), `нет комментария над ${key}`).toBe(true);
     }
-    expect(example).not.toMatch(/live_|sk_live|AKIA[0-9A-Z]{16}/);
+    const keys = lines.filter((line) => /^[A-Z0-9_]+=/.test(line)).map((line) => line.split("=")[0] ?? "");
+    expect(new Set(keys).size, "переменные в шаблоне повторяются").toBe(keys.length);
+    const composeOnly = [
+      "POSTGRES_USER",
+      "POSTGRES_PASSWORD",
+      "POSTGRES_DB",
+      "POSTGRES_PORT",
+      "GARAGE_RPC_SECRET",
+      "S3_PORT",
+    ];
+    const known = [...Object.keys(configSchema.shape), ...composeOnly];
+    for (const key of keys) {
+      expect(known, `лишняя переменная ${key}`).toContain(key);
+    }
+    expect(example).not.toMatch(/live_|sk_live|AKIA[0-9A-Z]{16}|-----BEGIN/);
   });
 });

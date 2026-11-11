@@ -21,7 +21,12 @@ export function planTestDatabaseReset(env) {
   if (!/^[a-z0-9_]+$/.test(testName)) {
     throw new Error(`имя тестовой БД содержит недопустимые символы: «${testName}»`);
   }
-  const user = decodeURIComponent(new URL(env.TEST_DATABASE_URL).username);
+  const url = new URL(env.TEST_DATABASE_URL);
+  // Скрипт работает только с контейнером compose на этой машине: чужой сервер он не тронет.
+  if (!["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) {
+    throw new Error(`сброс работает только с локальной БД из compose, а в TEST_DATABASE_URL хост «${url.hostname}»`);
+  }
+  const user = decodeURIComponent(url.username);
   return { database: testName, user };
 }
 

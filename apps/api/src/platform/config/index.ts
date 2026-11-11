@@ -21,36 +21,44 @@ export const configSchema = z.object({
 export type Config = z.infer<typeof configSchema>;
 export type ConfigIssue = z.core.$ZodIssue;
 
+type Env = Record<string, string | undefined>;
+
+// Пустая строка (`S3_BUCKET=` в файле окружения) считается незаданной переменной.
+function normalize(env: Env): Env {
+  return Object.fromEntries(Object.entries(env).filter(([, value]) => value !== ""));
+}
+
 // Текст ошибки содержит имена переменных и причину, но не их значения:
 // в секретах значения не должны попадать в логи (ТД §9).
-export function formatConfigIssues(issues: readonly ConfigIssue[]): string {
+export function formatConfigIssues(issues: readonly ConfigIssue[], env: Env): string {
+  const present = normalize(env);
   return issues
     .map((issue) => {
       const name = issue.path.map(String).join(".") || "(корень)";
-      const reason = issue.message.includes("received undefined") ? "не задана" : "задана неверно";
+      const reason = present[name] === undefined ? "не задана" : "задана неверно";
       return `- ${name}: ${reason}`;
     })
     .join("\n");
 }
 
-export function loadConfig(env: Record<string, string | undefined>): Config {
-  const result = configSchema.safeParse(env);
+export function loadConfig(env: Env): Config {
+  const result = configSchema.safeParse(normalize(env));
   if (!result.success) {
-    throw new Error(`Неверная конфигурация окружения:\n${formatConfigIssues(result.error.issues)}`);
+    throw new Error(`Неверная конфигурация окружения:\n${formatConfigIssues(result.error.issues, env)}`);
   }
   return result.data;
 }
 
 // Вызывается при старте приложения: при ошибке печатает список проблем и завершает процесс.
 export function runStartupConfigCheck(
-  env: Record<string, string | undefined>,
+  env: Env,
   deps: { log: (message: string) => void; exit: (code: number) => void },
 ): Config | undefined {
-  const result = configSchema.safeParse(env);
-  if (!result.success) {
-    deps.log(`Неверная конфигурация окружения:\n${formatConfigIssues(result.error.issues)}`);
+  try {
+    return loadConfig(env);
+  } catch (error) {
+    deps.log(error instanceof Error ? error.message : String(error));
     deps.exit(1);
     return undefined;
   }
-  return result.data;
 }

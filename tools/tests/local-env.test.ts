@@ -2,7 +2,6 @@ import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import YAML from "yaml";
-// @ts-expect-error — скрипт на чистом JS без типов, проверяется через тест
 import { planTestDatabaseReset } from "../../scripts/db-reset-test.mjs";
 
 const repoRoot = resolve(import.meta.dirname, "../..");
@@ -79,5 +78,14 @@ describe("локальное окружение: скрипты баз данн�
         TEST_DATABASE_URL: "postgres://u:p@localhost:5432/studentshub_copy",
       }),
     ).toThrow(/_test/);
+  });
+
+  it("[SH-003 AC-4] сброс отказывается работать с не локальным хостом", () => {
+    expect(() =>
+      planTestDatabaseReset({
+        DATABASE_URL: "postgres://u:p@localhost:5432/studentshub",
+        TEST_DATABASE_URL: "postgres://u:p@db.example.com:5432/studentshub_test",
+      }),
+    ).toThrow(/локальн/);
   });
 });
