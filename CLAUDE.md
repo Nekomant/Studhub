@@ -4,7 +4,7 @@
 
 ## Документы (источник истины)
 
-- `docs/product-concept.md` — зачем и что. `docs/use-cases.md` — сценарии UC-xx. `docs/screens.md` — экраны.
+- `docs/product-concept.md` — зачем и что. `docs/use-cases.md` — сценарии UC-xx. `docs/screens.md` — экраны. `docs/design-system.md` — внешний вид: токены, шрифты, компоненты.
 - `docs/technical-design.md` (ТД) — модель, правила, API, архитектура, стек. `docs/adr/` — решения.
 - `docs/process.md` — **процесс разработки, обязателен к прочтению перед работой над задачей.**
 

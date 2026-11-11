@@ -199,7 +199,7 @@ sequenceDiagram
 | Слой | Выбор | Почему |
 |---|---|---|
 | Клиент | React 19, Vite, TanStack Router (маршруты в коде), TanStack Query (+ persist в IndexedDB), TanStack Form + zod | Большая экосистема и качественная помощь AI. TanStack Query и Form есть и для Vue, маршруты описаны картой в `client-core` |
-| UI | Tailwind CSS v4, shadcn/ui (Radix), lucide, vaul (нижние шторки), sonner (уведомления) | Компоненты копируются в репозиторий. У каждой библиотеки есть Vue-аналог: shadcn-vue, Reka UI, vaul-vue, vue-sonner |
+| UI | Tailwind CSS v4, shadcn/ui (Radix), lucide, vaul (нижние шторки), sonner (уведомления). Токены, шрифты Nunito и Manrope, светлую и тёмную темы задаёт [`design-system.md`](design-system.md) | Компоненты копируются в репозиторий. У каждой библиотеки есть Vue-аналог: shadcn-vue, Reka UI, vaul-vue, vue-sonner |
 | PWA | vite-plugin-pwa (Workbox) | Кэширует только статику, данными управляет TanStack Query |
 | Даты | date-fns v4 + `@date-fns/tz` | Одна библиотека на клиенте и сервере |
 | Сервер | Node 24 LTS, Hono, `@hono/zod-openapi` | Минимальный фреймворк. Спецификация OpenAPI генерируется из zod-схем |
@@ -593,7 +593,7 @@ generate(slot, until):
 
 ## 7. Экраны MVP
 
-Экраны, навигация, состояния и сквозные паттерны интерфейса описаны в [`screens.md`](screens.md).
+Экраны, навигация, состояния и сквозные паттерны интерфейса описаны в [`screens.md`](screens.md), внешний вид описан в [`design-system.md`](design-system.md).
 
 Кратко: нижняя панель на телефоне, боковая — на компьютере. Вкладки: **Сегодня · Расписание · Ученики · Материалы · Ещё**. Мобильный интерфейс в приоритете для страницы урока: подготовка до урока и итог во время и после него.
 
@@ -748,7 +748,7 @@ studentshub/
 │  └─ e2e/                Playwright, элементы ищем по ролям и текстам
 ├─ infra/                 docker-compose.prod.yml, Caddyfile, wal-g, скрипты алертов
 │                         и проверки восстановления, deploy.sh
-├─ docs/                  product-concept.md, technical-design.md, use-cases.md, screens.md, adr/
+├─ docs/                  product-concept.md, technical-design.md, use-cases.md, screens.md, design-system.md, adr/
 ├─ docker-compose.yml     локальная разработка (Postgres 18, MinIO)
 ├─ Dockerfile             один образ: собранная SPA + api
 ├─ biome.json, pnpm-workspace.yaml, .nvmrc (24), lefthook.yml

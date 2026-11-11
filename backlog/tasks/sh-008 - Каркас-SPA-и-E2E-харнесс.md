@@ -4,13 +4,16 @@ title: Каркас SPA и E2E-харнесс
 status: Backlog
 assignee: []
 created_date: '2026-11-11T08:58:00Z'
-updated_date: '2026-11-11T09:15:00Z'
+updated_date: '2026-11-11T10:21:00Z'
 labels:
   - frontend
   - pwa
 milestone: m-0
 dependencies:
   - SH-006
+  - SH-073
+documentation:
+  - docs/design-system.md
 priority: high
 type: chore
 ordinal: 8000
@@ -21,7 +24,7 @@ ordinal: 8000
 <!-- SECTION:DESCRIPTION:BEGIN -->
 ## Что нужно сделать
 1. Создать `apps/web` на Vite + React 19 + TypeScript.
-2. Подключить Tailwind CSS v4, shadcn/ui и иконки lucide; общие токены вынести в `packages/ui-tokens`; шрифты положить в проект.
+2. Подключить Tailwind CSS v4, shadcn/ui и иконки lucide на токенах и шрифтах из `packages/ui-tokens` (SH-073, `design-system.md`).
 3. Подключить TanStack Router (карта маршрутов в `client-core`) и TanStack Query; завести маршруты пяти вкладок по `screens.md` §3.2 с заглушками.
 4. Сделать оболочку: нижняя панель при ширине меньше 768 px, боковая — при большей.
 5. Настроить `pnpm dev` (SPA + API, прокси `/api`) и вывести на заглушке статус `/healthz` через сгенерированный клиент.
@@ -33,6 +36,7 @@ ordinal: 8000
 
 ## Контекст
 - ТД §2.2, §3 (клиент, UI, PWA), §8 (слои клиента), §9 (без внешних CDN).
+- `docs/design-system.md`: §7 навигация (нижняя и боковая панель), §8 соответствие shadcn/ui.
 - `docs/screens.md` §3.1 (вкладки), §3.2 (адреса).
 
 ## Не входит
