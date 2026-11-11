@@ -274,17 +274,41 @@ describe("[SH-077 AC-8] сессия в новом worktree видит лока�
     expect(seen.trim()).toBe("5434|postgres://u:p@localhost:5434/db");
   });
 
-  it("хук снимает кавычки при комментарии после значения и не передаёт NODE_ENV", () => {
+  it("[SH-077 AC-8] переменные не из списка разрешённых в CLAUDE_ENV_FILE не попадают", () => {
+    const { main, worktree, env } = repoWithWorktree("session-env-allowed");
+    writeFileSync(
+      join(main, ".env"),
+      "NODE_ENV=development\nS3_SECRET_ACCESS_KEY=секрет-фикстуры\nPOSTGRES_PASSWORD=пароль-фикстуры\nTEST_DATABASE_URL=postgres://u:p@localhost:5434/db_test\n",
+    );
+    const envFile = join(workDir, "claude-env-allowed.sh");
+    writeFileSync(envFile, "");
+    const result = runNode(hook, [], { cwd: worktree, env: { ...env, CLAUDE_ENV_FILE: envFile }, input: "{}" });
+    expect(result.status).toBe(0);
+    const written = readFileSync(envFile, "utf8");
+    expect(written).toContain("TEST_DATABASE_URL=");
+    for (const name of [
+      "NODE_ENV",
+      "S3_SECRET_ACCESS_KEY",
+      "POSTGRES_PASSWORD",
+      "секрет-фикстуры",
+      "пароль-фикстуры",
+    ]) {
+      expect(written).not.toContain(name);
+    }
+    expect(result.stdout + result.stderr).toBe("");
+  });
+
+  it("хук снимает кавычки, если после значения стоит комментарий", () => {
     const { main, worktree, env } = repoWithWorktree("session-env-quotes");
-    writeFileSync(join(main, ".env"), 'NODE_ENV=development\nS3_BUCKET="studhub files" # бакет\nPLAIN=a # b\n');
+    writeFileSync(join(main, ".env"), 'POSTGRES_PORT="5434" # порт\nDATABASE_URL=postgres://u:p@h:5434/db # dev\n');
     const envFile = join(workDir, "claude-env-quotes.sh");
     writeFileSync(envFile, "");
     runNode(hook, [], { cwd: worktree, env: { ...env, CLAUDE_ENV_FILE: envFile }, input: "{}" });
-    const seen = execFileSync("bash", ["-c", `source "${envFile}"; echo "\${NODE_ENV-нет}|$S3_BUCKET|$PLAIN"`], {
+    const seen = execFileSync("bash", ["-c", `source "${envFile}"; echo "$POSTGRES_PORT|$DATABASE_URL"`], {
       encoding: "utf8",
       env: { PATH: process.env.PATH },
     });
-    expect(seen.trim()).toBe("нет|studhub files|a");
+    expect(seen.trim()).toBe("5434|postgres://u:p@h:5434/db");
   });
 
   it("[SH-077 AC-8] без .env хук ничего не пишет и не падает", () => {
