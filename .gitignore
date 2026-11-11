@@ -8,3 +8,7 @@ coverage/
 playwright-report/
 test-results/
 .claude/worktrees/
+*.tsbuildinfo
+.vite/
+.astro/
+.turbo/

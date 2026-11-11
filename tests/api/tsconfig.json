@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "node_modules/.cache/tsc",
+    "types": ["node"]
+  },
+  "include": ["src"],
+  "references": [{ "path": "../../packages/client-core" }]
+}

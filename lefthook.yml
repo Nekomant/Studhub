@@ -1,0 +1,13 @@
+# Git-хуки. Ставятся командой `lefthook install` из скрипта prepare при `pnpm install`.
+# Пропустить хуки разово: LEFTHOOK=0 git commit ...
+
+pre-commit:
+  jobs:
+    - name: biome
+      glob: "*.{js,mjs,cjs,ts,mts,cts,jsx,tsx,json,jsonc,css}"
+      run: pnpm exec biome check --no-errors-on-unmatched --files-ignore-unknown=true {staged_files}
+
+commit-msg:
+  jobs:
+    - name: conventional-commits
+      run: node scripts/check-commit-msg.mjs {1}
