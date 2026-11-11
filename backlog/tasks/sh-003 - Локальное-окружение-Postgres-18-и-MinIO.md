@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-11T08:58:00Z'
-updated_date: '2026-11-11T14:51:00Z'
+updated_date: '2026-11-11T18:59:00Z'
 labels:
   - infra
   - db
@@ -90,15 +90,15 @@ ordinal: 1000
 Решения и факты по ходу работы:
 - Официальные образы MinIO на Docker Hub не публикуются с осени 2025 (сообщения о прекращении выпуска community-образов). Образ minio/mc тоже. Поэтому MinIO-сервис в compose пока не добавлен. Ждёт владельца: выбор S3-сервера для локального окружения (см. ниже).
 - Postgres 18 поднят (postgres:18, именованный том postgres-data, данные переживают restart). Проверено: БД 18.6, строка сохранилась после docker compose restart.
-- db:reset-test пересоздаёт studentshub_test, dev-БД не затронута (проверено; отказ при совпадении имён и при имени без _test).
+- db:reset-test пересоздаёт studhub_test, dev-БД не затронута (проверено; отказ при совпадении имён и при имени без _test).
 - На порту 5432 у владельца уже работает контейнер start-db (postgres:16-alpine). Проверки шли на 5433 через POSTGRES_PORT. Порт по умолчанию не менял.
 - .env.example написан, но коммит заблокирован хуком block-bad-commands (сработал на путь .env.example). Ждёт владельца: закоммитить файл вручную или разрешить.
 
 Итоги проверки (чистый клон ветки sh-003-local-env, Node 24, pnpm 12.18.0):
 - pnpm install --frozen-lockfile, pnpm check, pnpm test: зелёные, 114 тестов (с файлом шаблона переменных, лежащим в рабочей папке, см. ниже).
-- AC-1: docker compose up -d --wait поднимает Postgres 18.6 и Garage v2.5.0, бакет studentshub-files создан при старте. Данные Postgres и объект в S3 пережили docker compose restart и db:down/db:up. Операции ТД §10 проверены AWS SDK: presigned PUT и GET, HEAD, GET Range 0-4100, Content-Disposition, DELETE.
+- AC-1: docker compose up -d --wait поднимает Postgres 18.6 и Garage v2.5.0, бакет studhub-files создан при старте. Данные Postgres и объект в S3 пережили docker compose restart и db:down/db:up. Операции ТД §10 проверены AWS SDK: presigned PUT и GET, HEAD, GET Range 0-4100, Content-Disposition, DELETE.
 - AC-2: node apps/api/src/main.ts без переменных и с неверными значениями печатает список и выходит с кодом 1. Юнит-тесты в config.test.ts.
-- AC-4: db:reset-test пересоздал studentshub_test, строка в dev-БД осталась; отказы при совпадении имён, имени без _test и нечужом хосте проверены тестами.
+- AC-4: db:reset-test пересоздал studhub_test, строка в dev-БД осталась; отказы при совпадении имён, имени без _test и нечужом хосте проверены тестами.
 - Решения: MinIO заменён на Garage (образы MinIO недоступны), версионирование бакета отменено; владелец подтвердил 2026-11-11. ADR-0008; правки ТД §3, §10, §12, UC-42, ADR-0007, README. Одноразовый контейнер создания бакета не нужен: Garage создаёт бакет флагом --default-bucket. Текст AC-1 и описание задачи изменены вместе с этим.
 - Для клиента AWS SDK нужны forcePathStyle и requestChecksumCalculation WHEN_REQUIRED (записано в README и ADR-0008).
 - Порты compose привязаны к 127.0.0.1 (замечание code-review).

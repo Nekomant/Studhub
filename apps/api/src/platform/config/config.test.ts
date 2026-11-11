@@ -7,11 +7,11 @@ const repoRoot = resolve(import.meta.dirname, "../../../../..");
 
 const validEnv = {
   NODE_ENV: "development",
-  DATABASE_URL: "postgres://studentshub:change-me-local@localhost:5432/studentshub",
-  TEST_DATABASE_URL: "postgres://studentshub:change-me-local@localhost:5432/studentshub_test",
+  DATABASE_URL: "postgres://studhub:change-me-local@localhost:5432/studhub",
+  TEST_DATABASE_URL: "postgres://studhub:change-me-local@localhost:5432/studhub_test",
   S3_ENDPOINT: "http://localhost:3900",
   S3_REGION: "garage",
-  S3_BUCKET: "studentshub-files",
+  S3_BUCKET: "studhub-files",
   S3_ACCESS_KEY_ID: "local-access-key",
   S3_SECRET_ACCESS_KEY: "local-secret-key",
 };
@@ -20,7 +20,7 @@ describe("конфигурация окружения", () => {
   it("[SH-003 AC-2] при полном наборе переменных возвращает разобранную конфигурацию", () => {
     const config = loadConfig(validEnv);
     expect(config.DATABASE_URL).toBe(validEnv.DATABASE_URL);
-    expect(config.S3_BUCKET).toBe("studentshub-files");
+    expect(config.S3_BUCKET).toBe("studhub-files");
     expect(config.NODE_ENV).toBe("development");
   });
 

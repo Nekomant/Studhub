@@ -1,4 +1,4 @@
-# StudentsHub
+# Studhub
 
 Веб-приложение (PWA) для частных репетиторов: ученики, расписание, оплаты, контекст уроков, материалы.
 Документы:
@@ -29,7 +29,7 @@ SPA пока пустая, её запуск добавит задача «Ка�
 Нужны запущенный Postgres (раздел ниже) и файл `.env`.
 
 ```bash
-pnpm --filter @studentshub/api start    # читает .env из корня; слушает PORT (по умолчанию 3000)
+pnpm --filter @studhub/api start    # читает .env из корня; слушает PORT (по умолчанию 3000)
 curl http://localhost:3000/healthz      # {"status":"ok","db":"ok"}; 503 в формате problem+json, если БД недоступна
 pnpm gen:openapi                        # пишет apps/api/openapi.json (OpenAPI 3.1 из zod-схем маршрутов)
 ```

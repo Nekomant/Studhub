@@ -4,7 +4,7 @@ title: 'Prod-сервер: VPS, Caddy, домены'
 status: Backlog
 assignee: []
 created_date: '2026-11-11T08:58:00Z'
-updated_date: '2026-11-11T09:15:00Z'
+updated_date: '2026-11-11T18:59:00Z'
 labels:
   - infra
 milestone: m-0
@@ -19,9 +19,9 @@ ordinal: 10000
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
 ## Что нужно сделать
-1. Владелец: арендовать VPS (Selectel, 2 vCPU / 4 ГБ / 40 ГБ, Ubuntu LTS), купить домен `studentshub.ru`, выдать исполнителю SSH-доступ.
+1. Владелец: арендовать VPS (Selectel, 2 vCPU / 4 ГБ / 40 ГБ, Ubuntu LTS), купить домен `studhub.ru`, выдать исполнителю SSH-доступ.
 2. Настроить сервер: пользователь `deploy` с SSH-ключом, запрет входа паролем и под root, firewall (22, 80, 443), автоматические обновления безопасности, Docker.
-3. Написать `infra/docker-compose.prod.yml` (`caddy`, `app`, `postgres` без внешнего порта) и `infra/Caddyfile` для `studentshub.ru` и `app.studentshub.ru` с автоматическим TLS.
+3. Написать `infra/docker-compose.prod.yml` (`caddy`, `app`, `postgres` без внешнего порта) и `infra/Caddyfile` для `studhub.ru` и `app.studhub.ru` с автоматическим TLS.
 4. Настроить DNS и проверить HTTPS и перенаправление с HTTP.
 5. Проверить снаружи, какие порты открыты.
 6. Записать пошаговую настройку сервера в `infra/README.md`.
@@ -49,7 +49,7 @@ Prod нужен с первого этапа: после каждого этап
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 `https://app.studentshub.ru/healthz` отвечает 200 с валидным TLS-сертификатом; запросы по `http` перенаправляются на `https`
+- [ ] #1 `https://app.studhub.ru/healthz` отвечает 200 с валидным TLS-сертификатом; запросы по `http` перенаправляются на `https`
 - [ ] #2 Снаружи открыты только порты 22, 80 и 443; Postgres извне недоступен
 - [ ] #3 SSH-вход только по ключу, вход паролем и под root отключён; автоматические обновления безопасности включены
 - [ ] #4 Настройка сервера с нуля описана в `infra/README.md` пошагово

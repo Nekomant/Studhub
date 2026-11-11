@@ -217,7 +217,7 @@ importers:
 
   apps/web:
     dependencies:
-      '@studentshub/client-core':
+      '@studhub/client-core':
         specifier: workspace:*
         version: link:../../packages/client-core
 
@@ -227,7 +227,7 @@ importers:
 
   tests/api:
     dependencies:
-      '@studentshub/client-core':
+      '@studhub/client-core':
         specifier: workspace:*
         version: link:../../packages/client-core
 

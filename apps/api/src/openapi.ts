@@ -12,7 +12,7 @@ export function buildOpenApiDocument(): OpenApiDocument {
   });
   const document = app.getOpenAPI31Document({
     openapi: "3.1.0",
-    info: { title: "StudentsHub API", version: "0.1.0" },
+    info: { title: "Studhub API", version: "0.1.0" },
   });
   // JSON-копия: документ совпадает с тем, что попадает в файл, и не содержит классов.
   return JSON.parse(JSON.stringify(document)) as OpenApiDocument;

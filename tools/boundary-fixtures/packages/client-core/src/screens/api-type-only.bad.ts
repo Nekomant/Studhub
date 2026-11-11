@@ -1,3 +1,3 @@
-import type { AppType } from "@studentshub/api";
+import type { AppType } from "@studhub/api";
 
 export type T = AppType;
