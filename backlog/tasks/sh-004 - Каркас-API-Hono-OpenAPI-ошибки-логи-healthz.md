@@ -1,7 +1,7 @@
 ---
 id: SH-004
 title: 'Каркас API: Hono, OpenAPI, ошибки, логи, healthz'
-status: In Progress
+status: Review
 assignee:
   - '@claude'
 created_date: '2026-11-11T08:58:00Z'
