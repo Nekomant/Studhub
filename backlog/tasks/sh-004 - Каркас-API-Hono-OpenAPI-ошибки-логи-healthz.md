@@ -1,10 +1,11 @@
 ---
 id: SH-004
 title: 'Каркас API: Hono, OpenAPI, ошибки, логи, healthz'
-status: Ready
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-11T08:58:00Z'
-updated_date: '2026-11-11T15:04:00Z'
+updated_date: '2026-11-11T15:06:00Z'
 labels:
   - backend
 milestone: m-0
@@ -68,3 +69,22 @@ ordinal: 1000
 - [ ] #6 PR слит в main через squash, изменения выложены в prod (после появления деплоя)
 - [ ] #7 В заметках задачи записаны оценка и фактическое время, решения по ходу работы и итоговое резюме
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Ветка и окружение: Node 24 из .nvmrc, pnpm install.
+2. Красные тесты по AC: apps/api/src/platform/logger (маскировка, AC-4), platform/errors (problem+json, AC-2), platform/security-headers (AC-5), /healthz при доступной и недоступной БД (AC-1, через app.request с подменой проверки БД), scripts/gen-openapi проверка OpenAPI 3.1 (AC-3).
+3. Реализация: Hono-приложение apps/api/src/app.ts с префиксом /api/v1 (healthz на корне по ТД §6.2), platform/errors (problem+json с code, фолбэк 500 без стека), platform/logger (pino, redact ПДн), platform/security-headers (CSP default-src 'self', frame-ancestors 'none'), platform/db (pg Pool и ping SELECT 1), modules/health (пример модуля domain/db/http с index.ts), main.ts (старт сервера, порт из PORT, default 3000).
+4. OpenAPI: @hono/zod-openapi, скрипт gen:openapi пишет apps/api/openapi.json (OpenAPI 3.1), проверка валидности.
+5. Документы: README (раздел запуска API и gen:openapi), ТД не меняется, если поведение совпадает; ADR не нужен.
+6. Проверки: pnpm check, pnpm test на чистом клоне ветки, проверка README-команд.
+7. /code-review, исправления. Заметки, критерии --check-ac с доказательствами, итог, push, PR, статус Review.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Оценка: 6 ч
+Решения по ходу: healthz на корне (/healthz, как в ТД §6.2 и мониторинге), остальные маршруты под /api/v1. Для проверки БД — драйвер pg (node-postgres), SH-005 подключит Drizzle поверх него; ADR не нужен, решение не меняет ТД/ADR.
+<!-- SECTION:NOTES:END -->
