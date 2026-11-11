@@ -61,6 +61,17 @@ pnpm db:down            # останавливает контейнеры; да�
 pnpm db:reset-test      # пересоздаёт только тестовую БД; dev-БД не трогает
 ```
 
+Миграции БД (Drizzle, [ADR-0002](docs/adr/0002-postgres-drizzle.md)) лежат в `apps/api/drizzle/`. Команды запускайте после `pnpm db:up`:
+
+```bash
+pnpm --filter @studhub/api db:migrate     # применяет миграции к DATABASE_URL; повторный запуск ничего не меняет
+pnpm --filter @studhub/api db:check       # падает, если схема изменена без миграции
+pnpm --filter @studhub/api db:generate    # генерирует миграцию по схеме модулей
+pnpm --filter @studhub/api start migrate  # то же самое через приложение: так миграции запускает CD
+```
+
+Соглашения схемы БД описаны в [`apps/api/src/modules/README.md`](apps/api/src/modules/README.md).
+
 Если порты 5432 или 3900 заняты, задайте `POSTGRES_PORT` или `S3_PORT` в `.env` и поправьте адреса в `DATABASE_URL`,
 `TEST_DATABASE_URL`, `S3_ENDPOINT`.
 

@@ -735,6 +735,7 @@ studhub/
 │  ├─ web/                React SPA (только UI)
 │  └─ api/
 │     ├─ src/modules/<feature>/{domain,db,http}/
+│     ├─ src/db/          подключение к БД и запуск миграций (`migrate`); драйверы БД только здесь и в */db/
 │     ├─ src/platform/    ctx и middleware арендатора, сессии, OAuth, идемпотентность,
 │     │                   S3, pg-boss, логгер, конфиг (env через zod), OpenAPI
 │     ├─ src/main.ts      сборка приложения: HTTP + воркер
