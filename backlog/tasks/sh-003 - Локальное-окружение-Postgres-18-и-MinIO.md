@@ -1,10 +1,10 @@
 ---
 id: SH-003
 title: 'Локальное окружение: Postgres 18 и MinIO'
-status: Backlog
+status: Ready
 assignee: []
 created_date: '2026-11-11T08:58:00Z'
-updated_date: '2026-11-11T09:15:00Z'
+updated_date: '2026-11-11T13:28:00Z'
 labels:
   - infra
   - db
@@ -13,7 +13,7 @@ dependencies:
   - SH-002
 priority: high
 type: chore
-ordinal: 3000
+ordinal: 1000
 ---
 
 ## Description
