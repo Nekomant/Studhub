@@ -95,6 +95,19 @@ Git-хуки (`lefthook.yml`):
   `<тип>(<область>): <описание>`, типы `feat`, `fix`, `test`, `refactor`, `docs`, `chore`, `ci`, `build`
   (`docs/process.md` §9).
 
+### Очистка локальных веток
+
+После слияния PR GitHub удаляет ветку, а локальная копия остаётся. PR сливаются через squash, поэтому
+`git branch --merged` такие ветки не находит. Их находит скрипт `scripts/git-prune.mjs`:
+
+```bash
+pnpm git:prune            # git fetch --prune и список веток, удалённых на GitHub; ничего не удаляет
+pnpm git:prune --delete   # удаляет ветки из этого списка и печатает каждую удалённую
+```
+
+В список не попадают `main`, ветки без upstream (их не пушили на GitHub) и ветки, открытые в любом worktree.
+Ветку из worktree скрипт удалит, когда вы уберёте worktree: `git worktree remove <папка>`.
+
 ### Границы слоёв
 
 Правила границ из ТД §13 проверяет Biome (`noRestrictedImports` в `overrides` файла `biome.json`):
