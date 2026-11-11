@@ -1,11 +1,11 @@
 ---
 id: SH-077
 title: Агент sh-worker для задач и экономия контекста
-status: Review
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-11T20:53:00Z'
-updated_date: '2026-11-11T21:27:00Z'
+updated_date: '2026-11-11T21:40:00Z'
 labels:
   - infra
   - docs
@@ -91,7 +91,7 @@ API и БД не меняются. Новые файлы: `.claude/agents/sh-wor
 - [ ] #2 CI зелёный: Biome, tsc, Vitest, API-тесты, E2E, миграции и OpenAPI-клиент актуальны (с момента, когда эти проверки появились в CI)
 - [x] #3 Документы (use-cases, screens, technical-design, ADR) обновлены в этом же PR, если поведение или решения изменились
 - [x] #4 Новые эндпоинты покрыты тестом изоляции (чужой кабинет → 404); в логах и product_event нет ПДн; деньги только в minor units
-- [ ] #5 Пройдено ревью (/code-review и просмотр диффа владельцем), замечания закрыты
+- [x] #5 Пройдено ревью (/code-review и просмотр диффа владельцем), замечания закрыты
 - [ ] #6 PR слит в main через squash, изменения выложены в prod (после появления деплоя)
 - [x] #7 В заметках задачи записаны оценка и фактическое время, решения по ходу работы и итоговое резюме
 <!-- DOD:END -->
@@ -141,6 +141,8 @@ AC-9 замер первого запроса по транскриптам (inp
 AC-8 вживую: временный worktree (git worktree add --detach, своего .env нет), новая headless-сессия d2a3daa7 без POSTGRES_PORT в окружении запуска. printenv POSTGRES_PORT → 5434, код 0; printenv S3_REGION → пусто, код 1; printenv NODE_ENV → пусто, код 1. Предполагаю, что S3_REGION есть в .env владельца, как в .env.example. Worktree удалён.
 pnpm verify после правки: check ок, 162 теста.
 Факт: 1,6 ч
+
+PR #12 слит владельцем в main (merge 282fc67, 2026-11-11 21:38 UTC). Слит обычным merge, а не squash, как требует process.md §9. DoD #2 закроется, когда появится CI (SH-009); DoD #6 (выкладка в prod) закроется с деплоем (SH-011). Задача закрыта.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
