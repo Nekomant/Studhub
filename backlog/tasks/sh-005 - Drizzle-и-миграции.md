@@ -1,10 +1,10 @@
 ---
 id: SH-005
 title: Drizzle и миграции
-status: Backlog
+status: Ready
 assignee: []
 created_date: '2026-11-11T08:58:00Z'
-updated_date: '2026-11-11T09:15:00Z'
+updated_date: '2026-11-11T19:29:00Z'
 labels:
   - backend
   - db
