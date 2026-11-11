@@ -1,5 +1,6 @@
 import { serve } from "@hono/node-server";
 import { createApp } from "./app.ts";
+import { runMigrations } from "./db/migrate.ts";
 import { createHealthRepository } from "./modules/health/index.ts";
 import { runStartupConfigCheck } from "./platform/config/index.ts";
 import { createLogger } from "./platform/logger/index.ts";
@@ -11,6 +12,18 @@ const port = Number(process.env.PORT ?? 3000);
 if (config && (!Number.isInteger(port) || port < 1 || port > 65535)) {
   console.error("Неверная конфигурация окружения:\n- PORT: задан неверно");
   process.exit(1);
+}
+
+// `migrate` применяет миграции и завершает процесс: так их запускает CD (ТД §12).
+if (config && process.argv[2] === "migrate") {
+  try {
+    await runMigrations(config.DATABASE_URL);
+  } catch (error) {
+    console.error("Миграции не применились:", error instanceof Error ? error.message : error);
+    process.exit(1);
+  }
+  console.log("Миграции применены");
+  process.exit(0);
 }
 
 if (config) {
