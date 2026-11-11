@@ -8,44 +8,53 @@
 // и удаляет только показанные ветки. Любые другие незакоммиченные правки скрипт не трогает.
 // Историю, которую нельзя перемотать, скрипт не сливает и не переписывает: сообщает и выходит с кодом 1 при --apply.
 // `git fetch --all --prune` обновляет только ссылки origin/*, рабочую папку и локальные ветки не меняет.
-import { spawnSync } from "node:child_process";
 import { readFileSync, unlinkSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { git, goneBranches } from "./git-prune.mjs";
+import { goneBranches } from "./git-prune.mjs";
+import { git, tryGit } from "./lib/git.mjs";
 
 const TARGET = "origin/main";
 const TASKS_DIR = "backlog/";
+// Коды `git status --porcelain` (X: индекс, Y: рабочая папка), при которых файл может быть устаревшей копией:
+// не отслеживается, изменён в рабочей папке, в индексе или в обоих местах, добавлен в индекс.
+// Удаления, конфликты и всё остальное считаем чужими правками и не трогаем.
+const COPY_CODES = new Set(["??", " M", "M ", "MM", "A ", "AM"]);
 
-function tryGit(args, options = {}) {
-  const result = spawnSync("git", args, { encoding: options.binary ? "buffer" : "utf8" });
-  return { ok: result.status === 0, stdout: result.stdout, stderr: String(result.stderr ?? "").trim() };
-}
-
-// Незакоммиченные файлы из `git status`: путь и признак «не отслеживается».
+// Незакоммиченные файлы из `git status`: код XY и путь.
 function dirtyFiles() {
   return git(["status", "--porcelain", "-z", "--no-renames", "--untracked-files=all"])
     .split("\0")
     .filter((entry) => entry.length > 3)
-    .map((entry) => ({
-      untracked: entry.startsWith("??"),
-      deleted: entry.slice(0, 2).includes("D"),
-      path: entry.slice(3),
-    }));
+    .map((entry) => ({ code: entry.slice(0, 2), path: entry.slice(3) }));
 }
 
-function matchesTarget(path) {
+const isUntracked = ({ code }) => code === "??";
+
+// Файл совпадает с origin/main: рабочая копия побайтно, а если в индекс что-то добавлено (X не пробел), то и версия в индексе.
+// Иначе в индексе лежит чья-то правка, и сброс её потеряет.
+function matchesTarget({ code, path }) {
+  if (!COPY_CODES.has(code)) return false;
   const remote = tryGit(["show", `${TARGET}:${path}`], { binary: true });
   if (!remote.ok) return false;
   try {
-    return readFileSync(path).equals(remote.stdout);
+    if (!readFileSync(path).equals(remote.stdout)) return false;
   } catch {
     return false;
   }
+  if (isUntracked({ code }) || code[0] === " ") return true;
+  const staged = tryGit(["rev-parse", `:${path}`]);
+  const target = tryGit(["rev-parse", `${TARGET}:${path}`]);
+  return staged.ok && target.ok && staged.stdout.trim() === target.stdout.trim();
 }
 
-function resetFile({ path, untracked }) {
-  if (untracked) unlinkSync(path);
-  else git(["restore", "--source=HEAD", "--staged", "--worktree", "--", path]);
+// Возвращает файл к HEAD. Файла нет в HEAD (не отслеживается или только добавлен в индекс): убираем из индекса и удаляем.
+function resetFile(file) {
+  if (!isUntracked(file) && tryGit(["cat-file", "-e", `HEAD:${file.path}`]).ok) {
+    git(["restore", "--source=HEAD", "--staged", "--worktree", "--", file.path]);
+    return;
+  }
+  if (!isUntracked(file)) git(["rm", "--cached", "--quiet", "--", file.path]);
+  unlinkSync(file.path);
 }
 
 const count = (range) => Number(git(["rev-list", "--count", range]).trim());
@@ -90,7 +99,7 @@ function main() {
 
   const dirty = dirtyFiles();
   const taskFiles = dirty.filter(({ path }) => path.startsWith(TASKS_DIR));
-  const stale = taskFiles.filter((file) => !file.deleted && matchesTarget(file.path));
+  const stale = taskFiles.filter(matchesTarget);
   const own = taskFiles.filter((file) => !stale.includes(file));
   const otherDirty = dirty.length - taskFiles.length;
 

@@ -139,6 +139,79 @@ describe("pnpm sync: показ и применение", () => {
   });
 });
 
+const TASK_C = "backlog/tasks/sh-903 - c.md";
+
+describe("pnpm sync: статусы индекса и рабочей папки", () => {
+  it("[SH-080 AC-4] добавленный в индекс файл, которого нет в HEAD и который совпадает с main, сбрасывается без ошибки", () => {
+    const repos = makeRepos();
+    const { work } = repos;
+    git(work, "branch", "sh-904-old");
+    git(work, "push", "-q", "-u", "origin", "sh-904-old");
+    git(repos.other, "push", "-q", "origin", "--delete", "sh-904-old");
+    moveOriginMain(repos, TASK_C, taskFile("SH-903", "Ready"));
+    writeFileSync(join(work, TASK_C), taskFile("SH-903", "Ready"));
+    git(work, "add", TASK_C);
+
+    const { code } = runSync(work, "--apply");
+
+    expect(code).toBe(0);
+    expect(git(work, "rev-parse", "HEAD")).toBe(git(work, "rev-parse", "origin/main"));
+    expect(git(work, "status", "--porcelain")).toBe("");
+    expect(branches(work)).not.toContain("sh-904-old");
+  });
+
+  it("[SH-080 AC-4] изменение, добавленное в индекс и совпадающее с main, сбрасывается", () => {
+    const repos = makeRepos();
+    const { work } = repos;
+    moveOriginMain(repos);
+    writeFileSync(join(work, TASK_A), taskFile("SH-901", "Ready"));
+    git(work, "add", TASK_A);
+
+    const { code } = runSync(work, "--apply");
+
+    expect(code).toBe(0);
+    expect(git(work, "status", "--porcelain")).toBe("");
+    expect(read(work, TASK_A)).toContain("status: Ready");
+  });
+
+  it("[SH-080 AC-4] в индексе чужая версия, в рабочей папке версия main: ничего не сбрасывается", () => {
+    const repos = makeRepos();
+    const { work } = repos;
+    moveOriginMain(repos, TASK_C, taskFile("SH-903", "Ready"));
+    writeFileSync(join(work, TASK_C), taskFile("SH-903", "Backlog", "Своя версия.\n"));
+    git(work, "add", TASK_C);
+    writeFileSync(join(work, TASK_C), taskFile("SH-903", "Ready"));
+    const headBefore = git(work, "rev-parse", "HEAD");
+
+    const { code, out } = runSync(work, "--apply");
+
+    expect(code).toBe(1);
+    expect(out).toContain("Перемотать main не удалось");
+    expect(git(work, "rev-parse", "HEAD")).toBe(headBefore);
+    expect(git(work, "show", `:${TASK_C}`)).toContain("Своя версия.");
+    expect(read(work, TASK_C)).toContain("status: Ready");
+  });
+
+  it.each([
+    ["удалён в рабочей папке", false],
+    ["удалён в индексе", true],
+  ])("[SH-080 AC-4] файл задачи %s остаётся удалённым, перемотка проходит", (_name, staged) => {
+    const repos = makeRepos();
+    const { work } = repos;
+    moveOriginMain(repos);
+    if (staged) git(work, "rm", "-q", TASK_B);
+    else rmSync(join(work, TASK_B));
+    const before = git(work, "status", "--porcelain", "--", TASK_B);
+
+    const { code } = runSync(work, "--apply");
+
+    expect(code).toBe(0);
+    expect(git(work, "rev-parse", "HEAD")).toBe(git(work, "rev-parse", "origin/main"));
+    expect(existsSync(join(work, TASK_B))).toBe(false);
+    expect(git(work, "status", "--porcelain", "--", TASK_B)).toBe(before);
+  });
+});
+
 describe("pnpm sync: история не перематывается", () => {
   it("[SH-080 AC-5] при расходящейся истории не делает слияние и сообщает об этом", () => {
     const repos = makeRepos();

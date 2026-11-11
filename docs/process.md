@@ -194,7 +194,7 @@ flowchart LR
 6. Когда владелец пишет, что готов слить, сессия задачи ставит Done последним коммитом в ветке и пушит (шаг 9). Агент статусы Review и Done не меняет.
 7. Закрытие цикла. Владелец сливает PR сам и пишет об этом сессии задачи. Сессия проверяет и только потом убирает за собой:
    1. PR слит: `gh pr view --json state,mergedAt` показывает `MERGED`.
-   2. В `main` у задачи статус Done: `git fetch origin main`, затем `git grep -n "^status:" origin/main -- "backlog/tasks/sh-NNN*"` печатает `status: Done`.
+   2. В `main` у задачи статус Done: `git fetch origin main`, затем `git grep -n "^status:" origin/main -- "backlog/tasks/sh-NNN -*"` печатает `status: Done` (пробел перед `-*` обязателен: без него SH-08 совпал бы с SH-080 и SH-081).
    3. Обе проверки прошли: сессия переводит свой worktree на `origin/main` без ветки (`git switch --detach origin/main`), удаляет свою локальную ветку (`git branch -D sh-NNN-slug`: после squash `-d` ветку не удалит) и архивирует себя (`archive_session` с `self`; приложение спросит подтверждение).
    4. Любая проверка не прошла или `git switch` отказал из-за незакоммиченных файлов: сессия ничего не удаляет, не архивирует себя и сообщает владельцу, что именно не так.
 

@@ -6,21 +6,10 @@
 //    Ветки без upstream, main и ветки, открытые в любом worktree, скрипт пропускает.
 // Без флага скрипт только печатает список. С флагом --delete удаляет ветки из списка (`git branch -D`)
 // и печатает SHA каждой: ветку с несохранёнными коммитами можно вернуть командой `git branch <имя> <SHA>`.
-import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
+import { git } from "./lib/git.mjs";
 
 const PROTECTED = new Set(["main"]);
-
-export function git(args) {
-  const result = spawnSync("git", args, { encoding: "utf8" });
-  if (result.error) throw result.error;
-  if (result.status !== 0) {
-    process.stderr.write(result.stderr);
-    process.stderr.write(`Команда git ${args.join(" ")} завершилась с кодом ${result.status}\n`);
-    process.exit(result.status ?? 1);
-  }
-  return result.stdout;
-}
 
 // Ветки, открытые в любом worktree клона, включая основную папку.
 function branchesInWorktrees() {
