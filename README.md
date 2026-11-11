@@ -101,12 +101,13 @@ Git-хуки (`lefthook.yml`):
 `git branch --merged` такие ветки не находит. Их находит скрипт `scripts/git-prune.mjs`:
 
 ```bash
-pnpm git:prune            # git fetch --prune и список веток, удалённых на GitHub; ничего не удаляет
-pnpm git:prune --delete   # удаляет ветки из этого списка и печатает каждую удалённую
+pnpm git:prune            # git fetch --all --prune и список веток, удалённых на GitHub; ничего не удаляет
+pnpm git:prune --delete   # удаляет ветки из этого списка и печатает каждую удалённую с её SHA
 ```
 
 В список не попадают `main`, ветки без upstream (их не пушили на GitHub) и ветки, открытые в любом worktree.
 Ветку из worktree скрипт удалит, когда вы уберёте worktree: `git worktree remove <папка>`.
+Если ветку удалили по ошибке, верните её по SHA из вывода скрипта: `git branch <имя> <SHA>`.
 
 ### Границы слоёв
 

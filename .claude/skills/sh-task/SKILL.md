@@ -48,6 +48,6 @@ description: Чеклисты старта и финиша задачи Studhub 
 
 1. После `/code-review`: `backlog task edit SH-NNN -s Review`, коммит `chore(backlog): SH-NNN на ревью`, пуш, PR.
 2. Владелец смотрит дифф и пишет, что готов слить. До этого Done не ставь.
-3. `backlog task edit SH-NNN -s Done --check-dod 2 --check-dod 5 --check-dod 6`: пункты DoD «CI зелёный», «ревью» и «PR слит». Последний коммит ветки: `chore(backlog): SH-NNN в Done`. Пуш.
+3. `backlog task edit SH-NNN -s Done --check-dod 2 --check-dod 5 --check-dod 6`: пункты DoD «CI зелёный», «ревью» и «PR слит». Номера взяты из `backlog/config.yml`; перед отметкой сверь их с выводом `node scripts/task.mjs SH-NNN`. Последний коммит ветки: `chore(backlog): SH-NNN в Done`. Пуш.
 4. Владелец сливает PR через squash.
-5. Владелец просит правки после коммита Done: `backlog task edit SH-NNN -s Review`, коммит, правки, пуш. Done ставь снова, только когда владелец опять напишет, что готов слить.
+5. Владелец просит правки после коммита Done: `backlog task edit SH-NNN -s Review --uncheck-dod 2 --uncheck-dod 5 --uncheck-dod 6` (снять отметки, поставленные вместе с Done), коммит, правки, пуш. Done ставь снова, только когда владелец опять напишет, что готов слить.
