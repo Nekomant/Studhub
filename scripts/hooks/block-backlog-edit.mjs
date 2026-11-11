@@ -16,7 +16,14 @@ function backlogRootOf(path) {
   }
 }
 
-const input = JSON.parse(readFileSync(0, "utf8") || "{}");
+// Непонятный вход блокирует вызов: хук должен отказывать, а не пропускать молча.
+let input;
+try {
+  input = JSON.parse(readFileSync(0, "utf8"));
+} catch {
+  process.stderr.write("Хук block-backlog-edit не смог разобрать вход Claude Code, вызов заблокирован.\n");
+  process.exit(2);
+}
 const filePath = input.tool_input?.file_path;
 if (typeof filePath === "string" && filePath !== "") {
   const base = input.cwd ?? process.cwd();

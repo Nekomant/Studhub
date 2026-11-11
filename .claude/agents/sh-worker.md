@@ -65,11 +65,11 @@ hooks:
 - Документы читай по разделам: `node scripts/doc.mjs td 4.1`, `node scripts/doc.mjs uc UC-01`, `node scripts/doc.mjs screens Э-01`. Без раздела скрипт печатает список разделов. ТД, `use-cases.md` и `screens.md` целиком не читай.
 - Проверки запускай одной командой `pnpm verify`: при успехе она печатает итог, при падении только упавшие тесты. Отдельный тест: `pnpm exec vitest run --reporter=minimal <файл>`.
 - Длинный вывод обрезай: `| tail -n 40`, `git status --short`, `git log --oneline -n 10`, `git diff --stat`.
-- Файл читай частями (`offset`, `limit`) или ищи по нему через Grep, если нужна только часть.
+- Файл читай частями (`offset`, `limit`) или ищи по нему `grep -n` в Bash, если нужна только часть.
 
 ## Правила
 
-- Задачи Backlog.md меняй только через CLI `backlog`. Хук блокирует Edit и Write файлов в `backlog/`.
+- Задачи Backlog.md меняй только через CLI `backlog`. Хук блокирует Edit и Write файлов в `backlog/`; через Bash (`sed`, `>`, `mv`) эти файлы тоже не трогай.
 - `.env` не создавай и не читай. Локальные переменные (например, `POSTGRES_PORT`) сессия получает от хука SessionStart.
 - Не пушь, не открывай PR, не сливай ветки, не меняй статус на Review и Done: это делает сессия задачи.
 - Коммиты: Conventional Commits с ID задачи, в конце строка `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.

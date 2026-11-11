@@ -87,6 +87,11 @@ describe("[SH-077 AC-2] хук sh-worker не даёт править backlog/",
     }
   });
 
+  it("хук блокирует вызов, если не смог разобрать вход", () => {
+    const result = runNode(hook, [], { input: "не json" });
+    expect(result.status).toBe(2);
+  });
+
   it.each([
     ["Edit", "docs/process.md"],
     ["Write", "scripts/backlog-report.mjs"],
@@ -267,6 +272,19 @@ describe("[SH-077 AC-8] сессия в новом worktree видит лока�
       encoding: "utf8",
     });
     expect(seen.trim()).toBe("5434|postgres://u:p@localhost:5434/db");
+  });
+
+  it("хук снимает кавычки при комментарии после значения и не передаёт NODE_ENV", () => {
+    const { main, worktree, env } = repoWithWorktree("session-env-quotes");
+    writeFileSync(join(main, ".env"), 'NODE_ENV=development\nS3_BUCKET="studhub files" # бакет\nPLAIN=a # b\n');
+    const envFile = join(workDir, "claude-env-quotes.sh");
+    writeFileSync(envFile, "");
+    runNode(hook, [], { cwd: worktree, env: { ...env, CLAUDE_ENV_FILE: envFile }, input: "{}" });
+    const seen = execFileSync("bash", ["-c", `source "${envFile}"; echo "\${NODE_ENV-нет}|$S3_BUCKET|$PLAIN"`], {
+      encoding: "utf8",
+      env: { PATH: process.env.PATH },
+    });
+    expect(seen.trim()).toBe("нет|studhub files|a");
   });
 
   it("[SH-077 AC-8] без .env хук ничего не пишет и не падает", () => {

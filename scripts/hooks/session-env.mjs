@@ -17,24 +17,29 @@ try {
   // Без входа хук работает от текущей папки.
 }
 
-const git = (...args) => spawnSync("git", ["-C", cwd, ...args], { encoding: "utf8" });
-const top = git("rev-parse", "--show-toplevel");
-const common = git("rev-parse", "--path-format=absolute", "--git-common-dir");
-if (top.status !== 0 || common.status !== 0) process.exit(0);
-const worktreeRoot = top.stdout.trim();
-const mainRoot = dirname(common.stdout.trim());
+const paths = spawnSync(
+  "git",
+  ["-C", cwd, "rev-parse", "--show-toplevel", "--path-format=absolute", "--git-common-dir"],
+  { encoding: "utf8" },
+);
+if (paths.status !== 0) process.exit(0);
+const [worktreeRoot, commonDir] = paths.stdout.trim().split("\n");
+const mainRoot = dirname(commonDir);
 
-// Простой разбор `.env`: KEY=VALUE, комментарии и пустые строки пропускаются, кавычки вокруг значения снимаются.
+// NODE_ENV не передаём: из `.env` он попал бы во все команды сессии, включая сборку для prod.
+const skipped = new Set(["NODE_ENV"]);
+
+// Простой разбор `.env`: KEY=VALUE, комментарии и пустые строки пропускаются.
+// Значение в кавычках берётся до закрывающей кавычки, комментарий после неё отбрасывается.
 function parse(path) {
   const vars = {};
   if (!existsSync(path)) return vars;
   for (const line of readFileSync(path, "utf8").split(/\r?\n/)) {
     const match = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/.exec(line);
     if (!match) continue;
-    let value = match[2];
-    if (/^(["']).*\1$/.test(value)) value = value.slice(1, -1);
-    else value = value.replace(/\s+#.*$/, "");
-    vars[match[1]] = value;
+    if (skipped.has(match[1])) continue;
+    const quoted = /^(["'])(.*?)\1(\s+#.*)?$/.exec(match[2]);
+    vars[match[1]] = quoted ? quoted[2] : match[2].replace(/\s+#.*$/, "");
   }
   return vars;
 }

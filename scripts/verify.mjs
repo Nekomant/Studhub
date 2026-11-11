@@ -5,7 +5,9 @@
 // Флаг --no-check пропускает шаг 1. Остальные аргументы уходят в vitest, например `-- --project tools`.
 import { spawnSync } from "node:child_process";
 
-const args = process.argv.slice(2).filter((arg) => arg !== "--");
+// pnpm передаёт `--` из `pnpm verify -- …` как есть: убираем только первый.
+const args = process.argv.slice(2);
+if (args[0] === "--") args.shift();
 const skipCheck = args.includes("--no-check");
 const vitestArgs = args.filter((arg) => arg !== "--no-check");
 const env = { ...process.env, FORCE_COLOR: "0", NO_COLOR: "1" };
