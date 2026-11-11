@@ -41,12 +41,18 @@ function setup() {
   const worktree = join(workDir, `clone-${counter}-wt`);
   git(workDir, "init", "-q", "--bare", "-b", "main", origin);
   git(workDir, "clone", "-q", origin, clone);
+  // Старый git (до 2.31) при клоне пустого репозитория создаёт master, поэтому main задаём явно.
+  git(clone, "switch", "-q", "-c", "main");
   git(clone, "commit", "-q", "--allow-empty", "-m", "init");
   git(clone, "push", "-q", "-u", "origin", "main");
   for (const branch of ["gone", "in-worktree", "alive"]) {
     git(clone, "branch", branch);
     git(clone, "push", "-q", "-u", "origin", branch);
   }
+  // Свой коммит в gone: SHA удалённой ветки отличается от остальных.
+  git(clone, "switch", "-q", "gone");
+  git(clone, "commit", "-q", "--allow-empty", "-m", "work");
+  git(clone, "push", "-q");
   git(clone, "branch", "local-only");
   git(clone, "switch", "-q", "alive");
   git(clone, "worktree", "add", "-q", worktree, "in-worktree");
@@ -107,9 +113,10 @@ describe("[SH-078 AC-4] удаление только с флагом", () => {
 
   it("[SH-078 AC-4] с --delete удаляется только ветка из списка, и скрипт печатает её имя", () => {
     const { clone } = setup();
+    const sha = git(clone, "rev-parse", "--short", "gone").trim();
     const result = prune(clone, "--delete");
     expect(result.status).toBe(0);
     expect(localBranches(clone)).toEqual(["alive", "in-worktree", "local-only", "main"]);
-    expect(result.output).toMatch(/Удалена.*gone/);
+    expect(result.output).toContain(`Удалена ветка gone (было ${sha})`);
   });
 });

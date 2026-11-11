@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 // `pnpm git:prune`: находит локальные ветки, чья ветка на GitHub удалена после слияния PR.
 // Обычный `git branch --merged` их не видит: после squash коммиты ветки не входят в историю main.
-// 1. `git fetch --prune` убирает удалённые ветки из origin/*.
+// 1. `git fetch --all --prune` убирает ветки, удалённые на GitHub, из origin/* (и из других remote).
 // 2. Ветка попадает в список, если её upstream помечен [gone].
 //    Ветки без upstream, main и ветки, открытые в любом worktree, скрипт пропускает.
-// Без флага скрипт только печатает список. С флагом --delete удаляет ветки из списка (`git branch -D`).
+// Без флага скрипт только печатает список. С флагом --delete удаляет ветки из списка (`git branch -D`)
+// и печатает SHA каждой: ветку с несохранёнными коммитами можно вернуть командой `git branch <имя> <SHA>`.
 import { spawnSync } from "node:child_process";
 
 const PROTECTED = new Set(["main"]);
@@ -32,12 +33,13 @@ function branchesInWorktrees() {
 
 function goneBranches() {
   const inWorktrees = branchesInWorktrees();
-  return git(["for-each-ref", "--format=%(refname:lstrip=2)%09%(upstream:track,nobracket)", "refs/heads"])
+  const format = "--format=%(refname:lstrip=2)%09%(upstream:track,nobracket)%09%(objectname:short)";
+  return git(["for-each-ref", format, "refs/heads"])
     .split("\n")
     .map((line) => line.split("\t"))
     .filter(([name, track]) => name && track === "gone")
-    .map(([name]) => name)
-    .filter((name) => !PROTECTED.has(name) && !inWorktrees.has(name));
+    .map(([name, , sha]) => ({ name, sha }))
+    .filter(({ name }) => !PROTECTED.has(name) && !inWorktrees.has(name));
 }
 
 const args = process.argv.slice(2).filter((arg) => arg !== "--");
@@ -48,17 +50,20 @@ if (unknown.length > 0) {
 }
 const shouldDelete = args.includes("--delete");
 
-git(["fetch", "--prune", "--quiet"]);
+git(["fetch", "--all", "--prune", "--quiet"]);
 const branches = goneBranches();
 
 if (branches.length === 0) {
   process.stdout.write("Локальных веток, удалённых на GitHub, нет.\n");
 } else if (!shouldDelete) {
-  process.stdout.write(`Ветки удалены на GitHub, локально остались:\n${branches.map((b) => `  ${b}\n`).join("")}`);
+  process.stdout.write(
+    `Ветки удалены на GitHub, локально остались:\n${branches.map(({ name }) => `  ${name}\n`).join("")}`,
+  );
   process.stdout.write("Удалить их: pnpm git:prune --delete\n");
 } else {
-  for (const branch of branches) {
-    git(["branch", "-D", "--quiet", branch]);
-    process.stdout.write(`Удалена ветка ${branch}\n`);
+  for (const { name, sha } of branches) {
+    git(["branch", "-D", "--quiet", name]);
+    process.stdout.write(`Удалена ветка ${name} (было ${sha})\n`);
   }
+  process.stdout.write("Вернуть ветку: git branch <имя> <SHA>\n");
 }
