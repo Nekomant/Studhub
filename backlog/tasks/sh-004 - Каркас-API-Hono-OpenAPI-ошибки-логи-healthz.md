@@ -5,7 +5,7 @@ status: Review
 assignee:
   - '@claude'
 created_date: '2026-11-11T08:58:00Z'
-updated_date: '2026-11-11T15:13:00Z'
+updated_date: '2026-11-11T18:46:00Z'
 labels:
   - backend
 milestone: m-0
@@ -89,6 +89,8 @@ ordinal: 1000
 Решения по ходу: healthz на корне (/healthz, как в ТД §6.2 и мониторинге), остальные маршруты под /api/v1. Для проверки БД — драйвер pg (node-postgres), SH-005 подключит Drizzle поверх него; ADR не нужен, решение не меняет ТД/ADR.
 
 Проверено: pnpm check (Biome, tsc) и pnpm test зелёные на чистом клоне ветки (127 тестов, 9 файлов). Живой прогон: API на Postgres 18 (docker compose, порт 5433): GET /healthz → 200 {"status":"ok","db":"ok"}; при неверном порту БД → 503 problem+json code db_unavailable без деталей подключения. Заголовки CSP и X-Content-Type-Options видны в живом ответе. Ревью /code-review (medium): исправлен нигде не вызываемый close(); замечание про Error в логах (стек с текстом ошибки проходит без маски) не исправлено — нужно решение владельца: маскировать текст ошибки или сохранить стек для отладки. Не сделано: DoD #2 (CI появится в SH-009), DoD #4 (эндпоинтов кабинета пока нет), DoD #6 (слияние). Решения: healthz на корне, остальное под /api/v1; драйвер pg для проверки БД (Drizzle придёт в SH-005, пул там будет отдельным); @hono/node-server для запуска; PORT читается в main.ts, а не в схеме конфигурации (чтобы не трогать .env.example, см. ниже); biome.json исключает generated openapi.json.
+
+Известное ограничение: маскировка по имени поля не защищает текст Error.message, stack и msg (проверено пробой). Критерий AC-4 выполнен для полей. Исправление вынесено в баг SH-074.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
