@@ -1,10 +1,10 @@
 ---
 id: SH-004
 title: 'Каркас API: Hono, OpenAPI, ошибки, логи, healthz'
-status: Backlog
+status: Ready
 assignee: []
 created_date: '2026-11-11T08:58:00Z'
-updated_date: '2026-11-11T09:15:00Z'
+updated_date: '2026-11-11T15:04:00Z'
 labels:
   - backend
 milestone: m-0
@@ -12,7 +12,7 @@ dependencies:
   - SH-003
 priority: high
 type: chore
-ordinal: 4000
+ordinal: 1000
 ---
 
 ## Description
