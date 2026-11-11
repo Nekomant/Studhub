@@ -21,14 +21,21 @@
                   "properties": {
                     "status": {
                       "type": "string",
-                      "enum": ["ok"]
+                      "enum": [
+                        "ok"
+                      ]
                     },
                     "db": {
                       "type": "string",
-                      "enum": ["ok"]
+                      "enum": [
+                        "ok"
+                      ]
                     }
                   },
-                  "required": ["status", "db"]
+                  "required": [
+                    "status",
+                    "db"
+                  ]
                 }
               }
             }
@@ -64,11 +71,19 @@
                             "type": "string"
                           }
                         },
-                        "required": ["path", "message"]
+                        "required": [
+                          "path",
+                          "message"
+                        ]
                       }
                     }
                   },
-                  "required": ["type", "title", "status", "code"]
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code"
+                  ]
                 }
               }
             }
