@@ -1,10 +1,11 @@
 ---
 id: SH-003
 title: 'Локальное окружение: Postgres 18 и MinIO'
-status: Ready
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-11T08:58:00Z'
-updated_date: '2026-11-11T13:28:00Z'
+updated_date: '2026-11-11T13:30:00Z'
 labels:
   - infra
   - db
@@ -66,3 +67,21 @@ ordinal: 1000
 - [ ] #6 PR слит в main через squash, изменения выложены в prod (после появления деплоя)
 - [ ] #7 В заметках задачи записаны оценка и фактическое время, решения по ходу работы и итоговое резюме
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. docker-compose.yml: postgres:18 и minio, одноразовый mc-контейнер создаёт бакет, именованные тома (AC-1).
+2. apps/api/src/platform/config/: схема переменных на zod, функция загрузки. При ошибке печатает список проблем и завершает процесс. main.ts вызывает её при старте (AC-2).
+3. Юнит-тесты схемы: отсутствующие и неверные переменные (AC-2).
+4. .env.example со всеми переменными, комментарии, без секретов; тест сверяет ключи с схемой (AC-3).
+5. Скрипты pnpm db:up, db:down, db:reset-test. Тестовая БД отдельная, reset пересоздаёт только её (AC-4).
+6. README: как поднять окружение.
+Документы: ТД §3 и §12 не меняются, если сохраняем выбранные образы; при отклонении решения — спросить владельца.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Оценка: 4 ч
+<!-- SECTION:NOTES:END -->
