@@ -749,9 +749,12 @@ studentshub/
 ├─ infra/                 docker-compose.prod.yml, Caddyfile, wal-g, скрипты алертов
 │                         и проверки восстановления, deploy.sh
 ├─ docs/                  product-concept.md, technical-design.md, use-cases.md, screens.md, design-system.md, adr/
+├─ scripts/               служебные скрипты: проверка сообщения коммита, покрытия критериев
+├─ tools/                 тесты инструментов, фикстуры нарушений границ (boundary-fixtures/)
 ├─ docker-compose.yml     локальная разработка (Postgres 18, MinIO)
 ├─ Dockerfile             один образ: собранная SPA + api
 ├─ biome.json, pnpm-workspace.yaml, .nvmrc (24), lefthook.yml
+├─ tsconfig.base.json (strict), tsconfig.json (ссылки на пакеты), vitest.config.ts (проекты)
 ```
 
 **Правила границ:**
@@ -761,7 +764,7 @@ studentshub/
 4. Модули общаются друг с другом через публичный `index.ts`.
 5. Прямой доступ к `db` есть только в `*/db/`.
 
-Правила 2–5 проверяет Biome `noRestrictedImports` с настройками по путям.
+Правила 1, 2, 4 и 5 проверяет Biome `noRestrictedImports` с настройками по путям (`overrides` в `biome.json`). Правило 3 Biome проверяет частично: в `http/` запрещены Drizzle и драйверы БД. Тест `tools/tests/boundaries.test.ts` проверяет, что Biome находит каждое нарушение из фикстур `tools/boundary-fixtures/`.
 
 ## 14. Тестирование
 
