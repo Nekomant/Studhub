@@ -9,6 +9,7 @@
   "dependencies": {
     "@hono/node-server": "^2.1.6",
     "@hono/zod-openapi": "^1.6.3",
+    "drizzle-orm": "^0.45.4",
     "hono": "^4.13.17",
     "pg": "^8.23.1",
     "pino": "^10.4.0",
@@ -16,6 +17,7 @@
   },
   "devDependencies": {
     "@scalar/openapi-parser": "^0.29.21",
-    "@types/pg": "^8.23.1"
+    "@types/pg": "^8.23.1",
+    "drizzle-kit": "^0.31.11"
   }
 }

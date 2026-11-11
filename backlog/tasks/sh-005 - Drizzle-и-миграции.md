@@ -1,10 +1,11 @@
 ---
 id: SH-005
 title: Drizzle и миграции
-status: Ready
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-11T08:58:00Z'
-updated_date: '2026-11-11T19:29:00Z'
+updated_date: '2026-11-11T19:31:00Z'
 labels:
   - backend
   - db
@@ -67,3 +68,24 @@ ordinal: 5000
 - [ ] #6 PR слит в main через squash, изменения выложены в prod (после появления деплоя)
 - [ ] #7 В заметках задачи записаны оценка и фактическое время, решения по ходу работы и итоговое резюме
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Подключить drizzle-orm и drizzle-kit в apps/api; в pnpm-workspace.yaml разрешить esbuild: false (pnpm 12 без этого не ставит зависимости).
+2. Красные тесты с метками [SH-005 AC-n]: apps/api/src/platform/db/migrations.test.ts (AC-1, AC-2, AC-3, на TEST_DATABASE_URL) и apps/api/src/modules/readme.test.ts (AC-4). Отдельный коммит.
+3. drizzle.config.ts: схема ./src/modules/*/db/schema.ts, выход ./drizzle, PostgreSQL, URL из DATABASE_URL.
+4. Первая миграция drizzle/0000: CREATE EXTENSION IF NOT EXISTS pg_trgm (через drizzle-kit generate --custom).
+5. platform/db: пул и runMigrations (drizzle-orm migrator). main.ts: аргумент migrate применяет миграции после проверки конфига и завершает процесс.
+6. Скрипты в apps/api: db:generate (drizzle-kit generate), db:migrate (drizzle-kit migrate), db:check (scripts/db-check.mjs: drizzle-kit check и генерация во временной копии drizzle/; если появился новый файл, код 1).
+7. apps/api/src/modules/README.md: соглашения ТД §4.1 и пример таблицы арендатора в комментарии.
+8. Корневой README: команды db:migrate и db:check. ТД и ADR-0002 не меняются: решение то же.
+9. Проверки: pnpm check, pnpm test, двойной запуск миграций, db:check на изменённой схеме (фикстура), запуск migrate в запущенном приложении.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Оценка: 6 ч
+Решение по ходу: "собранное приложение" в AC-3 понимаем как запуск исходников (node src/main.ts migrate): сборки в проекте пока нет, Dockerfile появится в SH-011. Это не меняет продуктового или архитектурного решения; отмечу в итоге.
+<!-- SECTION:NOTES:END -->
