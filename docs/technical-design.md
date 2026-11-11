@@ -205,7 +205,7 @@ sequenceDiagram
 | Сервер | Node 24 LTS, Hono, `@hono/zod-openapi` | Минимальный фреймворк. Спецификация OpenAPI генерируется из zod-схем |
 | БД | PostgreSQL 18, Drizzle ORM + drizzle-kit | Типы из схемы в TS, миграции — SQL-файлы на ревью. `uuidv7()` встроен в PostgreSQL 18 |
 | Фоновые задачи | pg-boss | Очередь и cron на Postgres, без Redis |
-| Файлы | S3 (`@aws-sdk/client-s3`, presigned URL), `sharp` для миниатюр | Стандартный S3 API. Локально — MinIO |
+| Файлы | S3 (`@aws-sdk/client-s3`, presigned URL), `sharp` для миниатюр | Стандартный S3 API. Локально — Garage ([ADR-0008](adr/0008-garage-local-s3.md)) |
 | Вход | Яндекс ID, VK ID: OAuth 2.0 + PKCE, своя реализация (+ `arctic` или прямые запросы) | 406-ФЗ запрещает зарубежных провайдеров. Сессии в своей таблице, логика переносима |
 | Контракт клиента | `openapi-typescript` + `openapi-fetch` | Клиент не зависит от кода сервера |
 | Логи | pino (JSON в stdout) | Маскировка ПДн |
@@ -652,8 +652,7 @@ generate(slot, until):
 
 **Фоновые задачи:**
 - записи `pending` старше суток удаляются;
-- удаление материала ставит задачу удаления объекта в S3;
-- в бакете версионирование с удалением старых версий через 30 дней.
+- удаление материала ставит задачу удаления объекта в S3. Удаление необратимо: перед ним пользователь подтверждает действие, при необходимости файл загружают заново ([ADR-0008](adr/0008-garage-local-s3.md)).
 
 **Ссылки:** провайдер определяется по домену. Для YouTube название и обложка берутся через oEmbed. Других запросов к чужим URL нет (защита от SSRF).
 
@@ -676,7 +675,7 @@ generate(slot, until):
 ## 12. Инфраструктура и эксплуатация
 
 **Окружения:**
-- локальное — `docker compose` с Postgres 18 и MinIO, приложение через `pnpm dev`;
+- локальное — `docker compose` с Postgres 18 и Garage (S3 API), приложение через `pnpm dev`;
 - prod;
 - staging появится к стадии 2.
 
@@ -751,7 +750,7 @@ studentshub/
 ├─ docs/                  product-concept.md, technical-design.md, use-cases.md, screens.md, design-system.md, adr/
 ├─ scripts/               служебные скрипты: проверка сообщения коммита, покрытия критериев
 ├─ tools/                 тесты инструментов, фикстуры нарушений границ (boundary-fixtures/)
-├─ docker-compose.yml     локальная разработка (Postgres 18, MinIO)
+├─ docker-compose.yml     локальная разработка (Postgres 18, Garage)
 ├─ Dockerfile             один образ: собранная SPA + api
 ├─ biome.json, pnpm-workspace.yaml, .nvmrc (24), lefthook.yml
 ├─ tsconfig.base.json (strict), tsconfig.json (ссылки на пакеты), vitest.config.ts (проекты)
@@ -823,3 +822,4 @@ studentshub/
 - [0005 — Уроки хранятся строками на горизонт, версии слотов](adr/0005-materialized-lessons.md)
 - [0006 — Вход только через Яндекс ID и VK ID](adr/0006-auth-yandex-vk.md)
 - [0007 — VPS + Docker Compose + wal-g вместо управляемых сервисов](adr/0007-vps-hosting.md)
+- [0008 — Garage вместо MinIO локально, без версионирования файлов](adr/0008-garage-local-s3.md)
