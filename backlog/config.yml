@@ -1,0 +1,24 @@
+project_name: "StudentsHub"
+default_status: "Backlog"
+statuses: ["Backlog", "Ready", "In Progress", "Review", "Done"]
+labels: ["infra", "backend", "frontend", "db", "docs", "legal", "spike", "auth", "workspaces", "students", "schedule", "billing", "context", "materials", "messages", "reports", "analytics", "compliance", "landing", "pwa"]
+definition_of_done:
+  - "Каждый критерий приёмки покрыт тестом, в названии теста есть ID критерия (AC-n), все тесты зелёные"
+  - "CI зелёный: Biome, tsc, Vitest, API-тесты, E2E, миграции и OpenAPI-клиент актуальны (с момента, когда эти проверки появились в CI)"
+  - "Документы (use-cases, screens, technical-design, ADR) обновлены в этом же PR, если поведение или решения изменились"
+  - "Новые эндпоинты покрыты тестом изоляции (чужой кабинет → 404); в логах и product_event нет ПДн; деньги только в minor units"
+  - "Пройдено ревью (/code-review и просмотр диффа владельцем), замечания закрыты"
+  - "PR слит в main через squash, изменения выложены в prod (после появления деплоя)"
+  - "В заметках задачи записаны оценка и фактическое время, решения по ходу работы и итоговое резюме"
+date_format: yyyy-mm-dd
+max_column_width: 20
+auto_open_browser: true
+default_port: 6420
+remote_operations: false
+auto_commit: false
+filesystem_only: false
+zero_padded_ids: 3
+bypass_git_hooks: false
+check_active_branches: true
+active_branch_days: 30
+task_prefix: "sh"
