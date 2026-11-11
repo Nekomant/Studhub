@@ -1,10 +1,11 @@
 ---
 id: SH-080
 title: 'Разгрузить штаб: спецификации через PR, закрытие сессией задачи, sync и status'
-status: Ready
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-11T23:12:00Z'
-updated_date: '2026-11-11T23:27:00Z'
+updated_date: '2026-11-11T23:30:00Z'
 labels:
   - infra
   - docs
@@ -85,3 +86,22 @@ API и БД не меняются. Новые команды `pnpm sync` и `pnp
 - [ ] #6 PR слит в main через squash, изменения выложены в prod (после появления деплоя)
 - [ ] #7 В заметках задачи записаны оценка и фактическое время, решения по ходу работы и итоговое резюме
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Тесты tools/tests/sync.test.ts (AC-4, AC-5) и status.test.ts (AC-6) на временных git-репозиториях, красные.
+2. scripts/sync.mjs: fetch, отставание, файлы задач backlog/ совпадающие с origin/main, ветки [gone] (общий код с git-prune через экспорт), флаг --apply: сброс совпадающих файлов, ff-only, удаление показанных веток.
+3. scripts/status.mjs: задачи Ready/In Progress/Review из backlog/tasks, gh pr list с состоянием CI, git worktree list; без gh сообщает про PR.
+4. package.json: pnpm sync, pnpm status.
+5. docs/process.md §3.1, §5, §7, §7.1, §9: спецификации через PR, старт от main, закрытие сессией задачи, шаблон брифа.
+6. Скилл sh-task: старт от main, шаг закрытия цикла.
+7. README и CLAUDE.md: команды.
+8. pnpm verify, отметить критерии 1-6 (AC-7 после слияния).
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Оценка: 3 ч
+<!-- SECTION:NOTES:END -->
