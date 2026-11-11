@@ -1,10 +1,11 @@
 ---
 id: SH-078
 title: Статус Done в PR задачи и очистка локальных веток
-status: Ready
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-11T21:55:00Z'
-updated_date: '2026-11-11T21:57:00Z'
+updated_date: '2026-11-11T21:59:00Z'
 labels:
   - infra
   - docs
@@ -77,3 +78,19 @@ API и БД не меняются. Новая команда очистки ве
 - [ ] #6 PR слит в main через squash, изменения выложены в prod (после появления деплоя)
 - [ ] #7 В заметках задачи записаны оценка и фактическое время, решения по ходу работы и итоговое резюме
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Красные тесты AC-3, AC-4 в tools/tests/git-prune.test.ts: временный bare-репозиторий как origin и клон с ветками: ушедшая с GitHub, открытая в worktree, без upstream, живая и main. Скрипт запускается процессом в клоне.
+2. Скрипт scripts/git-prune.mjs и команда pnpm git:prune: git fetch --prune, ветки с upstream [gone] из git for-each-ref, без main и веток из git worktree list --porcelain. Без флага печатает список, с --delete удаляет git branch -D и печатает удалённые.
+3. docs/process.md §3.1, §7 (шаг 8-9 и схема), §7.1 (шаг 5): Done ставит сессия последним коммитом ветки после слов владельца «готов слить»; правки после Done возвращают Review. §9 и README: команда pnpm git:prune.
+4. Скилл sh-task: чеклист финиша про Review и Done.
+5. pnpm verify, отметка критериев AC-1, AC-3..5; AC-2 закрывает сессия задачи коммитом Done.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Оценка: 3 ч
+<!-- SECTION:NOTES:END -->
