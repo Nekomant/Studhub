@@ -24,6 +24,13 @@ describe("конфигурация окружения", () => {
     expect(config.NODE_ENV).toBe("development");
   });
 
+  it("[SH-006 AC-4] APP_MODE: test включает тестовый режим, пустое значение и отсутствие выключают, другое значение даёт ошибку", () => {
+    expect(loadConfig({ ...validEnv, APP_MODE: "test" }).APP_MODE).toBe("test");
+    expect(loadConfig({ ...validEnv, APP_MODE: "" }).APP_MODE).toBeUndefined();
+    expect(loadConfig(validEnv).APP_MODE).toBeUndefined();
+    expect(() => loadConfig({ ...validEnv, APP_MODE: "staging" })).toThrow(/APP_MODE/);
+  });
+
   it("[SH-003 AC-2] отсутствующие обязательные переменные перечислены по имени", () => {
     const { DATABASE_URL: _omit, S3_BUCKET: _omit2, ...rest } = validEnv;
     const result = configSchema.safeParse(rest);

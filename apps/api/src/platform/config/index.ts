@@ -9,6 +9,8 @@ const postgresUrl = z
 
 export const configSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  // `test` включает тестовые маршруты (`/__test/clock`). В prod переменную не задают.
+  APP_MODE: z.enum(["test"]).optional(),
   DATABASE_URL: postgresUrl,
   TEST_DATABASE_URL: postgresUrl.optional(),
   S3_ENDPOINT: z.url(),
