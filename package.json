@@ -21,6 +21,7 @@
     "db:reset-test": "node --env-file-if-exists=.env scripts/db-reset-test.mjs",
     "git:prune": "node scripts/git-prune.mjs",
     "sync": "node scripts/sync.mjs",
+    "close-task": "node scripts/close-task.mjs",
     "status": "node scripts/status.mjs"
   },
   "devDependencies": {

@@ -59,6 +59,43 @@ function resetFile(file) {
 
 const count = (range) => Number(git(["rev-list", "--count", range]).trim());
 
+// Где локальный main относительно origin/main (после `git fetch`). Общая логика для `pnpm sync` и `pnpm close-task`.
+// notes: строки для вывода `pnpm sync`; canPull: перемотка возможна; pullFailed: история разошлась.
+export function mainState() {
+  const branch = git(["branch", "--show-current"]).trim();
+  const behind = count(`HEAD..${TARGET}`);
+  const ahead = count(`${TARGET}..HEAD`);
+  const notes = [`main: ${branch ? `ветка ${branch}` : "HEAD отсоединён"}`];
+  let canPull = false;
+  let pullFailed = false;
+  let problem = null;
+
+  if (branch !== "main") {
+    notes.push(`  Основная папка не на main: main не подтягиваю.`);
+    problem = "основная папка не на main";
+  } else if (behind > 0 && ahead > 0) {
+    notes.push(
+      `  История разошлась с ${TARGET} (впереди ${ahead}, позади ${behind}): нельзя перемотать, слияние не делаю.`,
+    );
+    notes.push(`  Разберитесь вручную: git log --oneline --graph main ${TARGET}`);
+    pullFailed = true;
+    problem = "история main разошлась с origin/main, нельзя перемотать";
+  } else if (behind > 0) {
+    notes.push(`  Основная папка отстаёт от ${TARGET} на ${behind} коммитов.`);
+    canPull = true;
+  } else {
+    notes.push(ahead > 0 ? `  Впереди ${TARGET} на ${ahead} коммитов, подтягивать нечего.` : `  Актуален.`);
+    canPull = true;
+  }
+  return { branch, behind, ahead, canPull, pullFailed, problem, notes };
+}
+
+// Перематывает текущий main до origin/main (--ff-only). Ничего не сливает и не переписывает.
+export function fastForwardMain() {
+  const merged = tryGit(["merge", "--ff-only", "--quiet", TARGET]);
+  return { ok: merged.ok, stderr: merged.stderr, sha: merged.ok ? git(["rev-parse", "--short", "HEAD"]).trim() : null };
+}
+
 function main() {
   const args = process.argv.slice(2).filter((arg) => arg !== "--");
   const unknown = args.filter((arg) => arg !== "--apply");
@@ -76,26 +113,10 @@ function main() {
     process.exit(1);
   }
 
-  const branch = git(["branch", "--show-current"]).trim();
-  const behind = count(`HEAD..${TARGET}`);
-  const ahead = count(`${TARGET}..HEAD`);
-  let canPull = false;
-  let pullFailed = false;
-
-  say(`main: ${branch ? `ветка ${branch}` : "HEAD отсоединён"}`);
-  if (branch !== "main") {
-    say(`  Основная папка не на main: main не подтягиваю.`);
-  } else if (behind > 0 && ahead > 0) {
-    say(`  История разошлась с ${TARGET} (впереди ${ahead}, позади ${behind}): нельзя перемотать, слияние не делаю.`);
-    say(`  Разберитесь вручную: git log --oneline --graph main ${TARGET}`);
-    pullFailed = true;
-  } else if (behind > 0) {
-    say(`  Основная папка отстаёт от ${TARGET} на ${behind} коммитов.`);
-    canPull = true;
-  } else {
-    say(ahead > 0 ? `  Впереди ${TARGET} на ${ahead} коммитов, подтягивать нечего.` : `  Актуален.`);
-    canPull = true;
-  }
+  const state = mainState();
+  const { behind, canPull, notes } = state;
+  let { pullFailed } = state;
+  for (const note of notes) say(note);
 
   const dirty = dirtyFiles();
   const taskFiles = dirty.filter(({ path }) => path.startsWith(TASKS_DIR));
@@ -127,8 +148,8 @@ function main() {
       say(`Сброшен файл ${file.path}`);
     }
     if (behind > 0) {
-      const merged = tryGit(["merge", "--ff-only", "--quiet", TARGET]);
-      if (merged.ok) say(`main подтянут до ${git(["rev-parse", "--short", "HEAD"]).trim()}`);
+      const merged = fastForwardMain();
+      if (merged.ok) say(`main подтянут до ${merged.sha}`);
       else {
         say(`Перемотать main не удалось: ${merged.stderr}`);
         pullFailed = true;
