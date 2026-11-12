@@ -72,6 +72,8 @@ const violations: Record<string, string[]> = {
     "packages/client-core/src/api-relative.bad.ts",
     "packages/client-core/src/screens/api-type-only.bad.ts",
     "tests/api/src/api-package.bad.ts",
+    "tests/api/src/api-relative.bad.ts",
+    "tests/api/src/support/api-relative-deep.bad.ts",
     "tests/e2e/src/api-relative.bad.ts",
   ],
   "импорт внутренностей чужого модуля в обход index.ts": [
@@ -106,6 +108,18 @@ describe("[SH-002 AC-2] Biome находит нарушения границ с�
 
   it.each(allowed)("[SH-002 AC-2] разрешённые импорты в %s не дают ошибок", (file) => {
     expect(restrictedImports(file)).toEqual([]);
+  });
+
+  it.each([
+    "tests/api/src/api-package.bad.ts",
+    "tests/api/src/api-relative.bad.ts",
+    "tests/api/src/support/api-relative-deep.bad.ts",
+  ])("[SH-006 AC-5] tests/api не импортирует apps/api: %s даёт ошибку Biome", (file) => {
+    expect(restrictedImports(file)).toHaveLength(1);
+  });
+
+  it("[SH-006 AC-5] tests/api может импортировать client-core", () => {
+    expect(restrictedImports("tests/api/src/client-core.ok.ts")).toEqual([]);
   });
 
   it("[SH-002 AC-2] каждая фикстура-нарушение описана в тесте", () => {

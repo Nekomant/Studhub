@@ -4,5 +4,9 @@
   "type": "module",
   "dependencies": {
     "@studhub/client-core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.23.1",
+    "pg": "^8.23.1"
   }
 }
