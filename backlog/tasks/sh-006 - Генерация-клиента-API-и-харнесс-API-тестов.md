@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-11T08:58:00Z'
-updated_date: '2026-11-12T22:50:00Z'
+updated_date: '2026-11-12T22:51:00Z'
 labels:
   - backend
   - frontend
@@ -97,6 +97,8 @@ CI — задача «CI в GitHub Actions».
 Решение: в CI шаг pnpm test пропускает проект API-тестов (--project '!@studhub/tests-api'), чтобы они не шли дважды; pnpm verify и локальный pnpm test запускают все проекты.
 Решение: из app.test.ts в tests/api перенесены healthz 200 и 503, 404 и CSP (503 проверяется приложением с недоступной БД). В app.test.ts остались тесты через extraRoutes (валидация, 500): им нужен код сервера.
 Факт: около 1,5 ч
+
+Проверка sh-verifier: все 6 критериев подтверждены тестами, тесты после красного коммита 100e543 не ослаблены (в config.test.ts добавлен один тест AC-4). pnpm test:api хук не пропустил, tests/api прогнаны через vitest --root tests/api, 16 тестов зелёные.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
