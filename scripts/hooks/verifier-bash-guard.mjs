@@ -170,8 +170,15 @@ function checkGit(args) {
 
 function checkPnpm(args) {
   const [first, ...rest] = args;
-  if (first === "test" || first === "ac:check") return hasUpdateFlag(rest) ? "флаг обновления снимков" : null;
-  if (first === "exec" && rest[0] === "vitest") return checkVitest(rest.slice(1));
+  if (first === "test" || first === "ac:check") {
+    if (hasUpdateFlag(rest)) return "флаг обновления снимков";
+    return hasOutputOption(rest) ? `pnpm ${first} --output пишет в файл` : null;
+  }
+  if (first === "exec" && rest[0] === "vitest") {
+    return rest[1] === "run"
+      ? checkVitest(rest.slice(2))
+      : "pnpm exec vitest: разрешён только run (без него запускается watch)";
+  }
   if (first === "--filter" && rest.length === 2 && rest[1] === "test") return null;
   return "pnpm: разрешены test, ac:check, exec vitest, --filter <пакет> test";
 }
