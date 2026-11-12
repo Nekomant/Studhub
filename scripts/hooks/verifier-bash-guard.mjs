@@ -1,7 +1,10 @@
 #!/usr/bin/env node
-// Хук PreToolUse агента sh-verifier на Bash. Агент ничего не меняет в рабочем дереве, ветках и истории git,
-// поэтому хук пропускает с кодом 0 только команды чтения и запуск тестов. Всё остальное блокируется кодом 2:
-// Claude Code отменяет вызов и показывает агенту текст из stderr.
+// Хук PreToolUse агентов sh-verifier и sh-spec-critic на Bash. Агент ничего не меняет в рабочем дереве, ветках
+// и истории git, поэтому хук пропускает с кодом 0 только команды чтения и запуск тестов. Всё остальное блокируется
+// кодом 2: Claude Code отменяет вызов и показывает агенту текст из stderr.
+// Режим задаёт флаг `--mode`: без него и при `--mode verifier` хук работает для sh-verifier. При `--mode spec-critic`
+// (sh-spec-critic) запуск тестов (`pnpm`, `vitest`, `check-ac-coverage.mjs`) блокируется, а из скриптов
+// разрешены только `scripts/task.mjs` и `scripts/doc.mjs`. Неизвестный режим блокирует любой вызов.
 // Это белый список: команда вне списка блокируется, даже если безобидна. Составные команды
 // (`&&`, `||`, `;`, `|`, `&`, перевод строки) проверяются по частям. Подстановки `$(…)`, обратные кавычки,
 // `<(…)`, heredoc и перенаправление вывода в файл блокируются. Разрешены только `2>&1`, `>&2` и `>/dev/null`.
@@ -66,7 +69,17 @@ const GIT_READ = new Set([
   "for-each-ref",
 ]);
 
-const NODE_SCRIPTS = new Set(["scripts/task.mjs", "scripts/doc.mjs", "scripts/check-ac-coverage.mjs"]);
+const NODE_SCRIPTS = {
+  verifier: new Set(["scripts/task.mjs", "scripts/doc.mjs", "scripts/check-ac-coverage.mjs"]),
+  "spec-critic": new Set(["scripts/task.mjs", "scripts/doc.mjs"]),
+};
+const AGENTS = { verifier: "sh-verifier", "spec-critic": "sh-spec-critic" };
+const ALLOWED_TEXT = {
+  verifier:
+    "разрешены команды чтения (git diff, git log, git show, cat, grep, ls, head, tail, wc, find без -exec) и запуск тестов (pnpm test, pnpm exec vitest run)",
+  "spec-critic":
+    "разрешены команды чтения (git log, git show, cat, grep, ls, head, tail, wc, find без -exec), node scripts/task.mjs и node scripts/doc.mjs; запуск тестов (pnpm, vitest) заблокирован",
+};
 const FIND_WRITE_FLAGS = new Set([
   "-delete",
   "-exec",
@@ -338,7 +351,7 @@ function checkRipgrep(args) {
 // GIT_EXTERNAL_DIFF, GIT_PAGER, BASH_ENV, LD_PRELOAD, NODE_OPTIONS, PATH и подобные заблокированы.
 const SAFE_ASSIGNMENTS = new Set(["CI", "NO_COLOR", "FORCE_COLOR", "LANG", "LC_ALL", "TZ", "COLUMNS"]);
 
-function checkSegment(words) {
+function checkSegment(words, mode) {
   let index = 0;
   while (index < words.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[index])) {
     const variable = words[index].slice(0, words[index].indexOf("="));
@@ -348,13 +361,14 @@ function checkSegment(words) {
   const [name, ...args] = words.slice(index);
   if (!name) return "команда состоит только из присваиваний";
   if (name === "git") return checkGit(args);
-  if (name === "pnpm") return checkPnpm(args);
-  if (name === "vitest") return args[0] === "run" ? checkVitest(args.slice(1)) : "vitest: разрешён только run";
+  if (name === "pnpm") return mode === "spec-critic" ? "pnpm: тесты критику не нужны" : checkPnpm(args);
+  if (name === "vitest") {
+    if (mode === "spec-critic") return "vitest: тесты критику не нужны";
+    return args[0] === "run" ? checkVitest(args.slice(1)) : "vitest: разрешён только run";
+  }
   if (name === "node") {
     const script = args[0]?.replace(/^\.\//, "");
-    return NODE_SCRIPTS.has(script)
-      ? null
-      : "node: разрешены scripts/task.mjs, scripts/doc.mjs, scripts/check-ac-coverage.mjs";
+    return NODE_SCRIPTS[mode].has(script) ? null : `node: разрешены ${[...NODE_SCRIPTS[mode]].join(", ")}`;
   }
   if (!READ_COMMANDS.has(name)) return `команда ${name} не входит в список чтения`;
   if (name === "find" && args.some((arg) => FIND_WRITE_FLAGS.has(arg))) return "find с -delete, -exec и записью";
@@ -375,19 +389,35 @@ function checkSegment(words) {
 }
 
 // null, если команда разрешена, иначе причина отказа.
-export function checkCommand(command) {
+export function checkCommand(command, mode = "verifier") {
+  if (!Object.hasOwn(NODE_SCRIPTS, mode)) return `неизвестный режим хука ${mode}`;
   if (typeof command !== "string" || command.trim() === "") return "пустая команда";
   const { segments, reason } = tokenize(command);
   if (reason) return reason;
   if (segments.length === 0) return "пустая команда";
   for (const words of segments) {
-    const problem = checkSegment(words);
+    const problem = checkSegment(words, mode);
     if (problem) return problem;
   }
   return null;
 }
 
+// Режим из аргументов: без аргументов "verifier", иначе только `--mode <режим>`. Остальное (в том числе
+// `--mode=…`) возвращает null: хук блокирует вызов, потому что не знает, для какого агента работает.
+export function parseMode(args) {
+  if (args.length === 0) return "verifier";
+  const mode = args.length === 2 && args[0] === "--mode" ? args[1] : null;
+  return mode !== null && Object.hasOwn(NODE_SCRIPTS, mode) ? mode : null;
+}
+
 function main() {
+  const mode = parseMode(process.argv.slice(2));
+  if (mode === null) {
+    process.stderr.write(
+      "Хук verifier-bash-guard получил неизвестные аргументы: разрешены `--mode verifier` и `--mode spec-critic`. Вызов заблокирован.\n",
+    );
+    process.exit(2);
+  }
   // Непонятный вход блокирует вызов: хук должен отказывать, а не пропускать молча.
   let input;
   try {
@@ -396,11 +426,9 @@ function main() {
     process.stderr.write("Хук verifier-bash-guard не смог разобрать вход Claude Code, вызов заблокирован.\n");
     process.exit(2);
   }
-  const problem = checkCommand(input?.tool_input?.command);
+  const problem = checkCommand(input?.tool_input?.command, mode);
   if (problem) {
-    process.stderr.write(
-      `sh-verifier ничего не меняет: разрешены команды чтения (git diff, git log, git show, cat, grep, ls, head, tail, wc, find без -exec) и запуск тестов (pnpm test, pnpm exec vitest run). Заблокировано: ${problem}.\n`,
-    );
+    process.stderr.write(`${AGENTS[mode]} ничего не меняет: ${ALLOWED_TEXT[mode]}. Заблокировано: ${problem}.\n`);
     process.exit(2);
   }
 }
