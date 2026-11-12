@@ -10,6 +10,17 @@ import type { Jobs } from "../jobs/index.ts";
 const setClockBody = z.object({ now: z.iso.datetime().nullable() });
 const jobBody = z.object({ data: z.record(z.string(), z.unknown()).optional() });
 
+// Пустое тело допустимо и значит `{}`. Невалидный JSON и неверная форма тела дают ошибку валидации.
+async function readJobBody(request: Request) {
+  const text = await request.text();
+  if (text.trim() === "") return jobBody.safeParse({});
+  try {
+    return jobBody.safeParse(JSON.parse(text));
+  } catch {
+    return jobBody.safeParse(undefined);
+  }
+}
+
 export function testRoutes(deps: { clock: ControllableClock; jobs?: Jobs | undefined }) {
   const app = new Hono();
 
@@ -35,7 +46,7 @@ export function testRoutes(deps: { clock: ControllableClock; jobs?: Jobs | undef
     // `run` выполняет задачу синхронно, без очереди и расписания; ошибку задачи отдаёт в теле, статус 200.
     // `send` ставит задачу в очередь pg-boss: её выполнит воркер по обычной политике повторов.
     app.post("/jobs/:name/:action{run|send}", async (c) => {
-      const body = jobBody.safeParse(await c.req.json().catch(() => ({})));
+      const body = await readJobBody(c.req.raw);
       if (!body.success) {
         return problemResponse(c, { status: 400, code: "validation_failed", title: "Ошибка валидации запроса" });
       }

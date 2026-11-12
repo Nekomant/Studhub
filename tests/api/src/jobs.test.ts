@@ -122,4 +122,23 @@ describe("фоновые задачи pg-boss", () => {
     expect(response.status).toBe(404);
     expect(await response.json()).toMatchObject({ code: "job_not_found" });
   });
+
+  it("битый JSON в теле тестового маршрута задач даёт 400 validation_failed", async () => {
+    for (const action of ["run", "send"]) {
+      const response = await app.request(`/__test/jobs/platform.heartbeat/${action}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{broken",
+      });
+      expect(response.status).toBe(400);
+      expect(response.headers.get("content-type")).toMatch(/^application\/problem\+json/);
+      expect(await response.json()).toMatchObject({ code: "validation_failed" });
+    }
+  });
+
+  it("пустое тело тестового маршрута задач допустимо", async () => {
+    const response = await app.request("/__test/jobs/platform.heartbeat/run", { method: "POST" });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ outcome: "completed" });
+  });
 });

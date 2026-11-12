@@ -5,8 +5,9 @@ import { createHealthRepository } from "./modules/health/index.ts";
 import { createControllableClock } from "./platform/clock/index.ts";
 import { runStartupConfigCheck } from "./platform/config/index.ts";
 import { heartbeatJob } from "./platform/jobs/heartbeat.ts";
-import { createJobs } from "./platform/jobs/index.ts";
+import { createJobs, startJobsWithRetry } from "./platform/jobs/index.ts";
 import { createLogger } from "./platform/logger/index.ts";
+import { gracefulShutdown } from "./platform/shutdown.ts";
 import { defineTestJobs } from "./platform/testing/jobs.ts";
 
 // Точка входа: проверяем окружение, поднимаем HTTP-сервер и фоновые задачи pg-boss в одном процессе.
@@ -45,24 +46,32 @@ if (config) {
     logger.info({ port: info.port }, "API запущен");
   });
 
-  // Ошибка запуска pg-boss не останавливает HTTP: /healthz покажет недоступную БД, а ошибка попадёт в лог.
-  jobs.start().then(
-    () => logger.info("фоновые задачи запущены"),
-    (error: unknown) =>
-      logger.error({ errorType: error instanceof Error ? error.name : "UnknownError" }, "pg-boss не запустился"),
-  );
+  // Ошибка запуска pg-boss не останавливает HTTP: ошибка попадает в лог, запуск повторяется с растущей паузой.
+  const startup = new AbortController();
+  const starting = startJobsWithRetry(jobs, { logger, signal: startup.signal });
 
-  // Остановка: перестаём принимать запросы, даём активным задачам завершиться, закрываем соединения.
+  // Остановка: перестаём принимать запросы, ждём запросы в работе и активные задачи, закрываем соединения.
   let stopping = false;
   const shutdown = () => {
     if (stopping) return;
     stopping = true;
-    server.close();
-    if ("closeIdleConnections" in server) server.closeIdleConnections();
-    jobs
-      .stop()
-      .catch(() => logger.error("pg-boss не остановился штатно"))
-      .finally(() => process.exit(0));
+    gracefulShutdown(
+      {
+        closeServer: (done) => {
+          server.close(done);
+          if ("closeIdleConnections" in server) server.closeIdleConnections();
+        },
+        forceCloseServer: () => {
+          if ("closeAllConnections" in server) server.closeAllConnections();
+        },
+        stopJobs: async () => {
+          startup.abort();
+          await starting;
+          await jobs.stop();
+        },
+      },
+      { logger, httpTimeoutMs: 10_000, jobsTimeoutMs: 10_000 },
+    ).then((code) => process.exit(code));
   };
   process.once("SIGTERM", shutdown);
   process.once("SIGINT", shutdown);

@@ -66,6 +66,55 @@ function describeError(error: unknown): { errorType: string; errorCode?: string 
   return typeof code === "string" ? { errorType: error.name, errorCode: code } : { errorType: error.name };
 }
 
+const START_RETRY_INITIAL_MS = 1_000;
+const START_RETRY_MAX_MS = 60_000;
+
+// Пауза, которую можно прервать сигналом остановки.
+function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal.aborted) return resolve();
+    const timer = setTimeout(done, ms);
+    function done() {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", done);
+      resolve();
+    }
+    signal.addEventListener("abort", done);
+  });
+}
+
+// Запускает pg-boss и при ошибке повторяет запуск, пока процесс жив: пауза растёт вдвое до потолка.
+// Ошибки только логируются: HTTP при этом работает. Возвращается после успешного запуска или по сигналу остановки.
+export async function startJobsWithRetry(
+  jobs: Jobs,
+  options: {
+    logger: Logger;
+    signal: AbortSignal;
+    initialDelayMs?: number;
+    maxDelayMs?: number;
+    sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
+  },
+): Promise<void> {
+  const { logger, signal } = options;
+  const sleep = options.sleep ?? abortableSleep;
+  let delay = options.initialDelayMs ?? START_RETRY_INITIAL_MS;
+  const maxDelay = options.maxDelayMs ?? START_RETRY_MAX_MS;
+  for (let attempt = 1; !signal.aborted; attempt++) {
+    try {
+      await jobs.start();
+      logger.info({ attempt, running: jobs.isRunning() }, "фоновые задачи запущены");
+      return;
+    } catch (error) {
+      logger.error(
+        { attempt, running: jobs.isRunning(), retryInMs: delay, ...describeError(error) },
+        "pg-boss не запустился, повторю",
+      );
+      await sleep(delay, signal);
+      delay = Math.min(delay * 2, maxDelay);
+    }
+  }
+}
+
 export function createJobs(options: { databaseUrl: string; logger: Logger }): Jobs {
   const { logger } = options;
   const definitions = new Map<string, AnyDefinition>();
@@ -119,8 +168,13 @@ export function createJobs(options: { databaseUrl: string; logger: Logger }): Jo
       const instance = new PgBoss({ connectionString: options.databaseUrl, schema: JOBS_SCHEMA, max: 4 });
       // Ошибки самого pg-boss (потеря соединения и т. п.) только логируем: процесс и HTTP продолжают работать.
       instance.on("error", (error) => logger.error(describeError(error), "ошибка pg-boss"));
-      await instance.start();
       try {
+        await instance.start();
+        // Расписания задач, которых нет в коде (удалили или переименовали), снимаем: иначе pg-boss ставит их в очередь без воркера.
+        const scheduled = new Set([...definitions.values()].filter((item) => item.schedule).map((item) => item.name));
+        for (const schedule of await instance.getSchedules()) {
+          if (!scheduled.has(schedule.name)) await instance.unschedule(schedule.name, schedule.key);
+        }
         for (const definition of definitions.values()) {
           const retry = retryOf(definition);
           const queueOptions = {
@@ -128,9 +182,10 @@ export function createJobs(options: { databaseUrl: string; logger: Logger }): Jo
             retryDelay: retry.delaySeconds,
             retryBackoff: retry.backoff ?? false,
           };
-          await instance.createQueue(definition.name);
-          // Политика повторов из кода главнее той, что осталась в очереди от прошлой версии.
-          await instance.updateQueue(definition.name, queueOptions);
+          // Новая очередь создаётся сразу с политикой повторов. У существующей политика из кода главнее той,
+          // что осталась от прошлой версии.
+          if (await instance.getQueue(definition.name)) await instance.updateQueue(definition.name, queueOptions);
+          else await instance.createQueue(definition.name, queueOptions);
           if (definition.schedule) await instance.schedule(definition.name, definition.schedule, {});
           await instance.work<object>(definition.name, async ([job]) => {
             if (!job) return;
@@ -138,7 +193,8 @@ export function createJobs(options: { databaseUrl: string; logger: Logger }): Jo
           });
         }
       } catch (error) {
-        await instance.stop({ graceful: false, timeout: STOP_TIMEOUT_MS });
+        // Незапущенный экземпляр закрываем, иначе он держит соединения. Ошибку закрытия не показываем: главная ошибка выше.
+        await instance.stop({ graceful: false, timeout: STOP_TIMEOUT_MS }).catch(() => {});
         throw error;
       }
       boss = instance;
