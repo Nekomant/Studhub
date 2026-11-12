@@ -25,12 +25,12 @@ const milestoneNumber = (milestone) => {
   return match ? Number(match[1]) : null;
 };
 
-// Пункты нумерованного списка «1. …» с продолжением на следующих строках.
+// Пункты нумерованного списка «1. …» с продолжением на следующих строках. Вложенные списки не входят в пункт.
 function listItems(text) {
   const items = [];
   for (const line of text.split("\n")) {
     if (/^\d+\.\s/.test(line)) items.push(line.replace(/^\d+\.\s+/, ""));
-    else if (items.length > 0 && /^\s+\S/.test(line)) items[items.length - 1] += ` ${line.trim()}`;
+    else if (items.length > 0 && /^\s+[^\s\-*]/.test(line)) items[items.length - 1] += ` ${line.trim()}`;
   }
   return items;
 }
@@ -113,7 +113,9 @@ function main() {
   const rootFlag = args.indexOf("--root");
   const root =
     rootFlag === -1 ? resolve(fileURLToPath(new URL("..", import.meta.url))) : resolve(args[rootFlag + 1] ?? ".");
-  const ids = args.filter((arg, i) => !arg.startsWith("--") && i !== rootFlag + 1).map((arg) => arg.toUpperCase());
+  const ids = args
+    .filter((arg, i) => !arg.startsWith("--") && (rootFlag === -1 || i !== rootFlag + 1))
+    .map((arg) => arg.toUpperCase());
 
   const tasks = readTasks(root);
   const byId = new Map(tasks.map((task) => [task.id, task]));

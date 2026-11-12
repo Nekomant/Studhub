@@ -3,6 +3,8 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import YAML from "yaml";
 
+const DESCRIPTION_END = "<!-- SECTION:DESCRIPTION:END -->";
+
 // Текст между двумя маркерами. Пустая строка, если одного из маркеров нет.
 export function section(text, begin, end) {
   const from = text.indexOf(begin);
@@ -10,8 +12,10 @@ export function section(text, begin, end) {
   return from === -1 || to === -1 ? "" : text.slice(from + begin.length, to);
 }
 
+// Критерии ищем после описания: в тексте описания маркеры могут встретиться как пример.
 export function parseCriteria(text) {
-  return section(text, "<!-- AC:BEGIN -->", "<!-- AC:END -->")
+  const afterDescription = text.indexOf(DESCRIPTION_END);
+  return section(afterDescription === -1 ? text : text.slice(afterDescription), "<!-- AC:BEGIN -->", "<!-- AC:END -->")
     .split("\n")
     .map((line) => /^- \[[ xX]\] #(\d+)\s+(.*)$/.exec(line.trim()))
     .filter(Boolean)
@@ -85,7 +89,7 @@ export function parseSections(description) {
 export function parseTask(text) {
   const front = /^---\n([\s\S]*?)\n---/.exec(text);
   const meta = front ? YAML.parse(front[1]) : {};
-  const description = section(text, "<!-- SECTION:DESCRIPTION:BEGIN -->", "<!-- SECTION:DESCRIPTION:END -->");
+  const description = section(text, "<!-- SECTION:DESCRIPTION:BEGIN -->", DESCRIPTION_END);
   return {
     id: String(meta.id ?? "").toUpperCase(),
     status: String(meta.status ?? ""),
