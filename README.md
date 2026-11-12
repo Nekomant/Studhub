@@ -35,7 +35,11 @@ SPA пока пустая, её запуск добавит задача «Ка�
 pnpm --filter @studhub/api start    # читает .env из корня; слушает PORT (по умолчанию 3000)
 curl http://localhost:3000/healthz      # {"status":"ok","db":"ok"}; 503 в формате problem+json, если БД недоступна
 pnpm gen:openapi                        # пишет apps/api/openapi.json (OpenAPI 3.1 из zod-схем маршрутов)
+pnpm gen:client                         # пишет типы клиента packages/client-core/src/api/schema.ts из openapi.json
 ```
+
+Клиент `createApiClient(baseUrl)` из `@studhub/client-core` работает на `openapi-fetch` и этих типах. После изменения маршрутов
+выполните `pnpm gen:openapi`, затем `pnpm gen:client` и закоммитьте оба файла.
 
 Маршруты кабинета и прочие API живут под `/api/v1`. Ошибки отдаются как `application/problem+json` с полем `code`.
 Логи пишутся в JSON (pino) в stdout. Поля с ПДн и секреты (имена, телефоны, email, заметки, токены, cookie, Authorization) маскируются.
@@ -87,6 +91,8 @@ pnpm --filter @studhub/api start migrate  # то же самое через пр
 | ------------- | ------------------------------------------------------------------------------------------------ |
 | `pnpm check`  | Biome проверяет формат и линт (`biome ci`), TypeScript проверяет типы во всех пакетах (`tsc -b`) |
 | `pnpm test`   | Vitest запускает тесты всех проектов из `vitest.config.ts`                                       |
+| `pnpm test:api` | Запускает только API-тесты (`tests/api`): приложение на тестовой БД, клиент из OpenAPI. Нужен `pnpm db:up` |
+| `pnpm gen:client:check` | Падает, если `packages/client-core/src/api/schema.ts` не совпадает с генерацией из `openapi.json` |
 | `pnpm format` | Biome исправляет формат и порядок импортов                                                       |
 | `pnpm db:check` | Падает, если схема Drizzle изменена без миграции                                               |
 | `pnpm ac:check` | Падает, если у задачи в Review или Done критерий без метки `[SH-NNN AC-n]` в тестах (`docs/process.md` §8.2) |
@@ -94,7 +100,7 @@ pnpm --filter @studhub/api start migrate  # то же самое через пр
 | `pnpm verify` | `pnpm check` и тесты с коротким выводом                                                          |
 
 Перед коммитом и пушем запускайте `pnpm verify`. CI (`.github/workflows/ci.yml`) на каждый PR и push в `main`
-запускает `pnpm check`, `pnpm db:check`, `pnpm ac:check` и `pnpm test` на Postgres 18. На PR он ещё запускает `pnpm spec:check --changed`.
+запускает `pnpm check`, `pnpm db:check`, `pnpm gen:client:check`, `pnpm ac:check`, `pnpm test:api` и `pnpm test` на Postgres 18. На PR он ещё запускает `pnpm spec:check --changed`.
 
 Git-хуки (`lefthook.yml`):
 
