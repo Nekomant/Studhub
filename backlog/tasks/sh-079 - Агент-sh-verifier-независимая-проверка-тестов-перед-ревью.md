@@ -1,11 +1,11 @@
 ---
 id: SH-079
 title: 'Агент sh-verifier: независимая проверка тестов перед ревью'
-status: In Progress
+status: Review
 assignee:
   - '@claude'
 created_date: '2026-11-11T23:00:00Z'
-updated_date: '2026-11-12T02:06:00Z'
+updated_date: '2026-11-12T02:21:00Z'
 labels:
   - infra
   - docs
