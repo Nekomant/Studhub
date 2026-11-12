@@ -1,7 +1,7 @@
 ---
 id: SH-090
 title: Агент-критик спецификации sh-spec-critic
-status: Review
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-12T12:41:00Z'
