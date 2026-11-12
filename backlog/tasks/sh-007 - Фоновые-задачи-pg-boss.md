@@ -1,10 +1,10 @@
 ---
 id: SH-007
 title: 'Фоновые задачи: pg-boss'
-status: Backlog
+status: Ready
 assignee: []
 created_date: '2026-11-11T08:58:00Z'
-updated_date: '2026-11-11T09:15:00Z'
+updated_date: '2026-11-12T23:17:00Z'
 labels:
   - backend
 milestone: m-0
@@ -12,7 +12,7 @@ dependencies:
   - SH-006
 priority: medium
 type: chore
-ordinal: 7000
+ordinal: 1000
 ---
 
 ## Description
