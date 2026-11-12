@@ -1,9 +1,10 @@
 ---
 id: SH-073
 title: Токены дизайн-системы и шрифты в packages/ui-tokens
-status: Backlog
+status: Ready
 assignee: []
 created_date: '2026-11-11T10:21:00Z'
+updated_date: '2026-11-12T13:49:00Z'
 labels:
   - frontend
 milestone: m-0
