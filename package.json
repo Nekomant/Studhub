@@ -9,6 +9,7 @@
   "scripts": {
     "prepare": "lefthook install",
     "postinstall": "node scripts/setup-git.mjs",
+    "dev": "node scripts/dev.mjs",
     "check": "biome ci . && tsc -b",
     "gen:openapi": "pnpm --filter @studhub/api gen:openapi",
     "gen:client": "node packages/client-core/scripts/gen-client.mjs",
