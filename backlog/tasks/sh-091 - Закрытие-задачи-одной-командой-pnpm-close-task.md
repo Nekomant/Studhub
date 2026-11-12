@@ -1,9 +1,11 @@
 ---
 id: SH-091
 title: 'Закрытие задачи одной командой: pnpm close-task'
-status: Ready
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-12T16:06:00Z'
+updated_date: '2026-11-12T17:17:00Z'
 labels:
   - infra
   - docs
@@ -86,3 +88,19 @@ API и БД не меняются. Добавляются `scripts/close-task.mj
 - [ ] #6 PR слит в main через squash, изменения выложены в prod (после появления деплоя)
 - [ ] #7 В заметках задачи записаны оценка и фактическое время, решения по ходу работы и итоговое резюме
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Красные тесты tools/tests/close-task.test.ts по AC-1..7 (временные git-репозитории с настоящим origin, подставной gh в PATH); AC-8 проверяется ревью.
+2. scripts/sync.mjs: вынести mainState() и fastForwardMain() без изменения поведения pnpm sync.
+3. scripts/close-task.mjs: fetch, поиск PR через gh, статус из origin/main через git grep, вердикт, --apply (main, worktree, ветка), вывод до 12 строк, коды 0/1/2.
+4. package.json, README.md, docs/process.md §7.1 шаг 7, CLAUDE.md.
+5. pnpm verify, отметка критериев, итог.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Оценка: 3 ч
+<!-- SECTION:NOTES:END -->
