@@ -1,9 +1,11 @@
 ---
 id: SH-079
 title: 'Агент sh-verifier: независимая проверка тестов перед ревью'
-status: Backlog
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-11T23:00:00Z'
+updated_date: '2026-11-12T01:08:00Z'
 labels:
   - infra
   - docs
@@ -87,3 +89,20 @@ API и БД не меняются. Новые файлы: `.claude/agents/sh-ver
 - [ ] #6 PR слит в main через squash, изменения выложены в prod (после появления деплоя)
 - [ ] #7 В заметках задачи записаны оценка и фактическое время, решения по ходу работы и итоговое резюме
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Тесты tools/tests/sh-verifier.test.ts по AC-1, AC-2, AC-3 (красные): frontmatter агента, task.mjs --criteria (formatCriteria), хук scripts/hooks/verifier-bash-guard.mjs.
+2. scripts/task.mjs: режим --criteria (критерии + таблица «План тестов» из описания).
+3. scripts/hooks/verifier-bash-guard.mjs: белый список команд чтения и запуска тестов, остальное код 2.
+4. .claude/agents/sh-verifier.md: tools Read, Bash, Grep, Glob; model sonnet; хук PreToolUse на Bash; порядок проверки и формат отчёта ПРОВЕРКА SH-NNN.
+5. docs/process.md §7.1 шаг 5 и CLAUDE.md: вызов sh-verifier после ГОТОВО и до /code-review, передача замечаний sh-worker, повторная проверка, краткий отчёт в заметки.
+6. Живые проверки AC-4, AC-5 (нужен вызов агента из сессии задачи), результаты и токены в заметки.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Оценка: 3 ч
+<!-- SECTION:NOTES:END -->
