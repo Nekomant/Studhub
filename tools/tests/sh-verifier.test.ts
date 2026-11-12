@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { delimiter, join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import YAML from "yaml";
 
@@ -107,19 +107,50 @@ describe("[SH-079 AC-2] node scripts/task.mjs --criteria", () => {
     expect(text).not.toContain("ОПИСАНИЕ-ЗАДАЧИ");
   });
 
-  const hasBacklogCli = spawnSync("backlog", ["--version"], { encoding: "utf8" }).status === 0;
+  // Настоящего backlog в CI нет, поэтому вместо него подставлен скрипт-заглушка с тем же ответом `task view --json`.
+  // Тест всегда выполняется и проходит весь путь scripts/task.mjs: разбор аргументов, вызов backlog, вывод.
+  it("[SH-079 AC-2] флаг --criteria в scripts/task.mjs даёт только критерии и план тестов", () => {
+    const dir = mkdtempSync(join(tmpdir(), "sh-verifier-backlog-"));
+    try {
+      const stub = join(dir, "backlog");
+      writeFileSync(
+        stub,
+        `#!${process.execPath}\nconst args = process.argv.slice(2).join(" ");\n` +
+          `if (args !== "task view SH-901 --json") { console.error("неожиданные аргументы: " + args); process.exit(3); }\n` +
+          `process.stdout.write(${JSON.stringify(JSON.stringify({ task }))});\n`,
+      );
+      chmodSync(stub, 0o755);
+      const env = { ...process.env, PATH: `${dir}${delimiter}${process.env.PATH ?? ""}` };
+      const run = (...args: string[]) =>
+        spawnSync(process.execPath, [join(repoRoot, "scripts/task.mjs"), "SH-901", ...args], {
+          encoding: "utf8",
+          cwd: repoRoot,
+          env,
+        });
 
-  it.skipIf(!hasBacklogCli)("[SH-079 AC-2] для SH-079 флаг --criteria даёт только критерии и план тестов", () => {
-    const result = spawnSync(process.execPath, [join(repoRoot, "scripts/task.mjs"), "SH-079", "--criteria"], {
-      encoding: "utf8",
-      cwd: repoRoot,
-    });
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain("#1 Субагент");
-    expect(result.stdout).toContain("План тестов");
-    expect(result.stdout).toContain("| AC | Уровень | Тест |");
-    for (const hidden of ["Что нужно сделать", "Зачем", "Не входит", "Definition of Done", "Статус:"]) {
-      expect(result.stdout).not.toContain(hidden);
+      const result = run("--criteria");
+      expect(result.stderr).toBe("");
+      expect(result.status).toBe(0);
+      expect(result.stdout).toMatch(/\[x\] #1 КРИТЕРИЙ-ОДИН/);
+      expect(result.stdout).toContain("| AC | Уровень | Тест |");
+      expect(result.stdout).toContain("| 2 | Ручная | ТЕСТ-ВТОРОГО |");
+      for (const hidden of [
+        "ОПИСАНИЕ-ЗАДАЧИ",
+        "ЗАЧЕМ-ЗАДАЧА",
+        "ПЛАН-РАБОТЫ",
+        "ЗАМЕТКИ-ХОДА",
+        "ИТОГ-ЗАДАЧИ",
+        "ПУНКТ-DOD",
+      ]) {
+        expect(result.stdout).not.toContain(hidden);
+      }
+
+      // Без флага печатается вся задача: заглушка действительно подставлена и флаг что-то меняет.
+      const full = run();
+      expect(full.status).toBe(0);
+      expect(full.stdout).toContain("ОПИСАНИЕ-ЗАДАЧИ");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 
