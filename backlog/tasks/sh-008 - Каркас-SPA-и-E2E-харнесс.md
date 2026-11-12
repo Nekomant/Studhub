@@ -1,10 +1,10 @@
 ---
 id: SH-008
 title: Каркас SPA и E2E-харнесс
-status: Backlog
+status: Ready
 assignee: []
 created_date: '2026-11-11T08:58:00Z'
-updated_date: '2026-11-11T22:20:00Z'
+updated_date: '2026-11-12T23:41:00Z'
 labels:
   - frontend
   - pwa
@@ -16,7 +16,7 @@ documentation:
   - docs/design-system.md
 priority: high
 type: chore
-ordinal: 8000
+ordinal: 1000
 ---
 
 ## Description
