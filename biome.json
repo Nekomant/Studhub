@@ -7,7 +7,15 @@
   },
   "files": {
     "ignoreUnknown": true,
-    "includes": ["**", "!**/*.md", "!tools/boundary-fixtures", "!.claude", "!backlog", "!apps/api/openapi.json"]
+    "includes": [
+      "**",
+      "!**/*.md",
+      "!tools/boundary-fixtures",
+      "!.claude",
+      "!backlog",
+      "!apps/api/openapi.json",
+      "!packages/client-core/src/api/schema.ts"
+    ]
   },
   "formatter": {
     "enabled": true,
