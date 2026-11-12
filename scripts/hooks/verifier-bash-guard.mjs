@@ -184,9 +184,17 @@ function checkVitest(args) {
   return null;
 }
 
+// Присваивания перед командой разрешены только для этих переменных: они меняют вывод, но не запускают программы.
+// GIT_EXTERNAL_DIFF, GIT_PAGER, BASH_ENV, LD_PRELOAD, NODE_OPTIONS, PATH и подобные заблокированы.
+const SAFE_ASSIGNMENTS = new Set(["CI", "NO_COLOR", "FORCE_COLOR", "LANG", "LC_ALL", "TZ", "COLUMNS"]);
+
 function checkSegment(words) {
   let index = 0;
-  while (index < words.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[index])) index += 1;
+  while (index < words.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[index])) {
+    const variable = words[index].slice(0, words[index].indexOf("="));
+    if (!SAFE_ASSIGNMENTS.has(variable)) return `присваивание ${variable}= перед командой запрещено`;
+    index += 1;
+  }
   const [name, ...args] = words.slice(index);
   if (!name) return "команда состоит только из присваиваний";
   if (name === "git") return checkGit(args);

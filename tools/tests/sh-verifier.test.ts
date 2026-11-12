@@ -210,6 +210,18 @@ describe("[SH-079 AC-3] хук sh-verifier пропускает только ч�
     "echo `rm file`",
     "ls <(rm file)",
     "FOO=1 rm file",
+    "FOO=1 git status",
+    "GIT_EXTERNAL_DIFF='touch x' git diff origin/main...HEAD",
+    "GIT_EXTERNAL_DIFF=./evil git diff",
+    "GIT_PAGER='sh -c x' git log",
+    "GIT_CONFIG_COUNT=1 git status",
+    "BASH_ENV=./x.sh bash -c true",
+    "BASH_ENV=./x.sh ls",
+    "LD_PRELOAD=./x.so ls",
+    "NODE_OPTIONS=--require=./x.js node scripts/doc.mjs td",
+    "PATH=./bin:$PATH ls",
+    "CI=1 FOO=1 git status",
+    "CI=1 GIT_PAGER=x git log",
     "cd .. && git commit -m x",
     "ls & rm file",
     "ls\nrm file",
@@ -267,7 +279,8 @@ describe("[SH-079 AC-3] хук sh-verifier пропускает только ч�
     "ls missing > /dev/null 2>&1",
     "git status --short && git log --oneline -n 3",
     "git status --short; git log --oneline -n 3",
-    "FOO=1 git status",
+    "CI=1 git status",
+    "NO_COLOR=1 LANG=C git status --short",
   ])("[SH-079 AC-3] пропускает с кодом 0: %s", (command) => {
     const result = call(command);
     expect(result.stderr).toBe("");
