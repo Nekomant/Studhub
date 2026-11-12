@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import YAML from "yaml";
@@ -346,6 +347,56 @@ describe("[SH-079 AC-3] хук sh-verifier пропускает только ч�
   it("[SH-079 AC-3] блокирует вызов, если не смог разобрать вход", () => {
     const result = spawnSync(process.execPath, [join(repoRoot, HOOK)], { encoding: "utf8", input: "не json" });
     expect(result.status).toBe(2);
+  });
+
+  it("[SH-079 AC-3] блокирует вызов при внутреннем сбое хука", () => {
+    const result = spawnSync(
+      process.execPath,
+      ["--import", 'data:text/javascript,String.prototype.trim=()=>{throw new Error("boom")}', join(repoRoot, HOOK)],
+      { encoding: "utf8", input: JSON.stringify({ tool_name: "Bash", tool_input: { command: "ls" } }) },
+    );
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain("упал");
+  });
+
+  it("[SH-079 AC-3] блокирует вызов, если во входе нет объекта", () => {
+    for (const input of ["null", "[]", "42", '"ls"']) {
+      const result = spawnSync(process.execPath, [join(repoRoot, HOOK)], { encoding: "utf8", input });
+      expect(result.status, input).toBe(2);
+    }
+  });
+
+  describe("команда хука из frontmatter агента", () => {
+    const hookCommand = () => {
+      const { meta } = agentFile() as { meta: { hooks: { PreToolUse: { hooks: { command: string }[] }[] } } };
+      const command = meta.hooks.PreToolUse[0]?.hooks[0]?.command;
+      if (!command) throw new Error("в frontmatter нет команды хука");
+      return command;
+    };
+    const run = (projectDir: string, command: string) =>
+      spawnSync("sh", ["-c", hookCommand()], {
+        encoding: "utf8",
+        env: { ...process.env, CLAUDE_PROJECT_DIR: projectDir },
+        input: JSON.stringify({ tool_name: "Bash", tool_input: { command } }),
+      });
+
+    it("[SH-079 AC-3] без скрипта хука в $CLAUDE_PROJECT_DIR итог 2", () => {
+      const empty = mkdtempSync(join(tmpdir(), "sh-verifier-noscript-"));
+      try {
+        expect(run(empty, "ls").status).toBe(2);
+      } finally {
+        rmSync(empty, { recursive: true, force: true });
+      }
+    });
+
+    it("[SH-079 AC-3] без $CLAUDE_PROJECT_DIR итог 2", () => {
+      expect(run("", "ls").status).toBe(2);
+    });
+
+    it("[SH-079 AC-3] со скриптом: чтение пропущено, запись заблокирована", () => {
+      expect(run(repoRoot, "git status --short").status).toBe(0);
+      expect(run(repoRoot, "git commit -m x").status).toBe(2);
+    });
   });
 
   it("[SH-079 AC-3] блокирует Bash без поля command", () => {

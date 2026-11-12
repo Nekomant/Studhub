@@ -389,7 +389,7 @@ function main() {
     process.stderr.write("Хук verifier-bash-guard не смог разобрать вход Claude Code, вызов заблокирован.\n");
     process.exit(2);
   }
-  const problem = checkCommand(input.tool_input?.command);
+  const problem = checkCommand(input?.tool_input?.command);
   if (problem) {
     process.stderr.write(
       `sh-verifier ничего не меняет: разрешены команды чтения (git diff, git log, git show, cat, grep, ls, head, tail, wc, find без -exec) и запуск тестов (pnpm test, pnpm exec vitest run). Заблокировано: ${problem}.\n`,
@@ -398,4 +398,14 @@ function main() {
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
+// Любой внутренний сбой хука блокирует вызов: Claude Code пропускает вызов при любом коде, кроме 2.
+function guarded() {
+  try {
+    main();
+  } catch (error) {
+    process.stderr.write(`Хук verifier-bash-guard упал (${error?.message ?? error}), вызов заблокирован.\n`);
+    process.exit(2);
+  }
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) guarded();

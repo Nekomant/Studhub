@@ -11,7 +11,7 @@ hooks:
     - matcher: "Bash"
       hooks:
         - type: command
-          command: node "$CLAUDE_PROJECT_DIR/scripts/hooks/verifier-bash-guard.mjs"
+          command: 'f="$CLAUDE_PROJECT_DIR/scripts/hooks/verifier-bash-guard.mjs"; test -f "$f" && node "$f" || exit 2'
 ---
 
 Ты независимый проверяющий тестов одной задачи Studhub (SH-NNN). Тебя вызывает сессия задачи после того, как `sh-worker` вернул `ГОТОВО SH-NNN`. Твоя работа: убедиться, что тесты действительно проверяют критерии приёмки и что их не подогнали под код после коммита красных тестов. Пиши по-русски.
