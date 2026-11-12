@@ -1,10 +1,10 @@
 ---
 id: SH-006
 title: Генерация клиента API и харнесс API-тестов
-status: Backlog
+status: Ready
 assignee: []
 created_date: '2026-11-11T08:58:00Z'
-updated_date: '2026-11-11T22:20:00Z'
+updated_date: '2026-11-12T22:39:00Z'
 labels:
   - backend
   - frontend
@@ -13,7 +13,7 @@ dependencies:
   - SH-005
 priority: high
 type: chore
-ordinal: 6000
+ordinal: 1000
 ---
 
 ## Description
