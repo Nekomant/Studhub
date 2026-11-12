@@ -111,6 +111,7 @@ pnpm git:prune --delete   # удаляет ветки из этого списк
 
 В список не попадают `main`, ветки без upstream (их не пушили на GitHub) и ветки, открытые в любом worktree.
 Ветку из worktree скрипт удалит, когда вы уберёте worktree: `git worktree remove <папка>`.
+`--delete` удаляет ветку принудительно (`git branch -D`), в том числе с коммитами, которых нет на GitHub.
 Если ветку удалили по ошибке, верните её по SHA из вывода скрипта: `git branch <имя> <SHA>`.
 
 ### Основная папка: `pnpm sync` и `pnpm status`
