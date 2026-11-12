@@ -35,6 +35,10 @@ type FixtureTask = {
   steps?: string[];
   // Текст в конце раздела «Зачем».
   why?: string;
+  // Текст в конце указанных разделов (подзаголовки, блоки кода).
+  append?: Record<string, string>;
+  // Строка поля dependencies вместо списка, например " SH-902" (скаляр) или " null".
+  rawDependencies?: string;
 };
 
 function taskFile(task: FixtureTask): string {
@@ -53,7 +57,10 @@ function taskFile(task: FixtureTask): string {
     ].join("\n"),
   };
   const description = SECTIONS.filter((name) => !task.omit?.includes(name))
-    .map((name) => `## ${name}\n${task.empty?.includes(name) ? "" : bodies[name]}\n`)
+    .map(
+      (name) =>
+        `## ${name}\n${task.empty?.includes(name) ? "" : bodies[name]}${task.append?.[name] ? `\n${task.append[name]}` : ""}\n`,
+    )
     .join("\n");
   const deps = task.dependencies?.length ? `\n${task.dependencies.map((d) => `  - ${d}`).join("\n")}` : " []";
   return `---
@@ -63,7 +70,7 @@ status: ${task.status ?? "Ready"}
 assignee: []
 labels: []
 milestone: ${task.milestone ?? "m-0"}
-dependencies:${deps}
+dependencies:${task.rawDependencies ?? deps}
 ---
 
 ## Description
@@ -350,6 +357,7 @@ describe("[SH-089 AC-7] выбор задач", () => {
       },
     );
     expect(result.status, result.stderr).toBe(0);
+    return String(result.stdout).trim();
   }
 
   it("[SH-089 AC-7] --changed проверяет Ready-задачи, изменённые относительно origin/main", () => {
@@ -475,5 +483,171 @@ describe("[SH-089 AC-10] скилл sh-spec и документы", () => {
     expect(read("docs/process.md")).toContain("pnpm spec:check");
     expect(read("docs/process.md")).toContain("sh-spec");
     expect(read("README.md")).toContain("`pnpm spec:check`");
+  });
+});
+
+describe("[SH-089 AC-2] границы разделов описания", () => {
+  const load = async () => import(pathToFileURL(join(repoRoot, "scripts/lib/backlog-task.mjs")).href);
+
+  it("[SH-089 AC-2] подзаголовок ### не обрывает раздел", async () => {
+    const { parseSections } = await load();
+    const sections = parseSections("## Зачем\nвступление\n### Детали\nпродолжение\n## Контекст\nссылки\n");
+    expect(sections.get("Зачем")).toContain("продолжение");
+    expect(sections.has("Детали")).toBe(false);
+    expect(sections.get("Контекст")).toBe("ссылки");
+  });
+
+  it("[SH-089 AC-2] строка ## внутри блока кода не начинает раздел", async () => {
+    const { parseSections } = await load();
+    const text = "## Контракт\n```md\n## Не входит\n# комментарий\n```\nпосле\n## Контекст\nссылки\n";
+    const sections = parseSections(text);
+    expect(sections.has("Не входит")).toBe(false);
+    expect(sections.get("Контракт")).toContain("после");
+  });
+
+  it("[SH-089 AC-2] повторный заголовок не стирает накопленный текст", async () => {
+    const { parseSections } = await load();
+    const sections = parseSections("## Зачем\nпервый\n\n## Контекст\nс\n\n## Зачем\nвторой\n");
+    expect(sections.get("Зачем")).toContain("первый");
+    expect(sections.get("Зачем")).toContain("второй");
+  });
+
+  it("[SH-089 AC-2] раздел, где есть только подзаголовок с текстом, не пуст", () => {
+    const task = { id: "SH-950", append: { Зачем: "### Детали\nтекст" }, empty: ["Зачем"] };
+    const result = run(setup(task), "SH-950");
+    expect(result.status).toBe(0);
+    expect(result.output).toContain("SH-950: OK");
+  });
+
+  it("[SH-089 AC-2] строка ## Не входит в блоке кода не заменяет отсутствующий раздел", () => {
+    const task = { id: "SH-951", omit: ["Не входит"], append: { Контракт: "```md\n## Не входит\nтекст\n```" } };
+    const result = run(setup(task), "SH-951");
+    expect(result.status).toBe(1);
+    expect(result.output).toMatch(/ОШИБКА: [^\n]*Не входит/);
+  });
+});
+
+describe("[SH-089 AC-7] --changed сравнивает с merge-base", () => {
+  const git = (root: string, ...args: string[]) => {
+    const result = spawnSync(
+      "git",
+      ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", ...args],
+      { cwd: root, encoding: "utf8" },
+    );
+    expect(result.status, result.stderr).toBe(0);
+    return String(result.stdout).trim();
+  };
+  const broken = (id: string): FixtureTask => ({ id, omit: ["Зачем"] });
+  const touch = (root: string, id: string) =>
+    writeFileSync(taskPath(root, id), `${readFileSync(taskPath(root, id), "utf8")}\nправка\n`);
+
+  it("[SH-089 AC-7] изменения, ушедшие в origin/main после ветвления, не попадают в проверку", () => {
+    const root = setup(broken("SH-952"), broken("SH-953"));
+    git(root, "init", "-q");
+    git(root, "add", ".");
+    git(root, "commit", "-q", "-m", "base");
+    const base = git(root, "rev-parse", "HEAD");
+    // origin/main ушёл вперёд: в нём изменён SH-953.
+    git(root, "checkout", "-q", "-b", "main-side");
+    touch(root, "SH-953");
+    git(root, "commit", "-qam", "main moved");
+    git(root, "update-ref", "refs/remotes/origin/main", "HEAD");
+    // Ветка задачи от base меняет SH-952.
+    git(root, "checkout", "-q", "-b", "feature", base);
+    touch(root, "SH-952");
+    git(root, "commit", "-qam", "feature");
+
+    const result = run(root, "--changed");
+    expect(result.output).toContain("SH-952: ошибок 1");
+    expect(result.output).not.toContain("SH-953");
+  });
+
+  it("[SH-089 AC-7] нет общего предка с origin/main: сравнение с вершиной, код 0 или 1 без сбоя git", () => {
+    const root = setup(broken("SH-954"), broken("SH-955"));
+    git(root, "init", "-q");
+    git(root, "add", ".");
+    git(root, "commit", "-q", "-m", "base");
+    git(root, "update-ref", "refs/remotes/origin/main", "HEAD");
+    git(root, "checkout", "-q", "--orphan", "other");
+    touch(root, "SH-954");
+    git(root, "add", ".");
+    git(root, "commit", "-q", "-m", "orphan");
+    const result = run(root, "--changed");
+    expect(result.output).toContain("SH-954: ошибок 1");
+    expect(result.output).not.toContain("Не удалось");
+  });
+
+  it("[SH-089 AC-7] незакоммиченные и неотслеженные файлы задач проверяются", () => {
+    const root = setup(broken("SH-956"), broken("SH-957"));
+    git(root, "init", "-q");
+    git(root, "add", ".");
+    git(root, "commit", "-q", "-m", "base");
+    git(root, "update-ref", "refs/remotes/origin/main", "HEAD");
+    touch(root, "SH-956");
+    mkdirSync(dirname(taskPath(root, "SH-958")), { recursive: true });
+    writeFileSync(taskPath(root, "SH-958"), taskFile(broken("SH-958")));
+
+    const result = run(root, "--changed");
+    expect(result.output).toContain("SH-956: ошибок 1");
+    expect(result.output).toContain("SH-958: ошибок 1");
+    expect(result.output).not.toContain("SH-957");
+  });
+});
+
+describe("[SH-089 AC-4] одинаковое понимание уровня в check-spec и ac:check", () => {
+  it.each(["Ручная проверка в браузере", "ручная", "Ревью кода", "Скрипт запуска"])(
+    "[SH-089 AC-4] уровень «%s» принимает и check-spec, и ac:check (метка не нужна)",
+    async (level) => {
+      const result = run(setup({ id: "SH-959", plan: [["1–2", level]] }), "SH-959");
+      expect(result.status).toBe(0);
+      expect(result.output).toContain("SH-959: OK");
+      const lib = await import(pathToFileURL(join(repoRoot, "scripts/lib/backlog-task.mjs")).href);
+      expect(lib.levelNeedsLabel(level)).toBe(false);
+    },
+  );
+
+  it.each(["юнит", "API", "e2e", "Unit"])("[SH-089 AC-4] уровень «%s» требует метку в ac:check", async (level) => {
+    const lib = await import(pathToFileURL(join(repoRoot, "scripts/lib/backlog-task.mjs")).href);
+    expect(lib.levelNeedsLabel(level)).toBe(true);
+  });
+
+  it("[SH-089 AC-4] нормализация уровня общая: lib.normalizeLevel возвращает уровень из списка или null", async () => {
+    const lib = await import(pathToFileURL(join(repoRoot, "scripts/lib/backlog-task.mjs")).href);
+    expect(lib.normalizeLevel("  юнит ")).toBe("Юнит");
+    expect(lib.normalizeLevel("Ручная проверка")).toBe("Ручная");
+    expect(lib.normalizeLevel("Интеграционный")).toBeNull();
+    const coverage = read("scripts/check-ac-coverage.mjs");
+    const spec = read("scripts/check-spec.mjs");
+    expect(coverage).toContain("levelNeedsLabel");
+    expect(spec).toContain("normalizeLevel");
+    expect(coverage).not.toContain("LEVELS_WITHOUT_LABEL = [");
+  });
+});
+
+describe("[SH-089 AC-5] устойчивость разбора зависимостей", () => {
+  it("[SH-089 AC-5] dependencies строкой, а не списком: без исключения, зависимость учитывается", () => {
+    const root = setup({ id: "SH-960", rawDependencies: " SH-961" }, { id: "SH-961", status: "Backlog" });
+    const result = run(root, "SH-960");
+    expect(result.output).not.toMatch(/TypeError|at .*\.mjs/);
+    expect(result.status).toBe(0);
+    expect(result.output).toMatch(/ПРЕДУПРЕЖДЕНИЕ: [^\n]*SH-961/);
+  });
+
+  it("[SH-089 AC-5] dependencies: null не ломает проверку", () => {
+    const result = run(setup({ id: "SH-962", rawDependencies: " null" }), "SH-962");
+    expect(result.status).toBe(0);
+    expect(result.output).toContain("SH-962: OK");
+  });
+
+  it("[SH-089 AC-5] «не зависит от SH-NNN» не требует записи в зависимостях", () => {
+    const root = setup({ id: "SH-963", why: "Задача не зависит от SH-964." }, { id: "SH-964", status: "Done" });
+    const result = run(root, "SH-963");
+    expect(result.status).toBe(0);
+    expect(result.output).toContain("SH-963: OK");
+  });
+
+  it("[SH-089 AC-5] «Не зависит от» в начале предложения тоже не считается", () => {
+    const root = setup({ id: "SH-965", why: "Не зависит от SH-966." }, { id: "SH-966", status: "Done" });
+    expect(run(root, "SH-965").status).toBe(0);
   });
 });
