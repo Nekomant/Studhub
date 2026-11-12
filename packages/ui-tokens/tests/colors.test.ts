@@ -1,17 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { contrast } from "./support/contrast.ts";
-import { customProperties, normalize, parseLightDark, readSrc } from "./support/css.ts";
+import { normalize, readSrc, themePair } from "./support/css.ts";
 import { colorTokens } from "./support/design-system.ts";
 
 const tokens = colorTokens();
-const vars = customProperties(readSrc("tokens.css"));
+const css = readSrc("tokens.css");
 
-function pair(name: string): { light: string; dark: string } {
-  const value = vars.get(`--${name}`);
-  const parsed = value ? parseLightDark(value) : undefined;
-  if (!parsed) throw new Error(`В tokens.css нет --${name} в виде light-dark(светлая, тёмная)`);
-  return { light: parsed[0], dark: parsed[1] };
-}
+const pair = (name: string) => themePair(css, `--${name}`);
 
 describe("[SH-073 AC-1] цветовые токены совпадают с design-system.md §3", () => {
   it("[SH-073 AC-1] в документе разобрано 26 цветовых токенов", () => {

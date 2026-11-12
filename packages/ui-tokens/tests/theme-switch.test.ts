@@ -1,7 +1,7 @@
 import { type Browser, chromium } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { hexToRgb } from "./support/contrast.ts";
-import { customProperties, parseLightDark, readSrc } from "./support/css.ts";
+import { readSrc, themePair } from "./support/css.ts";
 import { colorTokens } from "./support/design-system.ts";
 
 // Проверяем вычисленные цвета в настоящем Chromium. Системную тему задаёт emulateMedia.
@@ -60,6 +60,6 @@ describe("[SH-073 AC-2] тема переключается классом на 
 
   it("[SH-073 AC-2] CSS пакета не содержит prefers-color-scheme", () => {
     expect(tokensCss).not.toContain("prefers-color-scheme");
-    expect(parseLightDark(customProperties(tokensCss).get("--paper") ?? "")).toBeDefined();
+    expect(themePair(tokensCss, "--paper")).toEqual({ light: "#f6f2ea", dark: "#1f1b18" });
   });
 });

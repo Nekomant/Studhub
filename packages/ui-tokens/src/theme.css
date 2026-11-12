@@ -7,6 +7,9 @@
 @theme inline {
   /* Стандартную палитру Tailwind не используем: только токены дизайн-системы. */
   --color-*: initial;
+  /* white и black нужны shadcn: оверлей Dialog (bg-black/50), text-white. */
+  --color-white: #fff;
+  --color-black: #000;
 
   /* §3 Цвета */
   --color-paper: var(--paper);

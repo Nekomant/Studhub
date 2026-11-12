@@ -31,17 +31,24 @@ export function customProperties(css: string): Map<string, string> {
   return result;
 }
 
-/** Разбор `light-dark(a, b)` с учётом запятых внутри скобок. */
-export function parseLightDark(value: string): [string, string] | undefined {
-  const match = /^light-dark\((.*)\)$/s.exec(value.trim());
-  if (!match) return undefined;
-  const inner = match[1] ?? "";
-  let depth = 0;
-  for (let i = 0; i < inner.length; i++) {
-    const char = inner[i];
-    if (char === "(") depth++;
-    else if (char === ")") depth--;
-    else if (char === "," && depth === 0) return [normalize(inner.slice(0, i)), normalize(inner.slice(i + 1))];
+/** Объявления `--name: value;` одного правила, выбранного по списку селекторов (`:root, .light`). */
+export function blockProperties(css: string, selectors: string): Map<string, string> {
+  const wanted = normalize(selectors);
+  const result = new Map<string, string>();
+  for (const rule of stripComments(css).matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    if (normalize(rule[1] ?? "") === wanted) {
+      for (const [name, value] of customProperties(rule[2] ?? "")) result.set(name, value);
+    }
   }
-  return undefined;
+  return result;
+}
+
+/** Значения токена в светлой теме (`:root, .light`) и в тёмной (`.dark`). */
+export function themePair(css: string, name: string): { light: string; dark: string } {
+  const light = blockProperties(css, ":root, .light").get(name);
+  const dark = blockProperties(css, ".dark").get(name);
+  if (light === undefined || dark === undefined) {
+    throw new Error(`В tokens.css нет ${name} одновременно в блоках ":root, .light" и ".dark"`);
+  }
+  return { light, dark };
 }

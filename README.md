@@ -16,9 +16,12 @@ nvm install    # один раз: ставит Node из .nvmrc
 nvm use
 npm install -g pnpm@12.18.0    # или corepack, если он есть в вашей сборке Node
 pnpm install
+pnpm --filter @studhub/ui-tokens exec playwright install chromium
 ```
 
-`pnpm install` ставит зависимости всех пакетов и git-хуки lefthook (скрипт `prepare`).
+`pnpm install` ставит зависимости всех пакетов и git-хуки lefthook (скрипт `prepare`). Вторая команда один раз
+скачивает Chromium для браузерного теста темы (`packages/ui-tokens`); без неё `pnpm verify` и `pnpm test` падают
+в свежем клоне или worktree. В CI этот шаг уже есть.
 
 ## Запуск
 

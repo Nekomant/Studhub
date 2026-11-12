@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { customProperties, normalize, readSrc, stripComments } from "./support/css.ts";
+import { customProperties, normalize, readSrc, stripComments, themePair } from "./support/css.ts";
 import { colorTokens, shadcnVariables, textStyles } from "./support/design-system.ts";
 
-const tokens = customProperties(readSrc("tokens.css"));
+const tokensCss = readSrc("tokens.css");
+const tokens = customProperties(tokensCss);
 const theme = stripComments(readSrc("theme.css"));
 const themeVars = customProperties(theme);
 
@@ -10,6 +11,11 @@ describe("[SH-073 AC-3] тема Tailwind CSS v4", () => {
   it("[SH-073 AC-3] тема объявлена как @theme inline и сбрасывает стандартные цвета", () => {
     expect(theme).toMatch(/@theme\s+inline\s*\{/);
     expect(theme).toMatch(/--color-\*:\s*initial;/);
+  });
+
+  it("[SH-073 AC-3] white и black сохранены для оверлея и текста shadcn (bg-black/50, text-white)", () => {
+    expect(themeVars.get("--color-white")).toBe("#fff");
+    expect(themeVars.get("--color-black")).toBe("#000");
   });
 
   it.each(colorTokens().map((t) => t.name))("[SH-073 AC-3] цвет %s есть в теме Tailwind", (name) => {
@@ -50,12 +56,21 @@ describe("[SH-073 AC-3] тема Tailwind CSS v4", () => {
 
   it("[SH-073 AC-3] тени sheet и popover по §6, цвета теней зависят от темы", () => {
     expect(tokens.get("--shadow-sheet")).toBe("0 -8px 24px var(--shadow-sheet-color)");
-    expect(tokens.get("--shadow-sheet-color")).toBe("light-dark(rgba(43, 38, 34, 0.12), rgba(0, 0, 0, 0.45))");
+    expect(themePair(tokensCss, "--shadow-sheet-color")).toEqual({
+      light: "rgba(43, 38, 34, 0.12)",
+      dark: "rgba(0, 0, 0, 0.45)",
+    });
     expect(tokens.get("--shadow-popover")).toBe(
       "0 8px 24px var(--shadow-popover-color-1), 0 2px 6px var(--shadow-popover-color-2)",
     );
-    expect(tokens.get("--shadow-popover-color-1")).toBe("light-dark(rgba(43, 38, 34, 0.14), rgba(0, 0, 0, 0.5))");
-    expect(tokens.get("--shadow-popover-color-2")).toBe("light-dark(rgba(43, 38, 34, 0.08), rgba(0, 0, 0, 0.3))");
+    expect(themePair(tokensCss, "--shadow-popover-color-1")).toEqual({
+      light: "rgba(43, 38, 34, 0.14)",
+      dark: "rgba(0, 0, 0, 0.5)",
+    });
+    expect(themePair(tokensCss, "--shadow-popover-color-2")).toEqual({
+      light: "rgba(43, 38, 34, 0.08)",
+      dark: "rgba(0, 0, 0, 0.3)",
+    });
     expect(themeVars.get("--shadow-sheet")).toBe(tokens.get("--shadow-sheet"));
     expect(themeVars.get("--shadow-popover")).toBe(tokens.get("--shadow-popover"));
   });

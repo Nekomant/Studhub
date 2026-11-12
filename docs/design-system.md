@@ -141,3 +141,5 @@
 Тёмная тема включается классом `dark` на `<html>`. Без класса, как и с классом `light`, действует светлая тема: CSS пакета не учитывает `prefers-color-scheme`. Значение «Как в системе» ставит класс скриптом по `prefers-color-scheme` и следит за его изменением (SH-022).
 
 В теме Tailwind радиусы называются `rounded-sm` (6 px), `rounded-md` (10 px), `rounded-lg` (14 px) и `rounded-pill`, как ждут компоненты shadcn/ui. Стили текста из §5 подключаются классами `title-xl` … `figure`, табличные цифры классом `tabular`. Шрифты в пакете содержат подмножества latin и cyrillic. Знака рубля ₽ (U+20BD) в них нет, он выводится системным шрифтом.
+
+Стандартная палитра Tailwind в теме сброшена (`--color-*: initial`), но `white` и `black` сохранены (`--color-white: #fff`, `--color-black: #000`): shadcn/ui использует `bg-black/50` для оверлея Dialog и `text-white`.
