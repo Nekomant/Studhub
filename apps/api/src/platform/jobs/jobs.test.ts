@@ -74,7 +74,7 @@ describe("синхронный запуск", () => {
         throw new TypeError("сбой");
       },
     });
-    expect(await jobs.runNow("demo.fail")).toEqual({ outcome: "failed", errorName: "TypeError" });
+    expect(await jobs.runNow("demo.fail")).toEqual({ outcome: "failed", errorType: "TypeError" });
     expect(jobs.stats()["demo.fail"]).toEqual({ succeeded: 0, failed: 1 });
   });
 
@@ -105,7 +105,7 @@ describe("ошибки задач", () => {
     jobs.define(failing);
     await jobs.runNow("demo.pii", { phone: "+79991112233" });
     const entry = logs.entries().find((item) => item.msg === "задача завершилась ошибкой");
-    expect(entry).toMatchObject({ job: "demo.pii", attempt: 1, errorName: "Error", errorCode: "E_DEMO" });
+    expect(entry).toMatchObject({ job: "demo.pii", attempt: 1, errorType: "Error", errorCode: "E_DEMO" });
     const text = logs.lines.join("\n");
     expect(text).not.toContain("Иванов");
     expect(text).not.toContain("+7999");
