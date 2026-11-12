@@ -50,7 +50,7 @@ describe("[SH-082 AC-4] действия бывшего раздела опис�
 
   it("[SH-082 AC-4] команда Done с номерами пунктов DoD и сверка номеров с config", () => {
     expect(lifecycle).toContain("-s Done --check-dod 2 --check-dod 5 --check-dod 6");
-    expect(lifecycle).toMatch(/сверя\w+[^\n]*(config\.yml|task\.mjs)/);
+    expect(lifecycle).toMatch(/сверя[а-я]+[^\n]*(config\.yml|task\.mjs)/);
   });
 
   it("[SH-082 AC-4] возврат в Review со снятием отметок и закрытие цикла", () => {

@@ -11,5 +11,12 @@
         ]
       }
     ]
+  },
+  "enabledPlugins": {
+    "one-shot-prompting@synced": false,
+    "zizi-skills@synced": false,
+    "design-skills@synced": false,
+    "vectorlab-ux-skills@synced": false,
+    "frontend-design@synced": false
   }
 }

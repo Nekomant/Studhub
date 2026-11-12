@@ -42,13 +42,4 @@ description: Чеклисты старта и финиша задачи Studhub 
 6. Итог: `backlog task edit SH-NNN --final-summary "…"`: что сделано, как проверено, что изменилось в документах.
 7. Верни отчёт `ГОТОВО SH-NNN` в формате из описания агента. Пуш, PR, `/code-review` и статус Review делает сессия задачи.
 
-## Закрытие: делает сессия задачи
-
-Статусы Review и Done сессия коммитит в ветку задачи, и в `main` они попадают вместе со слиянием её PR. Отдельный PR на закрытие не нужен (`docs/process.md` §3.1, §7 шаг 9).
-
-1. После `/code-review`: `backlog task edit SH-NNN -s Review`, коммит `chore(backlog): SH-NNN на ревью`, пуш, PR.
-2. Владелец смотрит дифф и пишет, что готов слить. До этого Done не ставь.
-3. `backlog task edit SH-NNN -s Done --check-dod 2 --check-dod 5 --check-dod 6`: пункты DoD «CI зелёный», «ревью» и «PR слит». Номера взяты из `backlog/config.yml`; перед отметкой сверь их с выводом `node scripts/task.mjs SH-NNN`. Последний коммит ветки: `chore(backlog): SH-NNN в Done`. Пуш.
-4. Владелец сливает PR через squash и пишет об этом сессии (шаг 6).
-5. Владелец просит правки после коммита Done: `backlog task edit SH-NNN -s Review --uncheck-dod 2 --uncheck-dod 5 --uncheck-dod 6` (снять отметки, поставленные вместе с Done), коммит, правки, пуш. Done ставь снова, только когда владелец опять напишет, что готов слить.
-6. Владелец сливает PR сам и пишет об этом сессии. Сессия проверяет: `gh pr view --json state,mergedAt` показывает `MERGED`; после `git fetch origin main` команда `git grep -n "^status:" origin/main -- "backlog/tasks/sh-NNN -*"` печатает `status: Done`. Обе проверки прошли: `git switch --detach origin/main`, `git branch -D sh-NNN-slug` (после squash `-d` не сработает), `archive_session` с `self` (приложение спросит подтверждение). Проверка не прошла или `git switch` отказал: ничего не удаляй, не архивируй себя, сообщи владельцу, что не так.
+Закрытие (Review, Done, слияние, уборка после него) делает сессия задачи: `docs/process.md` §7 (шаг 9) и §7.1.
