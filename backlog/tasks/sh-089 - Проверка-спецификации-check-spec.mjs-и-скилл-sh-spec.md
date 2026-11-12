@@ -1,9 +1,10 @@
 ---
 id: SH-089
 title: 'Проверка спецификации: check-spec.mjs и скилл sh-spec'
-status: Backlog
+status: Ready
 assignee: []
 created_date: '2026-11-12T12:41:00Z'
+updated_date: '2026-11-12T21:59:00Z'
 labels:
   - infra
   - docs
@@ -11,7 +12,7 @@ milestone: m-0
 dependencies: []
 priority: medium
 type: chore
-ordinal: 82000
+ordinal: 1000
 ---
 
 ## Description
