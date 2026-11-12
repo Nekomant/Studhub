@@ -1,10 +1,11 @@
 ---
 id: SH-008
 title: Каркас SPA и E2E-харнесс
-status: Ready
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-11T08:58:00Z'
-updated_date: '2026-11-12T23:41:00Z'
+updated_date: '2026-11-12T23:45:00Z'
 labels:
   - frontend
   - pwa
@@ -75,3 +76,22 @@ ordinal: 1000
 - [ ] #6 PR слит в main через squash, изменения выложены в prod (после появления деплоя)
 - [ ] #7 В заметках задачи записаны оценка и фактическое время, решения по ходу работы и итоговое резюме
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Красные тесты: E2E Playwright в tests/e2e (AC-1…5), юнит-тесты client-core (карта маршрутов, запрос healthz), проверка шага CI (AC-6) в tools/tests/ci-workflow.test.ts. Отдельный коммит.
+2. client-core: карта маршрутов (пять вкладок и пункты боковой панели по screens.md §3.1–3.2), фабрика запроса /healthz.
+3. apps/web: Vite, React 19, Tailwind v4 на ui-tokens, shadcn/ui (components.json, cn), lucide, TanStack Router и Query, оболочка (нижняя панель меньше 768 px, боковая от 768 px), заглушки экранов, статус /healthz на «Сегодня».
+4. vite-plugin-pwa: manifest, service worker только со статикой (registerType prompt), без кэша /api и /healthz.
+5. Прокси /api и /healthz на API в dev и preview, pnpm dev запускает SPA и API.
+6. tests/e2e: Playwright, скрипт стека (БД, миграции, API, vite preview), pnpm test:e2e собирает SPA и запускает тесты.
+7. CI: шаг E2E с кэшем браузеров Playwright.
+8. Документы: README (команды dev и test:e2e), docs/process.md §9 (шаг CI), ТД §14 при необходимости.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Оценка: 8 ч
+<!-- SECTION:NOTES:END -->

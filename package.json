@@ -15,6 +15,7 @@
     "gen:client:check": "node packages/client-core/scripts/gen-client.mjs --check",
     "test": "vitest run",
     "test:api": "vitest run --project @studhub/tests-api",
+    "test:e2e": "pnpm --filter @studhub/web build && pnpm --filter @studhub/tests-e2e test",
     "verify": "node scripts/verify.mjs",
     "format": "biome check --write .",
     "db:check": "pnpm --filter @studhub/api db:check",
