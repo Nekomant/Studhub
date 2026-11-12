@@ -1,11 +1,11 @@
 ---
 id: SH-089
 title: 'Проверка спецификации: check-spec.mjs и скилл sh-spec'
-status: In Progress
+status: Review
 assignee:
   - '@claude'
 created_date: '2026-11-12T12:41:00Z'
-updated_date: '2026-11-12T22:11:00Z'
+updated_date: '2026-11-12T22:12:00Z'
 labels:
   - infra
   - docs
