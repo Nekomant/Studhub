@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-11T10:21:00Z'
-updated_date: '2026-11-12T14:11:00Z'
+updated_date: '2026-11-12T14:14:00Z'
 labels:
   - frontend
 milestone: m-0
@@ -113,10 +113,12 @@ ordinal: 1500
 Замечание: тест SH-005 AC-1 (db:migrate, таймаут 5 с) иногда падает при полном прогоне vitest и без пакета ui-tokens; не связано с SH-073.
 
 Проверка тестов (sh-verifier): AC-1…AC-5 подтверждены, AC-6 ручная. Нарушений нет. Замечание: проверка tnum в fonts.test.ts после красного коммита сужена до Manrope, ДС-2 поправлен так же (у Nunito в файлах @fontsource нет tnum); критерий AC-4 tnum не требует, показываем владельцу в PR. AC-2 изменён по ответу владельца до красного коммита.
+
+Решение по замечанию ревью: light-dark() заменён обычными объявлениями (iOS 17.4 и старше его не знают, все цветовые переменные были бы невалидны). Светлые значения в блоке ':root, .light', тёмные в '.dark', color-scheme оставлен. Производные переменные (shadcn-маппинг §8, составные тени) повторены в обоих блоках, иначе вложенный блок с другим классом унаследует значение родителя. Пункт плана 4 читать так. Тесты AC-1/AC-2/AC-5: изменён только разбор в tests/support/css.ts (themePair), проверки критериев те же. theme.css: сохранены --color-white и --color-black для bg-black/50 и text-white из shadcn (добавлена проверка в AC-3). README: шаг playwright install chromium.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
-Пакет packages/ui-tokens: tokens.css (светлая и тёмная тема через color-scheme и light-dark(), тёмная только классом dark, без класса светлая), theme.css (тема Tailwind v4: цвета, отступы, радиусы, высоты, тени, стили текста, переменные shadcn по §8), fonts.css и 8 woff2 (Nunito 800, Manrope 300/400/600, latin и cyrillic) с лицензиями OFL, sample.html (цвета, стили текста, 8 бейджей статусов в обеих темах, без сети). Проверено: 181 тест Vitest по AC-1…AC-5 (значения токенов читаются из design-system.md, контраст по WCAG, разбор woff2, браузерный тест темы в Chromium через Playwright); AC-6 смотрит владелец. Документы: design-system.md (светлая тема по умолчанию, имена в Tailwind, ₽ вне подмножеств, tnum у Nunito нет, space-1…8), CI: шаг установки Chromium, biome.json: tailwindDirectives.
+Пакет packages/ui-tokens: tokens.css (светлая тема в :root и .light, тёмная в .dark, обычные объявления без light-dark(), тёмная только классом dark, без класса светлая), theme.css (тема Tailwind v4: цвета, отступы, радиусы, высоты, тени, стили текста, переменные shadcn по §8), fonts.css и 8 woff2 (Nunito 800, Manrope 300/400/600, latin и cyrillic) с лицензиями OFL, sample.html (цвета, стили текста, 8 бейджей статусов в обеих темах, без сети). Проверено: 182 теста Vitest по AC-1…AC-5 (значения токенов читаются из design-system.md, контраст по WCAG, разбор woff2, браузерный тест темы в Chromium через Playwright); AC-6 смотрит владелец. Документы: design-system.md (светлая тема по умолчанию, имена в Tailwind, ₽ вне подмножеств, tnum у Nunito нет, space-1…8), CI и README: шаг установки Chromium, biome.json: tailwindDirectives.
 <!-- SECTION:FINAL_SUMMARY:END -->
