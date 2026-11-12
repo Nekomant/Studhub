@@ -72,7 +72,34 @@ async function freePort(): Promise<number> {
 
 export type AppProcess = { baseUrl: string; stop: () => Promise<void> };
 
-export async function startAppProcess(options: { databaseUrl: string; testMode: boolean }): Promise<AppProcess> {
+// Процесс завершился при запуске: например, порт успел занять другой процесс (EADDRINUSE).
+class EarlyExitError extends Error {}
+
+const READY_MESSAGE = "API запущен";
+const START_ATTEMPTS = 3;
+
+// Приложение пишет в stdout JSON-строку pino с `msg` "API запущен" и своим портом, когда начало слушать порт.
+// Ответ на /healthz для этого не годится: на чужом занятом порту отвечал бы другой процесс.
+function watchReady(child: ChildProcess, port: number): Promise<void> {
+  return new Promise((resolveReady) => {
+    let buffer = "";
+    child.stdout?.on("data", (chunk: Buffer) => {
+      buffer += chunk.toString();
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        try {
+          const entry = JSON.parse(line) as { msg?: string; port?: number };
+          if (entry.msg === READY_MESSAGE && entry.port === port) resolveReady();
+        } catch {
+          // Строка не JSON: это не лог приложения, пропускаем.
+        }
+      }
+    });
+  });
+}
+
+async function startOnce(options: { databaseUrl: string; testMode: boolean }): Promise<AppProcess> {
   const port = await freePort();
   const baseUrl = `http://127.0.0.1:${port}`;
   const child = spawn(process.execPath, ["src/main.ts"], {
@@ -81,6 +108,7 @@ export async function startAppProcess(options: { databaseUrl: string; testMode: 
     stdio: ["ignore", "pipe", "pipe"],
   });
   const tail = collectTail(child);
+  const ready = watchReady(child, port);
   // Если процесс теста завершился аварийно, приложение не остаётся висеть.
   const killOnExit = () => child.kill("SIGKILL");
   process.once("exit", killOnExit);
@@ -95,20 +123,29 @@ export async function startAppProcess(options: { databaseUrl: string; testMode: 
     }
   };
 
-  // Приложение готово, когда отвечает на HTTP любым статусом (при недоступной БД /healthz отвечает 503).
-  const deadline = Date.now() + 30_000;
-  while (Date.now() < deadline) {
-    if (child.exitCode !== null) {
-      await stop();
-      throw new Error(`приложение завершилось при запуске (код ${child.exitCode}):\n${tail()}`);
-    }
+  // Приложение готово, когда пишет строку «API запущен». Для недоступной БД это тоже верно: /healthz ответит 503.
+  let timer: NodeJS.Timeout | undefined;
+  const outcome = await Promise.race([
+    ready.then(() => "ready" as const),
+    waitForExit(child).then((code) => code),
+    new Promise<"timeout">((resolveTimeout) => {
+      timer = setTimeout(() => resolveTimeout("timeout"), 30_000);
+    }),
+  ]);
+  clearTimeout(timer);
+  if (outcome === "ready") return { baseUrl, stop };
+  await stop();
+  if (outcome === "timeout") throw new Error(`приложение не запустилось за 30 с:\n${tail()}`);
+  throw new EarlyExitError(`приложение завершилось при запуске (код ${outcome}):\n${tail()}`);
+}
+
+// Повторяет запуск с новым портом, если процесс упал при запуске: порт между freePort() и listen() мог занять другой.
+export async function startAppProcess(options: { databaseUrl: string; testMode: boolean }): Promise<AppProcess> {
+  for (let attempt = 1; ; attempt++) {
     try {
-      await fetch(`${baseUrl}/healthz`);
-      return { baseUrl, stop };
-    } catch {
-      await new Promise((resolveWait) => setTimeout(resolveWait, 50));
+      return await startOnce(options);
+    } catch (error) {
+      if (!(error instanceof EarlyExitError) || attempt >= START_ATTEMPTS) throw error;
     }
   }
-  await stop();
-  throw new Error(`приложение не ответило за 30 с:\n${tail()}`);
 }
