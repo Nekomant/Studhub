@@ -290,9 +290,6 @@ importers:
 
   packages/client-core:
     dependencies:
-      '@tanstack/query-core':
-        specifier: ^5.107.1
-        version: 5.107.1
       openapi-fetch:
         specifier: ^0.17.0
         version: 0.17.0
