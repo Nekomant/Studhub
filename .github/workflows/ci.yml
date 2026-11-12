@@ -42,7 +42,7 @@ jobs:
       - uses: actions/checkout@v5
 
       # Версию pnpm берёт из поля packageManager в package.json.
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
       - uses: actions/setup-node@v5
         with:
