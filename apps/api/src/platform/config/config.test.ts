@@ -31,6 +31,21 @@ describe("конфигурация окружения", () => {
     expect(() => loadConfig({ ...validEnv, APP_MODE: "staging" })).toThrow(/APP_MODE/);
   });
 
+  it("[SH-006 AC-4] APP_MODE=test вместе с NODE_ENV=production даёт ошибку старта без значений секретов", () => {
+    const env = { ...validEnv, NODE_ENV: "production", APP_MODE: "test" };
+    expect(() => loadConfig(env)).toThrow(/APP_MODE/);
+    try {
+      loadConfig(env);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      expect(message).toContain("NODE_ENV=production");
+      expect(message).not.toContain(validEnv.S3_SECRET_ACCESS_KEY);
+      expect(message).not.toContain(validEnv.DATABASE_URL);
+    }
+    expect(loadConfig({ ...validEnv, NODE_ENV: "production" }).APP_MODE).toBeUndefined();
+    expect(loadConfig({ ...validEnv, NODE_ENV: "test", APP_MODE: "test" }).APP_MODE).toBe("test");
+  });
+
   it("[SH-003 AC-2] отсутствующие обязательные переменные перечислены по имени", () => {
     const { DATABASE_URL: _omit, S3_BUCKET: _omit2, ...rest } = validEnv;
     const result = configSchema.safeParse(rest);
