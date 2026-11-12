@@ -84,7 +84,7 @@ let counter = 0;
 
 // Основная папка `work` отстаёт от origin/main на один «squash-коммит» со статусом задачи SH-901.
 // Ветка sh-901-feat открыта в worktree `wt`, на GitHub она уже удалена. В основной папке файл SH-901 устарел (Ready).
-function makeScenario({ originStatus = "Done", detached = false } = {}): Scenario {
+function makeScenario({ originStatus = "Done", detached = false, withShortTask = true } = {}): Scenario {
   counter += 1;
   const base = join(workDir, `case-${counter}`);
   const origin = join(base, "origin.git");
@@ -98,7 +98,7 @@ function makeScenario({ originStatus = "Done", detached = false } = {}): Scenari
   git(seed, "checkout", "-q", "-b", "main");
   mkdirSync(join(seed, "backlog/tasks"), { recursive: true });
   writeFileSync(join(seed, "README.md"), "readme\n");
-  writeFileSync(join(seed, TASK_90), taskFile("SH-90", "Ready"));
+  if (withShortTask) writeFileSync(join(seed, TASK_90), taskFile("SH-90", "Ready"));
   writeFileSync(join(seed, TASK_901), taskFile("SH-901", "Ready"));
   git(seed, "add", ".");
   git(seed, "commit", "-q", "-m", "init");
@@ -268,6 +268,18 @@ describe("close-task: статус берётся из origin/main", () => {
 
     expect(code).toBe(1);
     expect(lastLine(lines)).toMatch(/^ЗАКРЫТЬ СЕССИЮ: нет \(.*Ready.*\)$/);
+  });
+});
+
+describe("close-task: префикс номера задачи", () => {
+  it("[SH-091 AC-3] файла SH-90 в origin/main нет, а SH-901 в Done: для SH-90 «задача не найдена», вердикт «нет»", () => {
+    const { work } = makeScenario({ withShortTask: false });
+
+    const { code, out, lines } = runClose(work, ["SH-90"], { prs: [pr({ number: 32, title: "SH-90: Короткая" })] });
+
+    expect(code).toBe(1);
+    expect(out).toMatch(/задача не найдена/);
+    expect(lastLine(lines)).toMatch(/^ЗАКРЫТЬ СЕССИЮ: нет \(.*не найдена.*\)$/);
   });
 });
 
