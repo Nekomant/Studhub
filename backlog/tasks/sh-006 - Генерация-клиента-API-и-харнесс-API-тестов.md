@@ -5,7 +5,7 @@ status: Review
 assignee:
   - '@claude'
 created_date: '2026-11-11T08:58:00Z'
-updated_date: '2026-11-12T22:51:00Z'
+updated_date: '2026-11-12T23:08:00Z'
 labels:
   - backend
   - frontend
@@ -99,6 +99,8 @@ CI — задача «CI в GitHub Actions».
 Факт: около 1,5 ч
 
 Проверка sh-verifier: все 6 критериев подтверждены тестами, тесты после красного коммита 100e543 не ослаблены (в config.test.ts добавлен один тест AC-4). pnpm test:api хук не пропустил, tests/api прогнаны через vitest --root tests/api, 16 тестов зелёные.
+
+Правки по ревью (решения владельца): 1) конфигурация отклоняет APP_MODE=test при NODE_ENV=production, тест [SH-006 AC-4] в config.test.ts; 2) test-app.ts без приведения as string; 3) app-process.ts: готовность по строке лога «API запущен» с нужным портом, до 3 попыток запуска с новым портом; 4) дочерний процесс получает явный список переменных (PATH, HOME, TMPDIR, LANG, TZ). pnpm verify: 844 теста зелёные.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
