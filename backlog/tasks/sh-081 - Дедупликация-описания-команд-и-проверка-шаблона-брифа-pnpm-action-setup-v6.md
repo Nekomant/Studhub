@@ -1,11 +1,11 @@
 ---
 id: SH-081
 title: Дедупликация описания команд и проверка шаблона брифа, pnpm/action-setup v6
-status: Review
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-11T23:52:00Z'
-updated_date: '2026-11-12T00:05:00Z'
+updated_date: '2026-11-12T00:09:00Z'
 labels:
   - infra
   - docs
@@ -60,7 +60,7 @@ API и БД не меняются.
 - [x] #1 Полное описание `pnpm sync`, `pnpm status` и `pnpm git:prune` с флагами и примерами лежит в одном месте; в остальных двух файлах из `README.md`, `CLAUDE.md`, `docs/process.md` каждая команда упомянута одной фразой со ссылкой на это место
 - [x] #2 Шаблон брифа в `docs/process.md` §7.1 сверен с реальными брифами, результат сверки записан в заметки, недостающее добавлено, лишнее убрано
 - [x] #3 В `.github/workflows/ci.yml` действие `pnpm/action-setup` обновлено до `@v6`; `@v4` в workflow не осталось
-- [ ] #4 Проверка `checks` на PR задачи зелёная, предупреждения про Node 20 в логе нет
+- [x] #4 Проверка `checks` на PR задачи зелёная, предупреждения про Node 20 в логе нет
 <!-- AC:END -->
 
 ## Definition of Done
