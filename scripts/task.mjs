@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Печатает задачу Backlog.md коротко: `node scripts/task.mjs SH-NNN`.
 // Флаг `--criteria` печатает только критерии приёмки и таблицу «План тестов» (так задачу читает sh-verifier).
+// Флаг `--spec` печатает заголовок, описание и критерии (так задачу читает sh-spec-critic).
 // Берёт `backlog task view --json` и выводит описание, критерии, DoD, план, заметки, комментарии и итог.
 // Дерево зависимых задач (dependencyGraph) не печатает: в `--plain` оно занимает до половины вывода.
 import { spawnSync } from "node:child_process";
@@ -22,7 +23,7 @@ function commentsText(comments) {
     .join("\n\n");
 }
 
-export function formatTask(task) {
+function headLines(task) {
   const head = [
     `${task.id} ${task.title}`,
     `Статус: ${task.status} · тип ${task.type ?? "—"} · приоритет ${task.priority ?? "—"} · метки ${listOrDash(task.labels)} · веха ${task.milestone ?? "—"}`,
@@ -30,7 +31,17 @@ export function formatTask(task) {
   ];
   if (task.references?.length) head.push(`Ссылки: ${task.references.join(", ")}`);
   if (task.documentation?.length) head.push(`Документы: ${task.documentation.join(", ")}`);
+  return head;
+}
 
+function render(head, sections) {
+  const body = sections
+    .filter(([, text]) => typeof text === "string" && text.trim() !== "")
+    .map(([title, text]) => `# ${title}\n${text.trim()}`);
+  return `${[head.join("\n"), ...body].join("\n\n")}\n`;
+}
+
+export function formatTask(task) {
   const sections = [
     ["Описание", task.description],
     ["Критерии приёмки", checklist(task.acceptanceCriteria ?? [])],
@@ -40,10 +51,7 @@ export function formatTask(task) {
     ["Комментарии", commentsText(task.comments ?? [])],
     ["Итог", task.finalSummary],
   ];
-  const body = sections
-    .filter(([, text]) => typeof text === "string" && text.trim() !== "")
-    .map(([title, text]) => `# ${title}\n${text.trim()}`);
-  return `${[head.join("\n"), ...body].join("\n\n")}\n`;
+  return render(headLines(task), sections);
 }
 
 // Таблица «План тестов» из описания: строки от заголовка до первой строки не из таблицы. null, если таблицы нет.
@@ -67,12 +75,22 @@ export function formatCriteria(task) {
   return `# Критерии приёмки\n${criteria}\n\n# План тестов\n${table}\n`;
 }
 
+// Для sh-spec-critic: только то, что штаб написал как спецификацию. DoD, план, заметки, комментарии и итог
+// не входят: в них могут быть рассуждения штаба, от которых критик должен быть независим.
+export function formatSpec(task) {
+  return render(headLines(task), [
+    ["Описание", task.description],
+    ["Критерии приёмки", checklist(task.acceptanceCriteria ?? []) || "Критериев приёмки нет."],
+  ]);
+}
+
 function main() {
   const args = process.argv.slice(2);
   const criteriaOnly = args.includes("--criteria");
+  const specOnly = args.includes("--spec");
   const id = args.find((arg) => !arg.startsWith("--"));
   if (!id) {
-    process.stderr.write("Использование: node scripts/task.mjs SH-NNN [--criteria]\n");
+    process.stderr.write("Использование: node scripts/task.mjs SH-NNN [--criteria | --spec]\n");
     process.exit(1);
   }
   const result = spawnSync("backlog", ["task", "view", id, "--json"], { encoding: "utf8" });
@@ -87,7 +105,11 @@ function main() {
     process.exit(result.status ?? 1);
   }
   const task = JSON.parse(result.stdout).task;
-  process.stdout.write(criteriaOnly ? formatCriteria(task) : formatTask(task));
+  if (criteriaOnly && specOnly) {
+    process.stderr.write("Флаги --criteria и --spec не сочетаются.\n");
+    process.exit(1);
+  }
+  process.stdout.write(criteriaOnly ? formatCriteria(task) : specOnly ? formatSpec(task) : formatTask(task));
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
