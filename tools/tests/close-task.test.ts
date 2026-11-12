@@ -84,7 +84,12 @@ let counter = 0;
 
 // Основная папка `work` отстаёт от origin/main на один «squash-коммит» со статусом задачи SH-901.
 // Ветка sh-901-feat открыта в worktree `wt`, на GitHub она уже удалена. В основной папке файл SH-901 устарел (Ready).
-function makeScenario({ originStatus = "Done", detached = false, withShortTask = true } = {}): Scenario {
+function makeScenario({
+  originStatus = "Done",
+  detached = false,
+  withShortTask = true,
+  duplicateTask = false,
+} = {}): Scenario {
   counter += 1;
   const base = join(workDir, `case-${counter}`);
   const origin = join(base, "origin.git");
@@ -114,6 +119,7 @@ function makeScenario({ originStatus = "Done", detached = false, withShortTask =
 
   writeFileSync(join(other, "feature.txt"), "фича\n");
   writeFileSync(join(other, TASK_901), taskFile("SH-901", originStatus));
+  if (duplicateTask) writeFileSync(join(other, "backlog/tasks/sh-901 - copy.md"), taskFile("SH-901", "Done"));
   git(other, "add", ".");
   git(other, "commit", "-q", "-m", "SH-901: Фича (#31)");
   git(other, "push", "-q", "origin", "main");
@@ -444,6 +450,145 @@ describe("close-task: нет данных для вердикта", () => {
 
     expect(code).toBe(2);
     expect(lastLine(lines)).toMatch(/не найден/);
+  });
+});
+
+const SELF_REASON = "worktree этой сессии убирает штаб из основной папки";
+
+// Чужой worktree (например, штаба): своя ветка, не связанная с задачей.
+function addForeign({ work, base }: Scenario) {
+  const foreign = join(base, "foreign");
+  git(work, "worktree", "add", "-q", "-b", "foreign", foreign, "origin/main");
+  return foreign;
+}
+
+// Ещё один worktree задачи на отсоединённой голове: сессия перешла на origin/main, ветка PR в журнале HEAD.
+function addDetachedTaskWorktree({ work, base }: Scenario, name: string) {
+  const path = join(base, name);
+  git(work, "worktree", "add", "-f", "-q", path, BRANCH);
+  git(path, "switch", "-q", "--detach", "origin/main");
+  return path;
+}
+
+describe("close-task: запуск не из основной папки", () => {
+  it("[SH-091 AC-1] без --apply из worktree задачи ничего не меняется, вердикт печатается", () => {
+    const scenario = makeScenario();
+    const { work, wt } = scenario;
+    const before = { main: snapshot(work), task: snapshot(wt) };
+
+    const { code, out, lines } = runClose(wt, ["SH-901"]);
+
+    expect(code).toBe(0);
+    expect(out).toMatch(/PR #31.*слит/);
+    expect(lastLine(lines)).toBe("ЗАКРЫТЬ СЕССИЮ: да");
+    expect({ main: snapshot(work), task: snapshot(wt) }).toEqual(before);
+  });
+
+  it("[SH-091 AC-1] без --apply из worktree на отсоединённой голове ничего не меняется", () => {
+    const { work, wt } = makeScenario({ detached: true });
+    const before = { main: snapshot(work), task: snapshot(wt) };
+
+    const { code, lines } = runClose(wt, ["SH-901"]);
+
+    expect(code).toBe(0);
+    expect(lastLine(lines)).toBe("ЗАКРЫТЬ СЕССИЮ: да");
+    expect({ main: snapshot(work), task: snapshot(wt) }).toEqual(before);
+  });
+
+  it("[SH-091 AC-1] без --apply из чужого worktree ничего не меняется", () => {
+    const scenario = makeScenario();
+    const foreign = addForeign(scenario);
+    const before = { main: snapshot(scenario.work), foreign: snapshot(foreign) };
+
+    const { code, lines } = runClose(foreign, ["SH-901"]);
+
+    expect(code).toBe(0);
+    expect(lastLine(lines)).toBe("ЗАКРЫТЬ СЕССИЮ: да");
+    expect({ main: snapshot(scenario.work), foreign: snapshot(foreign) }).toEqual(before);
+  });
+
+  it("[SH-091 AC-9] из worktree задачи на ветке: сам worktree и ветка остаются, main и другие worktree задачи обработаны, вердикт «нет», код 1", () => {
+    const scenario = makeScenario();
+    const { work, wt } = scenario;
+    const extra = addDetachedTaskWorktree(scenario, "extra");
+
+    const { code, out, lines } = runClose(wt, ["SH-901", "--apply"]);
+
+    expect(code).toBe(1);
+    expect(out).toContain(wt);
+    expect(existsSync(join(wt, "feature.txt"))).toBe(true);
+    expect(branches(work)).toContain(BRANCH);
+    expect(git(work, "rev-parse", "HEAD")).toBe(git(work, "rev-parse", "origin/main"));
+    expect(existsSync(extra)).toBe(false);
+    expect(lastLine(lines)).toBe(`ЗАКРЫТЬ СЕССИЮ: нет (${SELF_REASON})`);
+  });
+
+  it("[SH-091 AC-9] повторный запуск из основной папки дочищает worktree и ветку, вердикт «да»", () => {
+    const { work, wt } = makeScenario();
+    runClose(wt, ["SH-901", "--apply"]);
+
+    const { code, lines } = runClose(work, ["SH-901", "--apply"]);
+
+    expect(code).toBe(0);
+    expect(existsSync(wt)).toBe(false);
+    expect(branches(work)).not.toContain(BRANCH);
+    expect(lastLine(lines)).toBe("ЗАКРЫТЬ СЕССИЮ: да");
+  });
+
+  it("[SH-091 AC-9] из worktree на отсоединённой голове: он остаётся, main перемотан, вердикт «нет», код 1", () => {
+    const { work, wt } = makeScenario({ detached: true });
+
+    const { code, lines } = runClose(wt, ["SH-901", "--apply"]);
+
+    expect(code).toBe(1);
+    expect(existsSync(wt)).toBe(true);
+    expect(git(work, "rev-parse", "HEAD")).toBe(git(work, "rev-parse", "origin/main"));
+    expect(branches(work)).toContain(BRANCH);
+    expect(lastLine(lines)).toBe(`ЗАКРЫТЬ СЕССИЮ: нет (${SELF_REASON})`);
+  });
+
+  it("[SH-091 AC-9] из чужого worktree: операции идут в основной папке, чужой worktree и его файлы не тронуты, как при запуске из основной", () => {
+    const scenario = makeScenario();
+    const { work, wt } = scenario;
+    const foreign = addForeign(scenario);
+    writeFileSync(join(foreign, "mine.txt"), "моё\n");
+    const foreignHead = git(foreign, "rev-parse", "HEAD");
+
+    const { code, lines } = runClose(foreign, ["SH-901", "--apply"]);
+
+    expect(code).toBe(0);
+    expect(git(work, "rev-parse", "HEAD")).toBe(git(work, "rev-parse", "origin/main"));
+    expect(existsSync(wt)).toBe(false);
+    expect(branches(work)).not.toContain(BRANCH);
+    expect(branches(work)).toContain("foreign");
+    expect(existsSync(join(foreign, "mine.txt"))).toBe(true);
+    expect(git(foreign, "rev-parse", "HEAD")).toBe(foreignHead);
+    expect(lastLine(lines)).toBe("ЗАКРЫТЬ СЕССИЮ: да");
+  });
+
+  it("[SH-091 AC-9] основная папка берётся из первой записи git worktree list, а не из папки запуска", () => {
+    const scenario = makeScenario();
+    const { work } = scenario;
+    const foreign = addForeign(scenario);
+    const foreignHead = git(foreign, "rev-parse", "HEAD");
+    const originBefore = git(work, "rev-parse", "origin/main");
+
+    runClose(foreign, ["SH-901", "--apply"]);
+
+    expect(git(work, "rev-parse", "HEAD")).not.toBe(originBefore);
+    expect(git(foreign, "rev-parse", "HEAD")).toBe(foreignHead);
+    expect(git(foreign, "branch", "--show-current")).toBe("foreign");
+  });
+});
+
+describe("close-task: несколько файлов задачи в origin/main", () => {
+  it("[SH-091 AC-3] два файла задачи в origin/main: статус неоднозначен, вердикт «нет»", () => {
+    const { work } = makeScenario({ duplicateTask: true });
+
+    const { code, lines } = runClose(work, ["SH-901"]);
+
+    expect(code).toBe(1);
+    expect(lastLine(lines)).toMatch(/^ЗАКРЫТЬ СЕССИЮ: нет \(.*неоднозначн.*\)$/);
   });
 });
 
