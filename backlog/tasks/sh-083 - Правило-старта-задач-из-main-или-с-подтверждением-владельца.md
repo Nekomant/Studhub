@@ -1,17 +1,17 @@
 ---
 id: SH-083
 title: 'Правила штаба: ручной старт задач, старт из main, полнота спецификаций'
-status: Backlog
+status: Ready
 assignee: []
 created_date: '2026-11-12T11:39:00Z'
-updated_date: '2026-11-12T12:27:00Z'
+updated_date: '2026-11-12T21:05:00Z'
 labels:
   - infra
   - docs
 milestone: m-0
 dependencies: []
 priority: high
-ordinal: 76000
+ordinal: 1000
 ---
 
 ## Description
