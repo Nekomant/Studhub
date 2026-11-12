@@ -381,12 +381,12 @@ describe("[SH-090 AC-4] порядок проверки описан в теле
 describe("[SH-090 AC-9] скилл sh-spec и документы описывают вызов sh-spec-critic", () => {
   it("[SH-090 AC-9] в SKILL.md шаг вызова критика после spec:check и повторный вызов после правок", () => {
     const text = read(".claude/skills/sh-spec/SKILL.md");
-    const critic = text.indexOf("sh-spec-critic");
+    const critic = text.indexOf("subagent_type: sh-spec-critic");
     expect(critic).toBeGreaterThan(-1);
     expect(text.indexOf("pnpm spec:check SH-NNN")).toBeLessThan(critic);
     expect(text).toMatch(/повторн/);
     expect(text).toContain("блокирует");
-    expect(text).toMatch(/описани\w* PR/);
+    expect(text).toMatch(/описани[а-я]* PR/);
     expect(text).toMatch(/непринят/);
     expect(critic).toBeLessThan(text.indexOf("Открой PR"));
   });
@@ -425,6 +425,6 @@ describe("[SH-090 AC-9] скилл sh-spec и документы описыва�
     const paragraph = text.slice(Math.max(0, at - 400), at + 900);
     expect(paragraph).toContain("spec:check");
     expect(paragraph).toMatch(/повторн/);
-    expect(paragraph).toMatch(/описани\w* PR/);
+    expect(paragraph).toMatch(/описани[а-я]* PR/);
   });
 });
