@@ -9,16 +9,13 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { readTasks } from "./lib/backlog-task.mjs";
+import { levelNeedsLabel, readTasks } from "./lib/backlog-task.mjs";
 
 const CHECKED_STATUSES = new Set(["Review", "Done"]);
-const LEVELS_WITHOUT_LABEL = ["ручная", "ревью", "скрипт"];
 // Папки, где файлы тестов не ищем: зависимости, служебные папки и фикстуры инструментов.
 const SKIPPED_DIRS = new Set(["node_modules", "backlog", "dist", "build", "coverage"]);
 const TEST_FILE = /\.(test|spec)\.[cm]?[jt]sx?$/;
 const LABEL = /\[(SH-\d+)\s+(AC-\d+(?:\s*,\s*AC-\d+)*)\]/gi;
-
-const needsLabel = (level) => !LEVELS_WITHOUT_LABEL.some((prefix) => level.trim().toLowerCase().startsWith(prefix));
 
 function listTestFiles(dir) {
   const files = [];
@@ -54,7 +51,7 @@ export function checkCoverage(tasks, labels) {
     for (const criterion of task.criteria) {
       if (labels.has(`${task.id} AC-${criterion.index}`)) continue;
       const levels = task.plan?.get(criterion.index);
-      if (levels && !levels.some(needsLabel)) taskSkipped.push(`AC-${criterion.index} (${levels.join(", ")})`);
+      if (levels && !levels.some(levelNeedsLabel)) taskSkipped.push(`AC-${criterion.index} (${levels.join(", ")})`);
       else uncovered.push({ id: task.id, ...criterion });
     }
     if (taskSkipped.length > 0) skipped.push(`${task.id}: ${taskSkipped.join(", ")}`);

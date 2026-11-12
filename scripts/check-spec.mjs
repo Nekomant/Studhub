@@ -9,16 +9,15 @@
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { parseSections, readTasks } from "./lib/backlog-task.mjs";
+import { LEVELS, normalizeLevel, parseSections, readTasks } from "./lib/backlog-task.mjs";
 
 const REQUIRED_SECTIONS = ["Что нужно сделать", "Зачем", "Контекст", "Не входит", "Контракт", "План тестов"];
-const LEVELS = ["Юнит", "API", "E2E", "Ручная", "Ревью", "Скрипт"];
 const MAX_CRITERIA = 10;
 // Статусы зависимости, при которых задачу в Ready можно брать в работу.
 const DEPENDENCY_STATUSES_OK = new Set(["Done", "In Progress", "Review"]);
 const OWNER_ACTION =
   /купи|оплат|зарегистрир|созда\S*\s+аккаунт|получ\S*\s+(?:\S+\s+)?(?:ключ|токен|секрет)|подпис|договор/i;
-const DEPENDS_ON_TEXT = /зависит\s+от\s+((?:SH-\d+(?:\s*(?:,|и)\s*)?)+)/gi;
+const DEPENDS_ON_TEXT = /(?<!(?:^|[^а-яё])не\s+)зависит\s+от\s+((?:SH-\d+(?:\s*(?:,|и)\s*)?)+)/gi;
 
 const milestoneNumber = (milestone) => {
   const match = /^m-(\d+)$/i.exec(milestone);
@@ -58,11 +57,9 @@ export function checkTask(task, byId) {
     if (extra.length > 0) errors.push(`в плане тестов есть номера без критериев: ${acList(extra)}`);
   }
 
-  const known = LEVELS.map((level) => level.toLowerCase());
   for (const [n, levels] of task.plan ?? []) {
     for (const level of levels) {
-      if (!known.includes(level.trim().toLowerCase()))
-        errors.push(`AC-${n}: уровень «${level}» не из списка ${LEVELS.join(", ")}`);
+      if (normalizeLevel(level) === null) errors.push(`AC-${n}: уровень «${level}» не из списка ${LEVELS.join(", ")}`);
     }
   }
 
@@ -100,12 +97,20 @@ export function checkTask(task, byId) {
   return { errors, warnings };
 }
 
+// Файлы задач, изменённые относительно origin/main: коммиты ветки после ответвления (merge-base),
+// незакоммиченные правки и неотслеженные файлы. null, если origin/main недоступен.
+// Если общего предка нет (мелкий клон в CI), сравниваем с вершиной origin/main: в CI HEAD это merge-коммит PR.
 function changedFiles(root) {
   const run = (args) => spawnSync("git", ["-C", root, ...args], { encoding: "utf8" });
-  const diff = run(["diff", "--name-only", "-z", "origin/main", "--", "backlog/tasks"]);
-  if (diff.status !== 0) return null;
-  const untracked = run(["ls-files", "--others", "--exclude-standard", "-z", "--", "backlog/tasks"]);
-  return new Set(`${diff.stdout}${untracked.stdout ?? ""}`.split("\0").filter(Boolean));
+  const names = (result) => (result.stdout ?? "").split("\0").filter(Boolean);
+  const dir = ["--", "backlog/tasks"];
+  if (run(["rev-parse", "--verify", "--quiet", "origin/main"]).status !== 0) return null;
+  let committed = run(["diff", "--name-only", "-z", "origin/main...HEAD", ...dir]);
+  if (committed.status !== 0) committed = run(["diff", "--name-only", "-z", "origin/main", "HEAD", ...dir]);
+  if (committed.status !== 0) return null;
+  const uncommitted = run(["diff", "--name-only", "-z", "HEAD", ...dir]);
+  const untracked = run(["ls-files", "--others", "--exclude-standard", "-z", ...dir]);
+  return new Set([...names(committed), ...names(uncommitted), ...names(untracked)]);
 }
 
 function main() {

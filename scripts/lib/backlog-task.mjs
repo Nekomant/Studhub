@@ -70,15 +70,20 @@ export function parseTestPlan(description) {
   return plan;
 }
 
-// Разделы описания по заголовкам «## Имя»: имя → текст до следующего заголовка.
+// Разделы описания по заголовкам «## Имя»: имя → текст до следующего заголовка «## ».
+// Подзаголовки «###» и строки внутри блоков кода (``` или ~~~) раздел не обрывают.
+// Повторный заголовок с тем же именем дописывает текст к разделу.
 export function parseSections(description) {
   const sections = new Map();
   let current = null;
+  let fence = null;
   for (const line of description.split("\n")) {
-    const heading = /^#{1,6}\s*(.+?)\s*$/.exec(line);
+    const mark = /^\s*(```|~~~)/.exec(line)?.[1];
+    if (mark) fence = fence === null ? mark : fence === mark ? null : fence;
+    const heading = fence === null && !mark ? /^##\s+(.+?)\s*$/.exec(line) : null;
     if (heading) {
       current = heading[1];
-      sections.set(current, []);
+      if (!sections.has(current)) sections.set(current, []);
     } else if (current !== null) {
       sections.get(current).push(line);
     }
@@ -86,15 +91,39 @@ export function parseSections(description) {
   return new Map([...sections].map(([name, lines]) => [name, lines.join("\n").trim()]));
 }
 
+// Уровни плана тестов (docs/process.md §8.1). Уровни без теста не требуют метки `[SH-NNN AC-n]` (§8.2).
+export const LEVELS = ["Юнит", "API", "E2E", "Ручная", "Ревью", "Скрипт"];
+const LEVELS_WITHOUT_LABEL = ["Ручная", "Ревью", "Скрипт"];
+
+// Уровень из списка LEVELS или null. «Ручная», «Ревью» и «Скрипт» принимаются по префиксу
+// («Ручная проверка»), остальные уровни по полному совпадению без учёта регистра.
+export function normalizeLevel(level) {
+  const text = String(level).trim().toLowerCase();
+  const exact = LEVELS.find((name) => name.toLowerCase() === text);
+  if (exact) return exact;
+  return LEVELS_WITHOUT_LABEL.find((name) => text.startsWith(name.toLowerCase())) ?? null;
+}
+
+// Нужна ли в тестах метка для критерия этого уровня. Неизвестный уровень метку требует.
+export function levelNeedsLabel(level) {
+  return !LEVELS_WITHOUT_LABEL.includes(normalizeLevel(level));
+}
+
+const toArray = (value) => {
+  if (value == null) return [];
+  const items = Array.isArray(value) ? value : String(value).split(",");
+  return items.map((item) => String(item).trim().toUpperCase()).filter(Boolean);
+};
+
 export function parseTask(text) {
   const front = /^---\n([\s\S]*?)\n---/.exec(text);
-  const meta = front ? YAML.parse(front[1]) : {};
+  const meta = (front ? YAML.parse(front[1]) : null) ?? {};
   const description = section(text, "<!-- SECTION:DESCRIPTION:BEGIN -->", DESCRIPTION_END);
   return {
     id: String(meta.id ?? "").toUpperCase(),
     status: String(meta.status ?? ""),
     milestone: meta.milestone ? String(meta.milestone) : "",
-    dependencies: (meta.dependencies ?? []).map((id) => String(id).toUpperCase()),
+    dependencies: toArray(meta.dependencies),
     description,
     criteria: parseCriteria(text),
     plan: parseTestPlan(description),
