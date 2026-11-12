@@ -184,6 +184,149 @@ function checkVitest(args) {
   return null;
 }
 
+// sed умеет писать файлы (`w`, `s///w`) и запускать команды (`e`, `s///e`), поэтому скрипт разбирается строго:
+// разрешены адреса, команды p d q Q = l n N P D x g G h H, s и y без флагов w и e.
+function readDelimited(script, from, delimiter) {
+  let i = from;
+  while (i < script.length) {
+    if (script[i] === "\\") i += 2;
+    else if (script[i] === delimiter) return i;
+    else i += 1;
+  }
+  return -1;
+}
+
+function skipAddress(script, from) {
+  let i = from;
+  if (script[i] === "$") return i + 1;
+  const number = /^\d+(?:~\d+)?/.exec(script.slice(i));
+  if (number) return i + number[0].length;
+  if (script[i] === "/" || script[i] === "\\") {
+    const delimiter = script[i] === "\\" ? script[i + 1] : "/";
+    if (!delimiter || delimiter === "\\" || delimiter === "\n") return -1;
+    const end = readDelimited(script, i + (script[i] === "\\" ? 2 : 1), delimiter);
+    if (end === -1) return -1;
+    i = end + 1;
+    while (script[i] === "I" || script[i] === "M") i += 1;
+    return i;
+  }
+  return from;
+}
+
+export function isSafeSedScript(script) {
+  let i = 0;
+  const skipSpaces = () => {
+    while (script[i] === " " || script[i] === "\t") i += 1;
+  };
+  while (i < script.length) {
+    if (/[\s;]/.test(script[i])) {
+      i += 1;
+      continue;
+    }
+    const start = i;
+    const afterFirst = skipAddress(script, i);
+    if (afterFirst === -1) return false;
+    i = afterFirst;
+    if (script[i] === ",") {
+      if (afterFirst === start) return false;
+      i += 1;
+      if (script[i] === "+" || script[i] === "~") i += 1;
+      const afterSecond = skipAddress(script, i);
+      if (afterSecond === -1 || afterSecond === i) return false;
+      i = afterSecond;
+    }
+    skipSpaces();
+    while (script[i] === "!") {
+      i += 1;
+      skipSpaces();
+    }
+    const command = script[i];
+    i += 1;
+    if (command === undefined) return false;
+    if ("pdQ=lnNPDxgGhH".includes(command)) continue;
+    if (command === "q") {
+      while (/\d/.test(script[i] ?? "")) i += 1;
+      continue;
+    }
+    if (command === "s" || command === "y") {
+      const delimiter = script[i];
+      if (!delimiter || delimiter === "\\" || delimiter === "\n" || /[\s;]/.test(delimiter)) return false;
+      const middle = readDelimited(script, i + 1, delimiter);
+      if (middle === -1) return false;
+      const end = readDelimited(script, middle + 1, delimiter);
+      if (end === -1) return false;
+      i = end + 1;
+      if (command === "s") {
+        const flags = /^[gpiImM0-9]*/.exec(script.slice(i))[0];
+        i += flags.length;
+      }
+      if (i < script.length && !/[\s;]/.test(script[i])) return false;
+      continue;
+    }
+    return false;
+  }
+  return true;
+}
+
+const SED_SHORT_FLAGS = new Set(["n", "E", "r", "s", "z", "u"]);
+const SED_LONG_FLAGS = new Set([
+  "--quiet",
+  "--silent",
+  "--regexp-extended",
+  "--separate",
+  "--null-data",
+  "--unbuffered",
+  "--posix",
+  "--debug",
+  "--sandbox",
+]);
+
+function checkSed(args) {
+  const scripts = [];
+  const positional = [];
+  let endOfOptions = false;
+  for (let k = 0; k < args.length; k += 1) {
+    const arg = args[k];
+    if (endOfOptions || !isOption(arg) || arg === "-") {
+      positional.push(arg);
+    } else if (arg === "--") {
+      endOfOptions = true;
+    } else if (arg === "--expression") {
+      k += 1;
+      scripts.push(args[k] ?? "");
+    } else if (arg.startsWith("--expression=")) {
+      scripts.push(arg.slice("--expression=".length));
+    } else if (arg.startsWith("--")) {
+      if (arg === "--in-place" || arg.startsWith("--in-place=")) return "sed -i правит файл";
+      if (!SED_LONG_FLAGS.has(arg)) return `sed ${arg} не разрешён`;
+    } else {
+      const flags = arg.slice(1);
+      if (flags.includes("i")) return "sed -i правит файл";
+      const hasExpression = flags.endsWith("e");
+      const letters = hasExpression ? flags.slice(0, -1) : flags;
+      if (![...letters].every((letter) => SED_SHORT_FLAGS.has(letter))) return `sed ${arg} не разрешён`;
+      if (hasExpression) {
+        k += 1;
+        scripts.push(args[k] ?? "");
+      }
+    }
+  }
+  if (scripts.length === 0) {
+    const script = positional.shift();
+    if (script === undefined) return "sed без скрипта";
+    scripts.push(script);
+  }
+  if (!scripts.every(isSafeSedScript)) {
+    return "sed: скрипт может писать файл или запускать команды; разрешены адреса, p, d, q, s и y без флагов w и e";
+  }
+  return null;
+}
+
+function checkRipgrep(args) {
+  const unsafe = args.find((arg) => /^--(?:pre|pre-glob|hostname-bin)(?:=|$)/.test(arg));
+  return unsafe ? `rg ${unsafe.split("=")[0]} запускает внешнюю программу` : null;
+}
+
 // Присваивания перед командой разрешены только для этих переменных: они меняют вывод, но не запускают программы.
 // GIT_EXTERNAL_DIFF, GIT_PAGER, BASH_ENV, LD_PRELOAD, NODE_OPTIONS, PATH и подобные заблокированы.
 const SAFE_ASSIGNMENTS = new Set(["CI", "NO_COLOR", "FORCE_COLOR", "LANG", "LC_ALL", "TZ", "COLUMNS"]);
@@ -208,14 +351,18 @@ function checkSegment(words) {
   }
   if (!READ_COMMANDS.has(name)) return `команда ${name} не входит в список чтения`;
   if (name === "find" && args.some((arg) => FIND_WRITE_FLAGS.has(arg))) return "find с -delete, -exec и записью";
-  if (
-    name === "sed" &&
-    args.some((arg) => /^-[a-zA-Z]*i/.test(arg) || arg === "--in-place" || arg.startsWith("--in-place="))
-  ) {
-    return "sed -i правит файл";
-  }
+  if (name === "sed") return checkSed(args);
+  if (name === "rg") return checkRipgrep(args);
   if (name === "sort" && args.some((arg) => arg === "-o" || arg.startsWith("--output") || /^-[a-zA-Z]*o/.test(arg))) {
     return "sort -o пишет в файл";
+  }
+  if (name === "sort" && args.some((arg) => /^--compress-program(?:=|$)/.test(arg))) {
+    return "sort --compress-program запускает внешнюю программу";
+  }
+  // Второй позиционный аргумент uniq: файл, в который он пишет.
+  if (name === "uniq" && args.filter((arg) => !isOption(arg)).length > 1) return "uniq с выходным файлом";
+  if (name === "date" && args.some((arg) => /^-[a-zA-Z]*s/.test(arg) || arg === "--set" || arg.startsWith("--set="))) {
+    return "date -s меняет время системы";
   }
   return null;
 }
