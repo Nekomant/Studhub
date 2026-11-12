@@ -1,7 +1,7 @@
 ---
 id: SH-083
 title: 'Правила штаба: порядок старта задачи, ручной старт, полнота спецификаций'
-status: In Progress
+status: Review
 assignee:
   - '@claude'
 created_date: '2026-11-12T11:39:00Z'
