@@ -45,7 +45,7 @@ describe("[SH-073 AC-3] тема Tailwind CSS v4", () => {
     expect(themeVars.get("--radius-sm")).toBe("var(--radius-s)");
     expect(themeVars.get("--radius-md")).toBe("var(--radius-m)");
     expect(themeVars.get("--radius-lg")).toBe("var(--radius-l)");
-    expect(themeVars.get("--radius-pill")).toBe("var(--radius-pill)");
+    expect(themeVars.get("--radius-pill")).toBe(tokens.get("--radius-pill"));
   });
 
   it("[SH-073 AC-3] тени sheet и popover по §6, цвета теней зависят от темы", () => {
@@ -56,14 +56,14 @@ describe("[SH-073 AC-3] тема Tailwind CSS v4", () => {
     );
     expect(tokens.get("--shadow-popover-color-1")).toBe("light-dark(rgba(43, 38, 34, 0.14), rgba(0, 0, 0, 0.5))");
     expect(tokens.get("--shadow-popover-color-2")).toBe("light-dark(rgba(43, 38, 34, 0.08), rgba(0, 0, 0, 0.3))");
-    expect(themeVars.get("--shadow-sheet")).toBe("var(--shadow-sheet)");
-    expect(themeVars.get("--shadow-popover")).toBe("var(--shadow-popover)");
+    expect(themeVars.get("--shadow-sheet")).toBe(tokens.get("--shadow-sheet"));
+    expect(themeVars.get("--shadow-popover")).toBe(tokens.get("--shadow-popover"));
   });
 
   it("[SH-073 AC-3] семейства шрифтов: заголовки Nunito, текст Manrope, с запасными из §5", () => {
     expect(tokens.get("--font-heading")).toBe('"Nunito", "Manrope", system-ui, sans-serif');
     expect(tokens.get("--font-body")).toBe('"Manrope", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif');
-    expect(themeVars.get("--font-heading")).toBe("var(--font-heading)");
+    expect(themeVars.get("--font-heading")).toBe(tokens.get("--font-heading"));
     expect(themeVars.get("--font-sans")).toBe("var(--font-body)");
   });
 

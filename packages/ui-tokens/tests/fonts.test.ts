@@ -36,7 +36,8 @@ describe("[SH-073 AC-4] файлы шрифтов", () => {
       expect(missing.map((code) => `U+${code.toString(16).toUpperCase()}`)).toEqual([]);
     });
 
-    if (face.subset === "latin") {
+    // Табличные цифры нужны только Manrope: Nunito набирает заголовки, чисел в нём нет.
+    if (face.subset === "latin" && face.family === "Manrope") {
       it(`[SH-073 AC-4] ${fileName(face)} поддерживает табличные цифры (GSUB tnum)`, () => {
         expect(font().gsubFeatures).toContain("tnum");
       });

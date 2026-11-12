@@ -1,0 +1,116 @@
+/*
+ * Токены дизайн-системы Studhub (docs/design-system.md).
+ * Цвета заданы как light-dark(светлая, тёмная): одно объявление на токен.
+ * Тема выбирается только классом на <html> (или на любом блоке): без класса и с классом light светлая,
+ * с классом dark тёмная. Системную настройку цветовой схемы пакет не учитывает: режим
+ * «Как в системе» из Э-17 ставит класс скриптом (SH-022).
+ */
+
+:root {
+  color-scheme: light;
+
+  /* §3 Цвета */
+  /* Поверхности и линии */
+  --paper: light-dark(#f6f2ea, #1f1b18);
+  --surface: light-dark(#fffdf8, #2a2521);
+  --sunken: light-dark(#efe9df, #24201c);
+  --line: light-dark(#e6ded0, #3a332d);
+  --line-strong: light-dark(#857766, #837666);
+
+  /* Текст */
+  --ink: light-dark(#2b2622, #ede6dc);
+  --ink-muted: light-dark(#6e6359, #a89c8f);
+
+  /* Акцент */
+  --plum: light-dark(#6b3f69, #c893c4);
+  --plum-hover: light-dark(#5a3358, #d6a8d2);
+  --on-plum: light-dark(#fffdf8, #2a1828);
+  --plum-soft: light-dark(#efe3ee, #4a2e48);
+  --plum-ink: light-dark(#6b3f69, #d9aed5);
+  --focus: light-dark(#6b3f69, #d9aed5);
+
+  /* Статусы */
+  --done-bg: light-dark(#e3efe3, #24402a);
+  --done-ink: light-dark(#2d5a2e, #9fd0a0);
+  --charge-bg: light-dark(#f8e3d6, #4a2d1c);
+  --charge-ink: light-dark(#8a3d14, #f0b48a);
+  --pending-bg: light-dark(#f7e9cc, #4a3a1a);
+  --pending-ink: light-dark(#7a4e0b, #ebc77f);
+  --debt-bg: light-dark(#f8e1dd, #4a2420);
+  --debt-ink: light-dark(#a33a2a, #f08c7a);
+  --idle-bg: light-dark(#ede7dd, #353029);
+  --idle-ink: light-dark(#5e554c, #c9beb1);
+
+  /* Опасное действие и подложка */
+  --danger: light-dark(#a33a2a, #e58a78);
+  --on-danger: light-dark(#fffdf8, #2a1310);
+  --scrim: light-dark(rgba(43, 38, 34, 0.4), rgba(0, 0, 0, 0.55));
+
+  /* §6 Тени: цвет зависит от темы, смещения общие */
+  --shadow-sheet-color: light-dark(rgba(43, 38, 34, 0.12), rgba(0, 0, 0, 0.45));
+  --shadow-sheet: 0 -8px 24px var(--shadow-sheet-color);
+  --shadow-popover-color-1: light-dark(rgba(43, 38, 34, 0.14), rgba(0, 0, 0, 0.5));
+  --shadow-popover-color-2: light-dark(rgba(43, 38, 34, 0.08), rgba(0, 0, 0, 0.3));
+  --shadow-popover: 0 8px 24px var(--shadow-popover-color-1), 0 2px 6px var(--shadow-popover-color-2);
+
+  /* §6 Отступы: шаг сетки 4 px, номер шага как в Tailwind (space-6 = 24 px) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* §6 Высоты элементов */
+  --control-touch: 44px;
+  --control-desktop: 36px;
+  --tabbar: 56px;
+
+  /* §6 Радиусы */
+  --radius-s: 6px;
+  --radius-m: 10px;
+  --radius-l: 14px;
+  --radius-pill: 999px;
+
+  /* §5 Шрифты и стили текста: font: вес размер/интерлиньяж семейство */
+  --font-heading: "Nunito", "Manrope", system-ui, sans-serif;
+  --font-body: "Manrope", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --type-title-xl: 800 32px / 36px var(--font-heading);
+  --type-title-l: 800 26px / 30px var(--font-heading);
+  --type-title-m: 800 20px / 26px var(--font-heading);
+  --type-title-s: 800 17px / 22px var(--font-heading);
+  --type-body: 400 15px / 22px var(--font-body);
+  --type-body-strong: 600 15px / 22px var(--font-body);
+  --type-small: 400 13px / 18px var(--font-body);
+  --type-caption: 600 12px / 16px var(--font-body);
+  --type-figure: 300 28px / 32px var(--font-body);
+
+  /* §8 Переменные shadcn/ui */
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --card: var(--surface);
+  --card-foreground: var(--ink);
+  --popover: var(--surface);
+  --popover-foreground: var(--ink);
+  --primary: var(--plum);
+  --primary-foreground: var(--on-plum);
+  --secondary: var(--sunken);
+  --secondary-foreground: var(--ink);
+  --muted: var(--sunken);
+  --muted-foreground: var(--ink-muted);
+  --accent: var(--sunken);
+  --accent-foreground: var(--ink);
+  --destructive: var(--danger);
+  --border: var(--line);
+  --input: var(--line-strong);
+  --ring: var(--focus);
+  --radius: var(--radius-m);
+}
+
+.light {
+  color-scheme: light;
+}
+
+.dark {
+  color-scheme: dark;
+}

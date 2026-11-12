@@ -15,6 +15,8 @@ export function normalize(value: string): string {
   return value
     .replaceAll(/\s+/g, " ")
     .replaceAll(/\s*,\s*/g, ", ")
+    .replaceAll(/\s*\/\s*/g, "/")
+    .replaceAll(/(\d\.\d*?)0+(?![\d])/g, "$1")
     .replaceAll(/#[0-9a-f]{3,8}\b/gi, (hex) => hex.toLowerCase())
     .trim();
 }

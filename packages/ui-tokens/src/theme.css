@@ -1,0 +1,126 @@
+/*
+ * Тема Tailwind CSS v4 на токенах из tokens.css. Подключается после tailwindcss:
+ *   @import "tailwindcss";
+ *   @import "@studhub/ui-tokens/index.css";
+ * `inline` нужен, чтобы утилиты ссылались на var(--paper) и тема менялась классом на <html>.
+ */
+@theme inline {
+  /* Стандартную палитру Tailwind не используем: только токены дизайн-системы. */
+  --color-*: initial;
+
+  /* §3 Цвета */
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-sunken: var(--sunken);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-plum: var(--plum);
+  --color-plum-hover: var(--plum-hover);
+  --color-on-plum: var(--on-plum);
+  --color-plum-soft: var(--plum-soft);
+  --color-plum-ink: var(--plum-ink);
+  --color-focus: var(--focus);
+  --color-done-bg: var(--done-bg);
+  --color-done-ink: var(--done-ink);
+  --color-charge-bg: var(--charge-bg);
+  --color-charge-ink: var(--charge-ink);
+  --color-pending-bg: var(--pending-bg);
+  --color-pending-ink: var(--pending-ink);
+  --color-debt-bg: var(--debt-bg);
+  --color-debt-ink: var(--debt-ink);
+  --color-idle-bg: var(--idle-bg);
+  --color-idle-ink: var(--idle-ink);
+  --color-danger: var(--danger);
+  --color-on-danger: var(--on-danger);
+  --color-scrim: var(--scrim);
+
+  /* §8 Цвета shadcn/ui: bg-background, text-foreground, border-border и так далее */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* §6 Отступы: p-1 = 4 px, p-6 = 24 px, p-8 = 32 px. Высоты: h-control-touch, h-tabbar */
+  --spacing: 4px;
+  --spacing-control-touch: var(--control-touch);
+  --spacing-control-desktop: var(--control-desktop);
+  --spacing-tabbar: var(--tabbar);
+
+  /* §6 Радиусы: rounded-sm (6), rounded-md (10), rounded-lg (14). shadcn берёт sm, md, lg */
+  --radius-sm: var(--radius-s);
+  --radius-md: var(--radius-m);
+  --radius-lg: var(--radius-l);
+
+  /* §5 Шрифт текста: font-sans (Manrope) */
+  --font-sans: var(--font-body);
+}
+
+/*
+ * Ключи темы, которые называются так же, как токены (rounded-pill, shadow-sheet, shadow-popover, font-heading).
+ * Здесь значения повторены, а не взяты через var(): ссылка переменной на саму себя ломает значение.
+ * Тест SH-073 AC-3 следит, чтобы они совпадали с tokens.css.
+ */
+@theme {
+  --radius-pill: 999px;
+  --shadow-sheet: 0 -8px 24px var(--shadow-sheet-color);
+  --shadow-popover: 0 8px 24px var(--shadow-popover-color-1), 0 2px 6px var(--shadow-popover-color-2);
+  --font-heading: "Nunito", "Manrope", system-ui, sans-serif;
+}
+
+/* §5 Стили текста: один класс задаёт шрифт, размер, интерлиньяж и вес */
+@utility title-xl {
+  font: var(--type-title-xl);
+}
+
+@utility title-l {
+  font: var(--type-title-l);
+}
+
+@utility title-m {
+  font: var(--type-title-m);
+}
+
+@utility title-s {
+  font: var(--type-title-s);
+}
+
+@utility body {
+  font: var(--type-body);
+}
+
+@utility body-strong {
+  font: var(--type-body-strong);
+}
+
+@utility small {
+  font: var(--type-small);
+}
+
+@utility caption {
+  font: var(--type-caption);
+}
+
+@utility figure {
+  font: var(--type-figure);
+}
+
+/* §5 Время, суммы и даты всегда с табличными цифрами */
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+}

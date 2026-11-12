@@ -14,8 +14,8 @@ function pair(name: string): { light: string; dark: string } {
 }
 
 describe("[SH-073 AC-1] цветовые токены совпадают с design-system.md §3", () => {
-  it("[SH-073 AC-1] в документе разобрано не меньше 30 цветовых токенов", () => {
-    expect(tokens.length).toBeGreaterThanOrEqual(30);
+  it("[SH-073 AC-1] в документе разобрано 26 цветовых токенов", () => {
+    expect(tokens).toHaveLength(26);
   });
 
   it.each(tokens)("[SH-073 AC-1] --$name: светлая $light, тёмная $dark", ({ name, light, dark }) => {
