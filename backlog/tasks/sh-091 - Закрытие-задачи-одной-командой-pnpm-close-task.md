@@ -1,7 +1,7 @@
 ---
 id: SH-091
 title: 'Закрытие задачи одной командой: pnpm close-task'
-status: In Progress
+status: Review
 assignee:
   - '@claude'
 created_date: '2026-11-12T16:06:00Z'
