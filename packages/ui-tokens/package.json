@@ -2,6 +2,13 @@
   "name": "@studhub/ui-tokens",
   "private": true,
   "type": "module",
+  "exports": {
+    ".": "./src/index.css",
+    "./index.css": "./src/index.css",
+    "./tokens.css": "./src/tokens.css",
+    "./fonts.css": "./src/fonts.css",
+    "./theme.css": "./src/theme.css"
+  },
   "devDependencies": {
     "playwright": "^1.65.0"
   }
