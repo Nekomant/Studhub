@@ -4,6 +4,7 @@
     { "path": "apps/api" },
     { "path": "apps/web" },
     { "path": "packages/client-core" },
+    { "path": "packages/ui-tokens" },
     { "path": "tests/api" },
     { "path": "tests/e2e" },
     { "path": "tools" }

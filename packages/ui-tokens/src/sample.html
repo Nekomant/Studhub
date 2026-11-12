@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Studhub: токены дизайн-системы</title>
+    <link rel="stylesheet" href="./tokens.css" />
+    <link rel="stylesheet" href="./fonts.css" />
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; background: #888; font: var(--type-body); }
+      .pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }
+      .panel { background: var(--paper); color: var(--ink); padding: var(--space-6); min-width: 0; }
+      .panel h1 { font: var(--type-title-l); margin: 0 0 var(--space-4); }
+      .panel h2 { font: var(--type-title-m); margin: var(--space-8) 0 var(--space-3); }
+      .panel h3 { font: var(--type-title-s); margin: var(--space-4) 0 var(--space-2); }
+      .swatches, .badges { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+      .swatches li { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-3); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-m); }
+      .chip { flex: none; width: 40px; height: 28px; border-radius: var(--radius-s); border: 1px solid var(--line); }
+      .sw-name { font: var(--type-body-strong); flex: 1; }
+      .sw-val { font: var(--type-small); color: var(--ink-muted); }
+      .types { border-collapse: collapse; width: 100%; }
+      .types th, .types td { padding: var(--space-2) var(--space-3) var(--space-2) 0; border-bottom: 1px solid var(--line); text-align: left; vertical-align: baseline; font-weight: 400; }
+      .types th { font: var(--type-body-strong); white-space: nowrap; }
+      .types small { font: var(--type-small); color: var(--ink-muted); }
+      .badges li { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-2) var(--space-3); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-m); }
+      .badges code { font: var(--type-small); color: var(--ink-muted); }
+      .badge { font: var(--type-caption); padding: var(--space-1) var(--space-3); border-radius: var(--radius-pill); border: 1px solid transparent; }
+      .badge-scheduled { border-color: var(--line-strong); color: var(--ink-muted); background: var(--sunken); }
+      .badge-progress { background: var(--plum-soft); color: var(--plum-ink); }
+      .badge-done { background: var(--done-bg); color: var(--done-ink); }
+      .badge-charge { background: var(--charge-bg); color: var(--charge-ink); }
+      .badge-idle { background: var(--idle-bg); color: var(--idle-ink); }
+      .badge-pending { background: var(--pending-bg); color: var(--pending-ink); }
+      .tabular { font-variant-numeric: tabular-nums; }
+      .money { display: flex; gap: var(--space-4); flex-wrap: wrap; font: var(--type-body-strong); }
+      .paid { color: var(--done-ink); }
+      .debt { color: var(--debt-ink); }
+      .buttons { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+      .btn { font: var(--type-body-strong); min-height: var(--control-touch); padding: 0 var(--space-4); border-radius: var(--radius-m); border: 1px solid transparent; cursor: pointer; }
+      .btn-primary { background: var(--plum); color: var(--on-plum); }
+      .btn-primary:hover { background: var(--plum-hover); }
+      .btn-secondary { background: transparent; color: var(--ink); border-color: var(--line-strong); }
+      .btn-text { background: transparent; color: var(--plum-ink); }
+      .btn-danger { background: var(--danger); color: var(--on-danger); }
+      .btn:focus-visible, input:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+      .field { display: grid; gap: var(--space-1); max-width: 320px; margin-top: var(--space-4); font: var(--type-small); color: var(--ink-muted); }
+      .field input { font: var(--type-body); color: var(--ink); height: var(--control-touch); padding: 0 var(--space-3); background: var(--sunken); border: 1px solid var(--line-strong); border-radius: var(--radius-m); }
+    </style>
+  </head>
+  <body>
+    <main class="pair">
+<section class="panel light" aria-label="Светлая тема">
+  <h1 class="p-title">Светлая тема</h1>
+  <h2>Цвета</h2>
+  <h3>Поверхности и линии</h3>
+  <ul class="swatches">
+    <li><span class="chip" style="background: var(--paper)"></span><span class="sw-name">paper</span><code class="sw-val"></code></li>
+    <li><span class="chip" style="background: var(--surface)"></span><span class="sw-name">surface</span><code class="sw-val"></code></li>
+    <li><span class="chip" style="background: var(--sunken)"></span><span class="sw-name">sunken</span><code class="sw-val"></code></li>
+    <li><span class="chip" style="background: var(--line)"></span><span class="sw-name">line</span><code class="sw-val"></code></li>
+    <li><span class="chip" style="background: var(--line-strong)"></span><span class="sw-name">line-strong</span><code class="sw-val"></code></li>
+  </ul>
+  <h3>Текст</h3>
+  <ul class="swatches">
+    <li><span class="chip" style="background: var(--ink)"></span><span class="sw-name">ink</span><code class="sw-val"></code></li>
+    <li><span class="chip" style="background: var(--ink-muted)"></span><span class="sw-name">ink-muted</span><code class="sw-val"></code></li>
+  </ul>
+  <h3>Акцент</h3>
+  <ul class="swatches">
+    <li><span class="chip" style="background: var(--plum)"></span><span class="sw-name">plum</span><code class="sw-val"></code></li>
+    <li><span class="chip" style="background: var(--plum-hover)"></span><span class="sw-name">plum-hover</span><code class="sw-val"></code></li>
+    <li><span class="chip" style="background: var(--on-plum)"></span><span class="sw-name">on-plum</span><code class="sw-val"></code></li>
+    <li><span class="chip" style="background: var(--plum-soft)"></span><span class="sw-name">plum-soft</span><code class="sw-val"></code></li>
+    <li><span class="chip" style="background: var(--plum-ink)"></span><span class="sw-name">plum-ink</span><code class="sw-val"></code></li>
+    <li><span class="chip" style="background: var(--focus)"></span><span class="sw-name">focus</span><code class="sw-val"></code></li>
+  </ul>
+  <h3>Статусы</h3>
+  <ul class="swatches">
+    <li><span class="chip" style="background: var(--done-bg)"></span><span class="sw-name">done-bg</span><code class="sw-val"></code></li>
+    <li><span class="chip" style="background: var(--done-ink)"></span><span class="sw-name">done-ink</span><code class="sw-val"></code></li>
+    <li><span class="chip" style="background: var(--charge-bg)"></span><span class="sw-name">charge-bg</span><code class="sw-val"></code></li>
+    <li><span class="chip" style="background: var(--charge-ink)"></span><span class="sw-name">charge-ink</span><code class="sw-val"></code></li>
+    <li><span class="chip" style="background: var(--pending-bg)"></span><span class="sw-name">pending-bg</span><code class="sw-val"></code></li>
+    <li><span class="chip" style="background: var(--pending-ink)"></span><span class="sw-name">pending-ink</span><code class="sw-val"></code></li>
+    <li><span class="chip" style="background: var(--debt-bg)"></span><span class="sw-name">debt-bg</span><code class="sw-val"></code></li>
+    <li><span class="chip" style="background: var(--debt-ink)"></span><span class="sw-name">debt-ink</span><code class="sw-val"></code></li>
+    <li><span class="chip" style="background: var(--idle-bg)"></span><span class="sw-name">idle-bg</span><code class="sw-val"></code></li>
+    <li><span class="chip" style="background: var(--idle-ink)"></span><span class="sw-name">idle-ink</span><code class="sw-val"></code></li>
+  </ul>
+  <h3>Опасное действие и подложка</h3>
+  <ul class="swatches">
+    <li><span class="chip" style="background: var(--danger)"></span><span class="sw-name">danger</span><code class="sw-val"></code></li>
+    <li><span class="chip" style="background: var(--on-danger)"></span><span class="sw-name">on-danger</span><code class="sw-val"></code></li>
+    <li><span class="chip" style="background: var(--scrim)"></span><span class="sw-name">scrim</span><code class="sw-val"></code></li>
+  </ul>
+  <h2>Стили текста</h2>
+  <table class="types"><tbody>
+    <tr><th scope="row">title-xl<br><small>Nunito 32 / 36 / 800</small></th><td style="font: var(--type-title-xl)">Расписание на неделю</td></tr>
+    <tr><th scope="row">title-l<br><small>Nunito 26 / 30 / 800</small></th><td style="font: var(--type-title-l)">Анна Смирнова</td></tr>
+    <tr><th scope="row">title-m<br><small>Nunito 20 / 26 / 800</small></th><td style="font: var(--type-title-m)">Перенос урока</td></tr>
+    <tr><th scope="row">title-s<br><small>Nunito 17 / 22 / 800</small></th><td style="font: var(--type-title-s)">Следующий урок</td></tr>
+    <tr><th scope="row">body<br><small>Manrope 15 / 22 / 400</small></th><td style="font: var(--type-body)">Урок в среду в 18:00, у ученика 22:00. Домашнее задание проверено.</td></tr>
+    <tr><th scope="row">body-strong<br><small>Manrope 15 / 22 / 600</small></th><td style="font: var(--type-body-strong)">18:00 · Анна Смирнова</td></tr>
+    <tr><th scope="row">small<br><small>Manrope 13 / 18 / 400</small></th><td style="font: var(--type-small)">Подпись, подсказка, «у ученика 22:00»</td></tr>
+    <tr><th scope="row">caption<br><small>Manrope 12 / 16 / 600</small></th><td style="font: var(--type-caption)">ЗАПЛАНИРОВАН</td></tr>
+    <tr><th scope="row">figure<br><small>Manrope 28 / 32 / 300</small></th><td style="font: var(--type-figure)">84 500 ₽</td></tr>
+  </tbody></table>
+  <h2>Статусы урока</h2>
+  <ul class="badges">
+    <li><span class="badge badge-scheduled">Запланирован</span><code>scheduled</code></li>
+    <li><span class="badge badge-progress">Идёт, до 19:00</span><code>in_progress</code></li>
+    <li><span class="badge badge-done">Проведён</span><code>completed</code></li>
+    <li><span class="badge badge-charge">Поздняя отмена</span><code>cancelled_late</code></li>
+    <li><span class="badge badge-charge">Не пришёл</span><code>no_show</code></li>
+    <li><span class="badge badge-idle">Отмена вовремя</span><code>cancelled_on_time</code></li>
+    <li><span class="badge badge-idle">Отменил я</span><code>cancelled_by_teacher</code></li>
+    <li><span class="badge badge-pending">Перенесён без даты</span><code>postponed</code></li>
+  </ul>
+  <h2>Деньги и кнопки</h2>
+  <p class="money"><span class="paid tabular">+3 000 ₽</span> <span class="tabular">−1 500 ₽</span> <span class="debt tabular">Долг 4 500 ₽</span></p>
+  <p class="buttons"><button type="button" class="btn btn-primary">Сохранить</button> <button type="button" class="btn btn-secondary">Отменить</button> <button type="button" class="btn btn-text">Подробнее</button> <button type="button" class="btn btn-danger">Удалить</button></p>
+  <label class="field">Имя ученика<input type="text" value="Анна" /></label>
+</section>
+<section class="panel dark" aria-label="Тёмная тема">
+  <h1 class="p-title">Тёмная тема</h1>
+  <h2>Цвета</h2>
+  <h3>Поверхности и линии</h3>
+  <ul class="swatches">
+    <li><span class="chip" style="background: var(--paper)"></span><span class="sw-name">paper</span><code class="sw-val"></code></li>
+    <li><span class="chip" style="background: var(--surface)"></span><span class="sw-name">surface</span><code class="sw-val"></code></li>
+    <li><span class="chip" style="background: var(--sunken)"></span><span class="sw-name">sunken</span><code class="sw-val"></code></li>
+    <li><span class="chip" style="background: var(--line)"></span><span class="sw-name">line</span><code class="sw-val"></code></li>
+    <li><span class="chip" style="background: var(--line-strong)"></span><span class="sw-name">line-strong</span><code class="sw-val"></code></li>
+  </ul>
+  <h3>Текст</h3>
+  <ul class="swatches">
+    <li><span class="chip" style="background: var(--ink)"></span><span class="sw-name">ink</span><code class="sw-val"></code></li>
+    <li><span class="chip" style="background: var(--ink-muted)"></span><span class="sw-name">ink-muted</span><code class="sw-val"></code></li>
+  </ul>
+  <h3>Акцент</h3>
+  <ul class="swatches">
+    <li><span class="chip" style="background: var(--plum)"></span><span class="sw-name">plum</span><code class="sw-val"></code></li>
+    <li><span class="chip" style="background: var(--plum-hover)"></span><span class="sw-name">plum-hover</span><code class="sw-val"></code></li>
+    <li><span class="chip" style="background: var(--on-plum)"></span><span class="sw-name">on-plum</span><code class="sw-val"></code></li>
+    <li><span class="chip" style="background: var(--plum-soft)"></span><span class="sw-name">plum-soft</span><code class="sw-val"></code></li>
+    <li><span class="chip" style="background: var(--plum-ink)"></span><span class="sw-name">plum-ink</span><code class="sw-val"></code></li>
+    <li><span class="chip" style="background: var(--focus)"></span><span class="sw-name">focus</span><code class="sw-val"></code></li>
+  </ul>
+  <h3>Статусы</h3>
+  <ul class="swatches">
+    <li><span class="chip" style="background: var(--done-bg)"></span><span class="sw-name">done-bg</span><code class="sw-val"></code></li>
+    <li><span class="chip" style="background: var(--done-ink)"></span><span class="sw-name">done-ink</span><code class="sw-val"></code></li>
+    <li><span class="chip" style="background: var(--charge-bg)"></span><span class="sw-name">charge-bg</span><code class="sw-val"></code></li>
+    <li><span class="chip" style="background: var(--charge-ink)"></span><span class="sw-name">charge-ink</span><code class="sw-val"></code></li>
+    <li><span class="chip" style="background: var(--pending-bg)"></span><span class="sw-name">pending-bg</span><code class="sw-val"></code></li>
+    <li><span class="chip" style="background: var(--pending-ink)"></span><span class="sw-name">pending-ink</span><code class="sw-val"></code></li>
+    <li><span class="chip" style="background: var(--debt-bg)"></span><span class="sw-name">debt-bg</span><code class="sw-val"></code></li>
+    <li><span class="chip" style="background: var(--debt-ink)"></span><span class="sw-name">debt-ink</span><code class="sw-val"></code></li>
+    <li><span class="chip" style="background: var(--idle-bg)"></span><span class="sw-name">idle-bg</span><code class="sw-val"></code></li>
+    <li><span class="chip" style="background: var(--idle-ink)"></span><span class="sw-name">idle-ink</span><code class="sw-val"></code></li>
+  </ul>
+  <h3>Опасное действие и подложка</h3>
+  <ul class="swatches">
+    <li><span class="chip" style="background: var(--danger)"></span><span class="sw-name">danger</span><code class="sw-val"></code></li>
+    <li><span class="chip" style="background: var(--on-danger)"></span><span class="sw-name">on-danger</span><code class="sw-val"></code></li>
+    <li><span class="chip" style="background: var(--scrim)"></span><span class="sw-name">scrim</span><code class="sw-val"></code></li>
+  </ul>
+  <h2>Стили текста</h2>
+  <table class="types"><tbody>
+    <tr><th scope="row">title-xl<br><small>Nunito 32 / 36 / 800</small></th><td style="font: var(--type-title-xl)">Расписание на неделю</td></tr>
+    <tr><th scope="row">title-l<br><small>Nunito 26 / 30 / 800</small></th><td style="font: var(--type-title-l)">Анна Смирнова</td></tr>
+    <tr><th scope="row">title-m<br><small>Nunito 20 / 26 / 800</small></th><td style="font: var(--type-title-m)">Перенос урока</td></tr>
+    <tr><th scope="row">title-s<br><small>Nunito 17 / 22 / 800</small></th><td style="font: var(--type-title-s)">Следующий урок</td></tr>
+    <tr><th scope="row">body<br><small>Manrope 15 / 22 / 400</small></th><td style="font: var(--type-body)">Урок в среду в 18:00, у ученика 22:00. Домашнее задание проверено.</td></tr>
+    <tr><th scope="row">body-strong<br><small>Manrope 15 / 22 / 600</small></th><td style="font: var(--type-body-strong)">18:00 · Анна Смирнова</td></tr>
+    <tr><th scope="row">small<br><small>Manrope 13 / 18 / 400</small></th><td style="font: var(--type-small)">Подпись, подсказка, «у ученика 22:00»</td></tr>
+    <tr><th scope="row">caption<br><small>Manrope 12 / 16 / 600</small></th><td style="font: var(--type-caption)">ЗАПЛАНИРОВАН</td></tr>
+    <tr><th scope="row">figure<br><small>Manrope 28 / 32 / 300</small></th><td style="font: var(--type-figure)">84 500 ₽</td></tr>
+  </tbody></table>
+  <h2>Статусы урока</h2>
+  <ul class="badges">
+    <li><span class="badge badge-scheduled">Запланирован</span><code>scheduled</code></li>
+    <li><span class="badge badge-progress">Идёт, до 19:00</span><code>in_progress</code></li>
+    <li><span class="badge badge-done">Проведён</span><code>completed</code></li>
+    <li><span class="badge badge-charge">Поздняя отмена</span><code>cancelled_late</code></li>
+    <li><span class="badge badge-charge">Не пришёл</span><code>no_show</code></li>
+    <li><span class="badge badge-idle">Отмена вовремя</span><code>cancelled_on_time</code></li>
+    <li><span class="badge badge-idle">Отменил я</span><code>cancelled_by_teacher</code></li>
+    <li><span class="badge badge-pending">Перенесён без даты</span><code>postponed</code></li>
+  </ul>
+  <h2>Деньги и кнопки</h2>
+  <p class="money"><span class="paid tabular">+3 000 ₽</span> <span class="tabular">−1 500 ₽</span> <span class="debt tabular">Долг 4 500 ₽</span></p>
+  <p class="buttons"><button type="button" class="btn btn-primary">Сохранить</button> <button type="button" class="btn btn-secondary">Отменить</button> <button type="button" class="btn btn-text">Подробнее</button> <button type="button" class="btn btn-danger">Удалить</button></p>
+  <label class="field">Имя ученика<input type="text" value="Анна" /></label>
+</section>
+    </main>
+    <script>
+      // Подписывает каждый образец вычисленным цветом: значения берутся из CSS, а не повторяются здесь.
+      for (const item of document.querySelectorAll(".swatches li")) {
+        item.querySelector(".sw-val").textContent = getComputedStyle(item.querySelector(".chip")).backgroundColor;
+      }
+    </script>
+  </body>
+</html>

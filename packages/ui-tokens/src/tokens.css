@@ -1,0 +1,185 @@
+/*
+ * Токены дизайн-системы Studhub (docs/design-system.md).
+ * Тема выбирается классом на <html> (или на любом блоке): без класса и с классом light светлая,
+ * с классом dark тёмная. Светлые значения лежат в `:root, .light`, тёмные в `.dark`; если токен
+ * меняется, правим оба блока. Системную настройку цветовой схемы пакет не учитывает: режим
+ * «Как в системе» из Э-17 ставит класс скриптом (SH-022).
+ */
+
+:root {
+  /* §6 Отступы: шаг сетки 4 px, номер шага как в Tailwind (space-6 = 24 px) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* §6 Высоты элементов */
+  --control-touch: 44px;
+  --control-desktop: 36px;
+  --tabbar: 56px;
+
+  /* §6 Радиусы */
+  --radius-s: 6px;
+  --radius-m: 10px;
+  --radius-l: 14px;
+  --radius-pill: 999px;
+  --radius: var(--radius-m); /* §8 shadcn */
+
+  /* §5 Шрифты и стили текста: font: вес размер/интерлиньяж семейство */
+  --font-heading: "Nunito", "Manrope", system-ui, sans-serif;
+  --font-body: "Manrope", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --type-title-xl: 800 32px / 36px var(--font-heading);
+  --type-title-l: 800 26px / 30px var(--font-heading);
+  --type-title-m: 800 20px / 26px var(--font-heading);
+  --type-title-s: 800 17px / 22px var(--font-heading);
+  --type-body: 400 15px / 22px var(--font-body);
+  --type-body-strong: 600 15px / 22px var(--font-body);
+  --type-small: 400 13px / 18px var(--font-body);
+  --type-caption: 600 12px / 16px var(--font-body);
+  --type-figure: 300 28px / 32px var(--font-body);
+}
+
+/* §3 Светлая тема: по умолчанию и при классе light (в том числе внутри блока dark) */
+:root,
+.light {
+  color-scheme: light;
+
+  /* Поверхности и линии */
+  --paper: #f6f2ea;
+  --surface: #fffdf8;
+  --sunken: #efe9df;
+  --line: #e6ded0;
+  --line-strong: #857766;
+
+  /* Текст */
+  --ink: #2b2622;
+  --ink-muted: #6e6359;
+
+  /* Акцент */
+  --plum: #6b3f69;
+  --plum-hover: #5a3358;
+  --on-plum: #fffdf8;
+  --plum-soft: #efe3ee;
+  --plum-ink: #6b3f69;
+  --focus: #6b3f69;
+
+  /* Статусы */
+  --done-bg: #e3efe3;
+  --done-ink: #2d5a2e;
+  --charge-bg: #f8e3d6;
+  --charge-ink: #8a3d14;
+  --pending-bg: #f7e9cc;
+  --pending-ink: #7a4e0b;
+  --debt-bg: #f8e1dd;
+  --debt-ink: #a33a2a;
+  --idle-bg: #ede7dd;
+  --idle-ink: #5e554c;
+
+  /* Опасное действие и подложка */
+  --danger: #a33a2a;
+  --on-danger: #fffdf8;
+  --scrim: rgba(43, 38, 34, 0.4);
+
+  /* Цвета теней */
+  --shadow-sheet-color: rgba(43, 38, 34, 0.12);
+  --shadow-popover-color-1: rgba(43, 38, 34, 0.14);
+  --shadow-popover-color-2: rgba(43, 38, 34, 0.08);
+
+  /* §6 Тени: составные значения повторены в обеих темах, потому что цвета у них свои */
+  --shadow-sheet: 0 -8px 24px var(--shadow-sheet-color);
+  --shadow-popover: 0 8px 24px var(--shadow-popover-color-1), 0 2px 6px var(--shadow-popover-color-2);
+
+  /* §8 Переменные shadcn/ui, зависящие от цвета: повторены в обеих темах, иначе вложенный блок
+     с другим классом унаследует значение родителя */
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --card: var(--surface);
+  --card-foreground: var(--ink);
+  --popover: var(--surface);
+  --popover-foreground: var(--ink);
+  --primary: var(--plum);
+  --primary-foreground: var(--on-plum);
+  --secondary: var(--sunken);
+  --secondary-foreground: var(--ink);
+  --muted: var(--sunken);
+  --muted-foreground: var(--ink-muted);
+  --accent: var(--sunken);
+  --accent-foreground: var(--ink);
+  --destructive: var(--danger);
+  --border: var(--line);
+  --input: var(--line-strong);
+  --ring: var(--focus);
+}
+
+/* §3 Тёмная тема */
+.dark {
+  color-scheme: dark;
+
+  /* Поверхности и линии */
+  --paper: #1f1b18;
+  --surface: #2a2521;
+  --sunken: #24201c;
+  --line: #3a332d;
+  --line-strong: #837666;
+
+  /* Текст */
+  --ink: #ede6dc;
+  --ink-muted: #a89c8f;
+
+  /* Акцент */
+  --plum: #c893c4;
+  --plum-hover: #d6a8d2;
+  --on-plum: #2a1828;
+  --plum-soft: #4a2e48;
+  --plum-ink: #d9aed5;
+  --focus: #d9aed5;
+
+  /* Статусы */
+  --done-bg: #24402a;
+  --done-ink: #9fd0a0;
+  --charge-bg: #4a2d1c;
+  --charge-ink: #f0b48a;
+  --pending-bg: #4a3a1a;
+  --pending-ink: #ebc77f;
+  --debt-bg: #4a2420;
+  --debt-ink: #f08c7a;
+  --idle-bg: #353029;
+  --idle-ink: #c9beb1;
+
+  /* Опасное действие и подложка */
+  --danger: #e58a78;
+  --on-danger: #2a1310;
+  --scrim: rgba(0, 0, 0, 0.55);
+
+  /* Цвета теней */
+  --shadow-sheet-color: rgba(0, 0, 0, 0.45);
+  --shadow-popover-color-1: rgba(0, 0, 0, 0.5);
+  --shadow-popover-color-2: rgba(0, 0, 0, 0.3);
+
+  /* §6 Тени: составные значения повторены в обеих темах, потому что цвета у них свои */
+  --shadow-sheet: 0 -8px 24px var(--shadow-sheet-color);
+  --shadow-popover: 0 8px 24px var(--shadow-popover-color-1), 0 2px 6px var(--shadow-popover-color-2);
+
+  /* §8 Переменные shadcn/ui, зависящие от цвета: повторены в обеих темах, иначе вложенный блок
+     с другим классом унаследует значение родителя */
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --card: var(--surface);
+  --card-foreground: var(--ink);
+  --popover: var(--surface);
+  --popover-foreground: var(--ink);
+  --primary: var(--plum);
+  --primary-foreground: var(--on-plum);
+  --secondary: var(--sunken);
+  --secondary-foreground: var(--ink);
+  --muted: var(--sunken);
+  --muted-foreground: var(--ink-muted);
+  --accent: var(--sunken);
+  --accent-foreground: var(--ink);
+  --destructive: var(--danger);
+  --border: var(--line);
+  --input: var(--line-strong);
+  --ring: var(--focus);
+}

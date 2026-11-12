@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "node_modules/.cache/tsc",
+    "lib": ["es2024", "dom"],
+    "types": ["node"]
+  },
+  "include": ["tests", "vitest.config.ts"]
+}

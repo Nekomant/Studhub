@@ -10,6 +10,7 @@ export default defineConfig({
       "apps/api",
       "apps/web",
       "packages/client-core",
+      "packages/ui-tokens",
       "tests/api",
       { test: { name: "tools", include: ["tools/tests/**/*.test.ts"] } },
     ],

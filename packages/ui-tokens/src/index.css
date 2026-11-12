@@ -1,0 +1,4 @@
+/* Всё сразу для приложений с Tailwind: токены, шрифты и тема. Для страницы без Tailwind хватит tokens.css и fonts.css. */
+@import "./tokens.css";
+@import "./fonts.css";
+@import "./theme.css";
