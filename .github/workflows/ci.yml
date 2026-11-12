@@ -1,7 +1,7 @@
 # Проверки на каждый PR и push в main (ТД §12, docs/process.md §9).
 # Обязательная проверка для защиты main — задача `checks`.
 # Шаги после установки выполняются, даже если предыдущая проверка упала: в одном прогоне видны все ошибки.
-# Новые проверки добавляют задачи, которые их создают: OpenAPI-клиент и API-тесты (SH-006), E2E (SH-008), образ (SH-011).
+# Новые проверки добавляют задачи, которые их создают: E2E (SH-008), образ (SH-011).
 name: CI
 
 on:
@@ -61,6 +61,10 @@ jobs:
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: pnpm db:check
 
+      - name: Клиент OpenAPI актуален
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: pnpm gen:client:check
+
       - name: Критерии приёмки покрыты тестами
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: pnpm ac:check
@@ -78,6 +82,12 @@ jobs:
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: pnpm --filter @studhub/ui-tokens exec playwright install --with-deps chromium
 
+      # Харнесс сам создаёт БД рядом с TEST_DATABASE_URL, применяет миграции и запускает приложение (tests/api).
+      - name: API-тесты на Postgres 18
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: pnpm test:api
+
+      # API-тесты уже прошли предыдущим шагом, поэтому их проект здесь пропускаем.
       - name: Vitest на Postgres 18
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        run: pnpm test
+        run: pnpm test --project '!@studhub/tests-api'

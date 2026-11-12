@@ -1,9 +1,11 @@
 import { OpenAPIHono, type z } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
 import { healthRoutes } from "./modules/health/index.ts";
+import { type Clock, type ControllableClock, createSystemClock } from "./platform/clock/index.ts";
 import { ProblemError, problemResponse } from "./platform/errors/problem.ts";
 import type { Logger } from "./platform/logger/index.ts";
 import { securityHeaders } from "./platform/security/headers.ts";
+import { testRoutes } from "./platform/testing/routes.ts";
 
 export const API_PREFIX = "/api/v1";
 
@@ -11,8 +13,13 @@ export type AppDeps = {
   logger: Logger;
   // Проверка БД для /healthz. Возвращает промис, который падает, если БД недоступна.
   checkDb: () => Promise<void>;
-  // Дополнительные маршруты: получают под-приложение /api/v1 (тесты и модули первой задачи).
-  extraRoutes?: ((api: OpenAPIHono) => void) | undefined;
+  // Источник времени для кода сервера. По умолчанию системные часы.
+  clock?: Clock | undefined;
+  // Управляемые часы тестового режима (APP_MODE=test). Если заданы, приложение использует их как clock
+  // и регистрирует /__test/clock. Без них тестовых маршрутов нет.
+  testClock?: ControllableClock | undefined;
+  // Дополнительные маршруты: получают под-приложение /api/v1 и общие часы (тесты и модули первой задачи).
+  extraRoutes?: ((api: OpenAPIHono, context: { clock: Clock }) => void) | undefined;
 };
 
 // Ошибка валидации: отдаём путь и текст причины, без значений полей (в них могут быть ПДн).
@@ -64,8 +71,11 @@ export function createApp(deps: AppDeps): OpenAPIHono {
   // /healthz на корне: его дёргает мониторинг через Caddy (ТД §6.2, §12).
   app.route("/", healthRoutes({ ping: deps.checkDb, logger: deps.logger }));
 
+  const clock = deps.testClock ?? deps.clock ?? createSystemClock();
+  if (deps.testClock) app.route("/__test", testRoutes({ clock: deps.testClock }));
+
   const api = createApiRouter();
-  deps.extraRoutes?.(api);
+  deps.extraRoutes?.(api, { clock });
   app.route(API_PREFIX, api);
 
   return app;

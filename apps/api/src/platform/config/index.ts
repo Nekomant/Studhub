@@ -7,16 +7,23 @@ const postgresUrl = z
   .string()
   .refine((value) => /^postgres(ql)?:\/\/.+/.test(value), "должен начинаться с postgres://");
 
-export const configSchema = z.object({
-  NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
-  DATABASE_URL: postgresUrl,
-  TEST_DATABASE_URL: postgresUrl.optional(),
-  S3_ENDPOINT: z.url(),
-  S3_REGION: z.string().min(1),
-  S3_BUCKET: z.string().min(3),
-  S3_ACCESS_KEY_ID: z.string().min(1),
-  S3_SECRET_ACCESS_KEY: z.string().min(1),
-});
+export const configSchema = z
+  .object({
+    NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+    // `test` включает тестовые маршруты (`/__test/clock`). С NODE_ENV=production это сочетание запрещено.
+    APP_MODE: z.enum(["test"]).optional(),
+    DATABASE_URL: postgresUrl,
+    TEST_DATABASE_URL: postgresUrl.optional(),
+    S3_ENDPOINT: z.url(),
+    S3_REGION: z.string().min(1),
+    S3_BUCKET: z.string().min(3),
+    S3_ACCESS_KEY_ID: z.string().min(1),
+    S3_SECRET_ACCESS_KEY: z.string().min(1),
+  })
+  .refine((config) => !(config.APP_MODE === "test" && config.NODE_ENV === "production"), {
+    path: ["APP_MODE"],
+    message: "APP_MODE=test запрещён при NODE_ENV=production: тестовые маршруты не должны попасть в prod",
+  });
 
 export type Config = z.infer<typeof configSchema>;
 export type ConfigIssue = z.core.$ZodIssue;
@@ -35,6 +42,8 @@ export function formatConfigIssues(issues: readonly ConfigIssue[], env: Env): st
   return issues
     .map((issue) => {
       const name = issue.path.map(String).join(".") || "(корень)";
+      // Сообщение проверки сочетания переменных задано в схеме и значений не содержит.
+      if (name === "APP_MODE" && issue.code === "custom") return `- ${name}: ${issue.message}`;
       const reason = present[name] === undefined ? "не задана" : "задана неверно";
       return `- ${name}: ${reason}`;
     })

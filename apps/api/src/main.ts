@@ -2,6 +2,7 @@ import { serve } from "@hono/node-server";
 import { createApp } from "./app.ts";
 import { runMigrations } from "./db/migrate.ts";
 import { createHealthRepository } from "./modules/health/index.ts";
+import { createControllableClock } from "./platform/clock/index.ts";
 import { runStartupConfigCheck } from "./platform/config/index.ts";
 import { createLogger } from "./platform/logger/index.ts";
 
@@ -30,7 +31,9 @@ if (config && (!Number.isInteger(port) || port < 1 || port > 65535)) {
 if (config) {
   const logger = createLogger({ level: config.NODE_ENV === "production" ? "info" : "debug" });
   const health = createHealthRepository(config.DATABASE_URL, logger);
-  const app = createApp({ logger, checkDb: () => health.ping() });
+  // В тестовом режиме часы управляются командой POST /__test/clock, иначе приложение берёт системные.
+  const testClock = config.APP_MODE === "test" ? createControllableClock() : undefined;
+  const app = createApp({ logger, checkDb: () => health.ping(), testClock });
 
   serve({ fetch: app.fetch, port }, (info) => {
     logger.info({ port: info.port }, "API запущен");

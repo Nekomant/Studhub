@@ -1,2 +1,2 @@
-// Заглушка: клиент API и логику клиента добавят SH-006 и SH-008.
-export {};
+export { type ApiClient, createApiClient } from "./api/client.ts";
+export type { components, paths } from "./api/schema.ts";

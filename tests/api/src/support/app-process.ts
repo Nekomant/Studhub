@@ -1,0 +1,151 @@
+import { type ChildProcess, spawn } from "node:child_process";
+import { createServer } from "node:net";
+import { resolve } from "node:path";
+
+// Запуск собранного кода приложения как отдельного процесса: API-тесты знают о сервере только по HTTP.
+// Путь к точке входа — это путь файла, а не импорт кода (ТД §13, правило 1).
+const apiRoot = resolve(import.meta.dirname, "../../../../apps/api");
+
+// Из окружения теста приложение получает только эти переменные: чтобы запустить Node и работать с файлами и локалью.
+// TEST_DATABASE_URL и прочее не передаём, иначе приложение могло бы сходить в чужую БД.
+const inheritedEnv = ["PATH", "HOME", "TMPDIR", "LANG", "TZ"] as const;
+
+// Переменные, которых требует конфигурация приложения. Значения S3 фиктивные: API-тесты S3 не используют.
+function appEnv(databaseUrl: string, extra: Record<string, string>): NodeJS.ProcessEnv {
+  const inherited = Object.fromEntries(
+    inheritedEnv.flatMap((name) => (process.env[name] === undefined ? [] : [[name, process.env[name]]])),
+  );
+  return {
+    ...inherited,
+    NODE_ENV: "test",
+    APP_MODE: "",
+    DATABASE_URL: databaseUrl,
+    S3_ENDPOINT: "http://127.0.0.1:1",
+    S3_REGION: "garage",
+    S3_BUCKET: "studhub-files-test",
+    S3_ACCESS_KEY_ID: "test-access-key",
+    S3_SECRET_ACCESS_KEY: "test-secret-key",
+    ...extra,
+  };
+}
+
+// Хвост вывода процесса: показываем его, если приложение не запустилось.
+function collectTail(child: ChildProcess): () => string {
+  const lines: string[] = [];
+  const push = (chunk: Buffer) => {
+    lines.push(...chunk.toString().split("\n").filter(Boolean));
+    if (lines.length > 40) lines.splice(0, lines.length - 40);
+  };
+  child.stdout?.on("data", push);
+  child.stderr?.on("data", push);
+  return () => lines.join("\n");
+}
+
+function waitForExit(child: ChildProcess): Promise<number | null> {
+  if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve(child.exitCode);
+  return new Promise((resolveExit) => child.once("exit", (code) => resolveExit(code)));
+}
+
+// Применяет миграции командой `migrate`: так их применяет и CD.
+export async function runMigrateCommand(databaseUrl: string): Promise<void> {
+  const child = spawn(process.execPath, ["src/main.ts", "migrate"], {
+    cwd: apiRoot,
+    env: appEnv(databaseUrl, {}),
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const tail = collectTail(child);
+  const code = await waitForExit(child);
+  if (code !== 0) throw new Error(`миграции не применились (код ${code}):\n${tail()}`);
+}
+
+async function freePort(): Promise<number> {
+  return new Promise((resolvePort, reject) => {
+    const server = createServer();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      const port = typeof address === "object" && address ? address.port : 0;
+      server.close(() => resolvePort(port));
+    });
+  });
+}
+
+export type AppProcess = { baseUrl: string; stop: () => Promise<void> };
+
+// Процесс завершился при запуске: например, порт успел занять другой процесс (EADDRINUSE).
+class EarlyExitError extends Error {}
+
+const READY_MESSAGE = "API запущен";
+const START_ATTEMPTS = 3;
+
+// Приложение пишет в stdout JSON-строку pino с `msg` "API запущен" и своим портом, когда начало слушать порт.
+// Ответ на /healthz для этого не годится: на чужом занятом порту отвечал бы другой процесс.
+function watchReady(child: ChildProcess, port: number): Promise<void> {
+  return new Promise((resolveReady) => {
+    let buffer = "";
+    child.stdout?.on("data", (chunk: Buffer) => {
+      buffer += chunk.toString();
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        try {
+          const entry = JSON.parse(line) as { msg?: string; port?: number };
+          if (entry.msg === READY_MESSAGE && entry.port === port) resolveReady();
+        } catch {
+          // Строка не JSON: это не лог приложения, пропускаем.
+        }
+      }
+    });
+  });
+}
+
+async function startOnce(options: { databaseUrl: string; testMode: boolean }): Promise<AppProcess> {
+  const port = await freePort();
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const child = spawn(process.execPath, ["src/main.ts"], {
+    cwd: apiRoot,
+    env: appEnv(options.databaseUrl, { PORT: String(port), APP_MODE: options.testMode ? "test" : "" }),
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const tail = collectTail(child);
+  const ready = watchReady(child, port);
+  // Если процесс теста завершился аварийно, приложение не остаётся висеть.
+  const killOnExit = () => child.kill("SIGKILL");
+  process.once("exit", killOnExit);
+
+  const stop = async () => {
+    process.off("exit", killOnExit);
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill("SIGTERM");
+      const timer = setTimeout(() => child.kill("SIGKILL"), 5_000);
+      await waitForExit(child);
+      clearTimeout(timer);
+    }
+  };
+
+  // Приложение готово, когда пишет строку «API запущен». Для недоступной БД это тоже верно: /healthz ответит 503.
+  let timer: NodeJS.Timeout | undefined;
+  const outcome = await Promise.race([
+    ready.then(() => "ready" as const),
+    waitForExit(child).then((code) => code),
+    new Promise<"timeout">((resolveTimeout) => {
+      timer = setTimeout(() => resolveTimeout("timeout"), 30_000);
+    }),
+  ]);
+  clearTimeout(timer);
+  if (outcome === "ready") return { baseUrl, stop };
+  await stop();
+  if (outcome === "timeout") throw new Error(`приложение не запустилось за 30 с:\n${tail()}`);
+  throw new EarlyExitError(`приложение завершилось при запуске (код ${outcome}):\n${tail()}`);
+}
+
+// Повторяет запуск с новым портом, если процесс упал при запуске: порт между freePort() и listen() мог занять другой.
+export async function startAppProcess(options: { databaseUrl: string; testMode: boolean }): Promise<AppProcess> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await startOnce(options);
+    } catch (error) {
+      if (!(error instanceof EarlyExitError) || attempt >= START_ATTEMPTS) throw error;
+    }
+  }
+}
