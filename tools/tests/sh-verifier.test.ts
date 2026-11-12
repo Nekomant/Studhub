@@ -415,7 +415,9 @@ describe("[SH-079 AC-3] хук sh-verifier пропускает только ч�
 
   describe("команда хука из frontmatter агента", () => {
     const hookCommand = () => {
-      const { meta } = agentFile() as { meta: { hooks: { PreToolUse: { hooks: { command: string }[] }[] } } };
+      const { meta } = agentFile() as unknown as {
+        meta: { hooks: { PreToolUse: { hooks: { command: string }[] }[] } };
+      };
       const command = meta.hooks.PreToolUse[0]?.hooks[0]?.command;
       if (!command) throw new Error("в frontmatter нет команды хука");
       return command;
