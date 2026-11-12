@@ -112,7 +112,7 @@ describe("фоновые задачи pg-boss", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ outcome: "completed" });
     const failed = await post(app, "/__test/jobs/test.flaky/run", { data: {} });
-    expect(await failed.json()).toEqual({ outcome: "failed", errorName: "Error" });
+    expect(await failed.json()).toEqual({ outcome: "failed", errorType: "Error" });
     // Задачу в очередь ставит только `send`: синхронный запуск строк в pgboss.job не добавляет.
     expect(await count()).toBe(before);
   });
