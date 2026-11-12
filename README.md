@@ -90,10 +90,11 @@ pnpm --filter @studhub/api start migrate  # то же самое через пр
 | `pnpm format` | Biome исправляет формат и порядок импортов                                                       |
 | `pnpm db:check` | Падает, если схема Drizzle изменена без миграции                                               |
 | `pnpm ac:check` | Падает, если у задачи в Review или Done критерий без метки `[SH-NNN AC-n]` в тестах (`docs/process.md` §8.2) |
+| `pnpm spec:check` | Проверяет спецификацию задач по шаблону и Definition of Ready (`docs/process.md` §4, §5). `pnpm spec:check SH-NNN` проверяет указанные задачи в любом статусе, без аргументов все задачи в Ready, с `--changed` Ready-задачи, изменённые относительно `origin/main` |
 | `pnpm verify` | `pnpm check` и тесты с коротким выводом                                                          |
 
 Перед коммитом и пушем запускайте `pnpm verify`. CI (`.github/workflows/ci.yml`) на каждый PR и push в `main`
-запускает `pnpm check`, `pnpm db:check`, `pnpm ac:check` и `pnpm test` на Postgres 18.
+запускает `pnpm check`, `pnpm db:check`, `pnpm ac:check` и `pnpm test` на Postgres 18. На PR он ещё запускает `pnpm spec:check --changed`.
 
 Git-хуки (`lefthook.yml`):
 

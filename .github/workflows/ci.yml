@@ -65,6 +65,14 @@ jobs:
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: pnpm ac:check
 
+      # Только на PR: проверяет спецификации задач в Ready, чьи файлы изменил PR (docs/process.md §5).
+      # actions/checkout берёт один коммит, поэтому шаг сам получает origin/main для сравнения.
+      - name: Спецификации задач в Ready
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && github.event_name == 'pull_request' }}
+        run: |
+          git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
+          node scripts/check-spec.mjs --changed
+
       # Браузерный тест темы (SH-073) запускает Chromium из Playwright.
       - name: Chromium для Playwright
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
