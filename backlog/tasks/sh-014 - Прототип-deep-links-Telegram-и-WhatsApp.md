@@ -4,11 +4,11 @@ title: 'Прототип: deep links Telegram и WhatsApp'
 status: Backlog
 assignee: []
 created_date: '2026-11-11T08:58:00Z'
-updated_date: '2026-11-11T09:15:00Z'
+updated_date: '2026-11-12T12:37:00Z'
 labels:
   - spike
   - messages
-milestone: m-0
+milestone: m-9
 dependencies:
   - SH-008
 priority: medium
