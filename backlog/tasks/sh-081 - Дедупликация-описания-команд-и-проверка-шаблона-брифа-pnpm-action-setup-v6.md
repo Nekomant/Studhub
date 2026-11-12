@@ -1,11 +1,11 @@
 ---
 id: SH-081
 title: Дедупликация описания команд и проверка шаблона брифа, pnpm/action-setup v6
-status: In Progress
+status: Review
 assignee:
   - '@claude'
 created_date: '2026-11-11T23:52:00Z'
-updated_date: '2026-11-12T00:03:00Z'
+updated_date: '2026-11-12T00:05:00Z'
 labels:
   - infra
   - docs
