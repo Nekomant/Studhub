@@ -65,6 +65,11 @@ jobs:
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: pnpm ac:check
 
+      # Браузерный тест темы (SH-073) запускает Chromium из Playwright.
+      - name: Chromium для Playwright
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: pnpm --filter @studhub/ui-tokens exec playwright install --with-deps chromium
+
       - name: Vitest на Postgres 18
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: pnpm test
