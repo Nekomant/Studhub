@@ -28,9 +28,15 @@ export type TestApp = {
 // со своим портом и своими часами. Обычно один вызов на файл (beforeAll). Тест, которому нужно чистое состояние,
 // вызывает фабрику сам.
 export async function startTestApp(options: StartOptions = {}): Promise<TestApp> {
-  const ownDatabase = options.databaseUrl === undefined ? newDatabaseName("app") : undefined;
-  if (ownDatabase) await createDatabase(ownDatabase, inject("apiTemplateDatabase"));
-  const databaseUrl = options.databaseUrl ?? urlForDatabase(ownDatabase as string);
+  let ownDatabase: string | undefined;
+  let databaseUrl: string;
+  if (options.databaseUrl === undefined) {
+    ownDatabase = newDatabaseName("app");
+    await createDatabase(ownDatabase, inject("apiTemplateDatabase"));
+    databaseUrl = urlForDatabase(ownDatabase);
+  } else {
+    databaseUrl = options.databaseUrl;
+  }
 
   let appProcess: Awaited<ReturnType<typeof startAppProcess>>;
   try {
