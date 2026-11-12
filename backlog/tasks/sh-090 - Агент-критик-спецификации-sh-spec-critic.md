@@ -1,10 +1,10 @@
 ---
 id: SH-090
 title: Агент-критик спецификации sh-spec-critic
-status: Backlog
+status: Ready
 assignee: []
 created_date: '2026-11-12T12:41:00Z'
-updated_date: '2026-11-12T12:46:00Z'
+updated_date: '2026-11-12T22:22:00Z'
 labels:
   - infra
   - docs
@@ -14,7 +14,7 @@ dependencies:
   - SH-079
 priority: medium
 type: chore
-ordinal: 83000
+ordinal: 1000
 ---
 
 ## Description
