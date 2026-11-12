@@ -6,10 +6,17 @@ import { resolve } from "node:path";
 // Путь к точке входа — это путь файла, а не импорт кода (ТД §13, правило 1).
 const apiRoot = resolve(import.meta.dirname, "../../../../apps/api");
 
+// Из окружения теста приложение получает только эти переменные: чтобы запустить Node и работать с файлами и локалью.
+// TEST_DATABASE_URL и прочее не передаём, иначе приложение могло бы сходить в чужую БД.
+const inheritedEnv = ["PATH", "HOME", "TMPDIR", "LANG", "TZ"] as const;
+
 // Переменные, которых требует конфигурация приложения. Значения S3 фиктивные: API-тесты S3 не используют.
 function appEnv(databaseUrl: string, extra: Record<string, string>): NodeJS.ProcessEnv {
+  const inherited = Object.fromEntries(
+    inheritedEnv.flatMap((name) => (process.env[name] === undefined ? [] : [[name, process.env[name]]])),
+  );
   return {
-    ...process.env,
+    ...inherited,
     NODE_ENV: "test",
     APP_MODE: "",
     DATABASE_URL: databaseUrl,
