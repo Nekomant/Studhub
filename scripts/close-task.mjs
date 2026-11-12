@@ -1,16 +1,23 @@
 #!/usr/bin/env node
 // `pnpm close-task SH-NNN [--apply]`: закрывает цикл задачи после слияния PR (docs/process.md §7.1, шаг 7).
-// Запускается в основной папке клона. Перед проверками делает `git fetch --all --prune`.
+// Запускается из любой папки клона: основной, worktree задачи или чужого worktree. Основная папка берётся из первой
+// записи `git worktree list --porcelain`, все операции (fetch, перемотка main, удаление веток и worktree) идут в ней.
+// Перед проверками делает `git fetch --all --prune`.
 // Вердикт строится из трёх проверок:
 // 1. PR задачи слит: `gh pr list --state all`, PR с названием `SH-NNN: …`;
 // 2. в origin/main у задачи статус Done: `git grep` по origin/main, файлы рабочей папки не читаются;
+//    если в origin/main больше одного файла задачи, статус неоднозначен и вердикт «нет»;
 // 3. все checks PR завершились SUCCESS (SKIPPED и NEUTRAL допустимы).
 // Без --apply ничего не меняет. С --apply и вердиктом «да»: перематывает main до origin/main, убирает чистый worktree
 // задачи и удаляет локальную ветку PR, печатая её SHA. Грязный worktree остаётся и называется в выводе.
+// Папка запуска классифицируется: основная, worktree задачи или чужой worktree. Чужой worktree скрипт не трогает.
+// Запуск из worktree задачи: сам этот worktree и ветку скрипт не удаляет, остальное делает, вердикт «нет»,
+// код 1; штаб запускает команду повторно из основной папки, и она дочищает.
 // Вывод до 12 строк, последняя: `ЗАКРЫТЬ СЕССИЮ: да` или `ЗАКРЫТЬ СЕССИЮ: нет (<причина>)`.
 // Сессию задачи скрипт не архивирует: это делает штаб по вердикту.
 // Коды выхода: 0 — «да»; 1 — «нет»; 2 — вердикт построить нельзя (gh недоступен, PR не найден или найдено несколько).
 import { spawnSync } from "node:child_process";
+import { realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { git, tryGit } from "./lib/git.mjs";
 import { ciState } from "./status.mjs";
@@ -18,6 +25,7 @@ import { fastForwardMain, mainState } from "./sync.mjs";
 
 const TARGET = "origin/main";
 const MAX_LINES = 12;
+const SELF_WORKTREE = "worktree этой сессии убирает штаб из основной папки";
 
 const oneLine = (text) => {
   const first = String(text ?? "")
@@ -45,7 +53,7 @@ function finish(lines, code, reason) {
   const keep = MAX_LINES - 1;
   const body = lines.length > keep ? [...lines.slice(0, keep - 1), `… ещё ${lines.length - keep + 1} строк`] : lines;
   process.stdout.write(`${[...body, verdict].join("\n")}\n`);
-  process.exit(code);
+  process.exitCode = code;
 }
 
 // PR задачи: название начинается с `SH-NNN: `. Поиск gh грубый, точное совпадение проверяем сами.
@@ -80,8 +88,17 @@ function findPr(id) {
 function statusInMain(id) {
   const result = tryGit(["grep", "-n", "^status:", TARGET, "--", `backlog/tasks/${id.toLowerCase()} -*`]);
   if (!result.ok) return null;
-  const match = /^[^\n]*?:\d+:status:\s*(.+?)\s*$/m.exec(result.stdout);
-  return match ? match[1].replace(/^["']|["']$/g, "") : null;
+  // Строки вида `origin/main:<файл>:<номер>:status: Done`. По каждому файлу берём первую строку status.
+  const byFile = new Map();
+  for (const line of result.stdout.split("\n")) {
+    const match = /^(.*?):(\d+):status:\s*(.*?)\s*$/.exec(
+      line.startsWith(`${TARGET}:`) ? line.slice(TARGET.length + 1) : line,
+    );
+    if (match && !byFile.has(match[1])) byFile.set(match[1], match[3].replace(/^["']|["']$/g, ""));
+  }
+  if (byFile.size === 0) return null;
+  if (byFile.size > 1) return { ambiguous: byFile.size };
+  return { status: [...byFile.values()][0] };
 }
 
 function listWorktrees() {
@@ -99,10 +116,9 @@ function listWorktrees() {
 
 // Worktree, который вела сессия задачи: на ветке PR, либо на отсоединённой голове в истории origin/main,
 // где в журнале HEAD есть переход с ветки PR (после `git switch --detach origin/main`).
-function taskWorktrees(branch, mainFolder) {
-  const [primary, ...rest] = listWorktrees();
+function taskWorktrees(branch) {
+  const [, ...rest] = listWorktrees();
   return rest.filter((tree) => {
-    if (tree.path === mainFolder || tree.path === primary.path) return false;
     if (tree.branch === branch) return true;
     if (!tree.detached || !tree.head) return false;
     const reflog = tryGit(["-C", tree.path, "reflog", "show", "--format=%gs", "HEAD"]);
@@ -110,6 +126,14 @@ function taskWorktrees(branch, mainFolder) {
     return moved && tryGit(["merge-base", "--is-ancestor", tree.head, TARGET]).ok;
   });
 }
+
+const sameDir = (a, b) => {
+  try {
+    return realpathSync(a) === realpathSync(b);
+  } catch {
+    return a === b;
+  }
+};
 
 const isDirty = (path) => {
   const status = tryGit(["-C", path, "status", "--porcelain", "--untracked-files=all"]);
@@ -123,24 +147,27 @@ function main() {
   const id = rest.length === 1 ? /^SH-(\d+)$/i.exec(rest[0]) : null;
   if (!id) {
     process.stderr.write("Использование: pnpm close-task SH-NNN [--apply]\n");
-    process.exit(2);
+    process.exitCode = 2;
+    return;
   }
   const taskId = `SH-${id[1]}`;
   const lines = [];
 
   const top = tryGit(["rev-parse", "--show-toplevel"]);
-  if (!top.ok) finish(lines, 2, "это не git-репозиторий");
-  const mainFolder = top.stdout.trim();
-  process.chdir(mainFolder);
+  if (!top.ok) return finish(lines, 2, "это не git-репозиторий");
+  const launchFolder = top.stdout.trim();
+  // Основная папка: первая запись списка worktree. Все операции идут в ней, откуда бы ни запустили скрипт.
+  const primaryFolder = listWorktrees()[0].path;
+  process.chdir(primaryFolder);
 
   const fetched = tryGit(["fetch", "--all", "--prune", "--quiet"]);
-  if (!fetched.ok) finish(lines, 2, `git fetch не удался: ${oneLine(fetched.stderr)}`);
-  if (!tryGit(["rev-parse", "--verify", "--quiet", TARGET]).ok) finish(lines, 2, `нет ссылки ${TARGET}`);
+  if (!fetched.ok) return finish(lines, 2, `git fetch не удался: ${oneLine(fetched.stderr)}`);
+  if (!tryGit(["rev-parse", "--verify", "--quiet", TARGET]).ok) return finish(lines, 2, `нет ссылки ${TARGET}`);
 
   const found = findPr(taskId);
   if (found.error) {
     lines.push(`PR: ${oneLine(found.error)}`);
-    finish(lines, 2, found.error);
+    return finish(lines, 2, found.error);
   }
   const { pr } = found;
   const reasons = [];
@@ -151,10 +178,16 @@ function main() {
     reasons.push(`PR #${pr.number} не слит (${pr.state})`);
   }
 
-  const status = statusInMain(taskId);
-  lines.push(`Статус в ${TARGET}: ${status ?? "задача не найдена"}`);
-  if (status !== "Done")
-    reasons.push(status ? `статус в ${TARGET}: ${status}, нужен Done` : `задача не найдена в ${TARGET}`);
+  const statusResult = statusInMain(taskId);
+  if (statusResult?.ambiguous) {
+    lines.push(`Статус в ${TARGET}: неоднозначен (файлов задачи: ${statusResult.ambiguous})`);
+    reasons.push(`статус в ${TARGET} неоднозначен: файлов задачи ${statusResult.ambiguous}`);
+  } else {
+    const status = statusResult?.status ?? null;
+    lines.push(`Статус в ${TARGET}: ${status ?? "задача не найдена"}`);
+    if (status !== "Done")
+      reasons.push(status ? `статус в ${TARGET}: ${status}, нужен Done` : `задача не найдена в ${TARGET}`);
+  }
 
   const ci = ciState(pr.statusCheckRollup);
   if (ci === "CI красный") {
@@ -165,29 +198,40 @@ function main() {
     reasons.push("checks PR ещё идут");
   } else lines.push(ci === "CI нет" ? "Checks: проверок у PR нет" : "Checks: зелёные");
 
-  if (reasons.length > 0) finish(lines, 1, reasons.join("; "));
+  if (reasons.length > 0) return finish(lines, 1, reasons.join("; "));
+
+  // Папка запуска: основная, worktree задачи или чужой worktree (чужие скрипт не трогает).
+  const branch = pr.headRefName;
+  const taskTrees = taskWorktrees(branch);
+  const launchIsTask = taskTrees.some((tree) => sameDir(tree.path, launchFolder));
   if (!apply) {
+    if (launchIsTask) lines.push(`Запуск из worktree задачи ${launchFolder}: его уберёт штаб из основной папки`);
     lines.push("Просмотр: ничего не менял. Убрать за задачей: --apply");
-    finish(lines, 0, null);
+    return finish(lines, 0, null);
   }
 
   const state = mainState();
   if (state.problem) {
     lines.push(`main: ${state.problem}`);
-    finish(lines, 1, `main не перемотан: ${state.problem}`);
+    return finish(lines, 1, `main не перемотан: ${state.problem}`);
   }
   if (state.behind > 0) {
     const merged = fastForwardMain();
     if (!merged.ok) {
       lines.push(`main: перемотать не удалось: ${oneLine(merged.stderr)}`);
-      finish(lines, 1, "main не перемотан");
+      return finish(lines, 1, "main не перемотан");
     }
     lines.push(`main: подтянут до ${merged.sha}`);
   } else lines.push("main: актуален");
 
-  const branch = pr.headRefName;
   const blocked = [];
-  for (const tree of taskWorktrees(branch, mainFolder)) {
+  let selfKept = false;
+  for (const tree of taskTrees) {
+    if (sameDir(tree.path, launchFolder)) {
+      lines.push(`Worktree ${tree.path}: папка запуска, не удаляю`);
+      selfKept = true;
+      continue;
+    }
     if (isDirty(tree.path)) {
       lines.push(`Worktree ${tree.path}: есть незакоммиченные файлы, не трогаю`);
       blocked.push(tree.path);
@@ -203,7 +247,7 @@ function main() {
 
   const sha = tryGit(["rev-parse", "--short", "--verify", "--quiet", `refs/heads/${branch}`]);
   if (!sha.ok) lines.push(`Ветка ${branch}: локально нет`);
-  else if (branch === "main" || blocked.length > 0) lines.push(`Ветка ${branch}: оставлена`);
+  else if (branch === "main" || selfKept || blocked.length > 0) lines.push(`Ветка ${branch}: оставлена`);
   else {
     const deleted = tryGit(["branch", "-D", "--quiet", branch]);
     if (deleted.ok)
@@ -216,8 +260,11 @@ function main() {
     }
   }
 
-  if (blocked.length > 0) finish(lines, 1, `не убрано: ${blocked.join(", ")}`);
-  finish(lines, 0, null);
+  const unfinished = [];
+  if (selfKept) unfinished.push(SELF_WORKTREE);
+  if (blocked.length > 0) unfinished.push(`не убрано: ${blocked.join(", ")}`);
+  if (unfinished.length > 0) return finish(lines, 1, unfinished.join("; "));
+  return finish(lines, 0, null);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();

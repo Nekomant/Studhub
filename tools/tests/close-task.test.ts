@@ -588,7 +588,7 @@ describe("close-task: несколько файлов задачи в origin/mai
     const { code, lines } = runClose(work, ["SH-901"]);
 
     expect(code).toBe(1);
-    expect(lastLine(lines)).toMatch(/^ЗАКРЫТЬ СЕССИЮ: нет \(.*неоднозначн.*\)$/);
+    expect(lastLine(lines)).toMatch(/^ЗАКРЫТЬ СЕССИЮ: нет \(.*неоднозначен.*\)$/);
   });
 });
 
