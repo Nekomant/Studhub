@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-12T16:06:00Z'
-updated_date: '2026-11-12T17:24:00Z'
+updated_date: '2026-11-12T17:28:00Z'
 labels:
   - infra
   - docs
@@ -110,6 +110,8 @@ API и БД не меняются. Добавляются `scripts/close-task.mj
 Решение: worktree на отсоединённой голове считается задачи, если в журнале его HEAD есть переход с ветки PR и HEAD входит в origin/main; иначе чужие worktree не трогаем.
 Решение: из sync.mjs вынесены mainState() и fastForwardMain(), вывод pnpm sync не менялся (тесты sync зелёные).
 Решение: в process.md §7.1 шаг 7 сохранена команда git switch --detach origin/main, чтобы не менять тест SH-082 AC-4.
+
+Проверка sh-verifier: AC-1..7 подтверждены (33 теста); замечание по AC-3 (префикс SH-90/SH-901) исправлено тестом 1984285; AC-8 документальный, уровень Ревью, содержание сверено по process.md §7.1 и CLAUDE.md.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
