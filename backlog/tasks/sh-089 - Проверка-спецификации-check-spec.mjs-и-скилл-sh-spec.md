@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-12T12:41:00Z'
-updated_date: '2026-11-12T22:06:00Z'
+updated_date: '2026-11-12T22:11:00Z'
 labels:
   - infra
   - docs
@@ -127,6 +127,10 @@ ordinal: 1000
 Решение: AC-9 про pnpm spec:check на Ready из main: в main Ready только SH-089, проверен pnpm spec:check SH-089 (OK); шаг CI проверен ревью.
 
 Факт: 3 ч
+
+sh-verifier: AC-1…8 подтверждены, тесты не менялись после красного коммита f2bdf97. AC-9 и AC-10 покрыты юнит-частью, уровни Скрипт и Ревью остаются за ревью. Нарушений нет.
+
+Ревью: parseSections учитывает только «## » вне блоков кода и склеивает повторные заголовки; --changed сравнивает с merge-base (при отсутствии общего предка с вершиной origin/main), плюс незакоммиченные и неотслеженные файлы; уровни плана нормализует общая normalizeLevel/levelNeedsLabel; dependencies приводятся к массиву; «не зависит от» не считается.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
