@@ -1,10 +1,11 @@
 ---
 id: SH-073
 title: Токены дизайн-системы и шрифты в packages/ui-tokens
-status: Ready
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-11T10:21:00Z'
-updated_date: '2026-11-12T13:49:00Z'
+updated_date: '2026-11-12T14:00:00Z'
 labels:
   - frontend
 milestone: m-0
@@ -22,7 +23,7 @@ ordinal: 1500
 <!-- SECTION:DESCRIPTION:BEGIN -->
 ## Что нужно сделать
 1. Создать `packages/ui-tokens`: CSS-переменные всех токенов `design-system.md` (цвета обеих тем, отступы, радиусы, высоты, тени, стили текста).
-2. Сделать переключение темы: без класса на `<html>` тема следует `prefers-color-scheme`, классы `dark` и `light` её переопределяют.
+2. Сделать переключение темы: без класса на `<html>` всегда светлая тема (системную настройку `prefers-color-scheme` пакет не учитывает), класс `dark` включает тёмную, класс `light` светлую. Режим «Как в системе» ставит класс скриптом в SH-022.
 3. Описать тему Tailwind CSS v4 на этих переменных и задать переменные shadcn/ui по таблице §8.
 4. Положить в пакет шрифты Nunito 800 и Manrope 300, 400, 600 в `woff2` с подмножествами latin и cyrillic, подключить через `@font-face`.
 5. Сделать страницу-образец пакета для визуальной проверки владельцем.
@@ -48,7 +49,7 @@ ordinal: 1500
 | AC | Уровень | Тест |
 |---|---|---|
 | 1 | Unit (Vitest) | значения переменных в обеих темах совпадают с таблицей `design-system.md` §3 |
-| 2 | Unit (Vitest + браузерный режим или Playwright) | без класса тема по `prefers-color-scheme`; `dark` и `light` переопределяют |
+| 2 | Unit (Vitest + Playwright, Chromium) | вычисленные цвета в браузере: без класса при системной тёмной светлые; `dark` тёмные; `light` при системной тёмной светлые |
 | 3 | Unit (Vitest) | в теме Tailwind есть утилиты токенов; переменные shadcn по §8 |
 | 4 | Unit (Vitest) | `woff2` содержат кириллицу и табличные цифры; в CSS нет внешних URL |
 | 5 | Unit (Vitest) | контраст пар из критерия в обеих темах |
@@ -58,7 +59,7 @@ ordinal: 1500
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 Пакет `packages/ui-tokens` задаёт CSS-переменные всех цветовых токенов `design-system.md` §3 для светлой и тёмной темы; значения совпадают с документом, это проверяет тест
-- [ ] #2 Без класса на `<html>` действует тема по `prefers-color-scheme`; класс `dark` включает тёмную тему, класс `light` светлую при любой системной настройке
+- [ ] #2 Без класса на `<html>` действует светлая тема при любой системной настройке, `prefers-color-scheme` пакет не учитывает; класс `dark` включает тёмную тему, класс `light` светлую
 - [ ] #3 Тема Tailwind CSS v4 даёт утилиты для цветов, отступов, радиусов, высот элементов и стилей текста из §5–§6; переменные shadcn/ui заданы по таблице §8
 - [ ] #4 Шрифты Nunito 800 и Manrope 300, 400, 600 лежат в пакете как `woff2` с латиницей и кириллицей и подключены через `@font-face`; CSS пакета не ссылается на внешние домены
 - [ ] #5 Тест контраста в обеих темах: `ink` и `ink-muted` на `paper`, `surface`, `sunken`, каждый `*-ink` на своём `*-bg`, `on-plum` на `plum`, `on-danger` на `danger`, `plum-ink` на `surface`, `paper`, `plum-soft` не ниже 4,5:1; `line-strong` и `focus` на `paper`, `surface`, `sunken` не ниже 3:1
@@ -75,3 +76,29 @@ ordinal: 1500
 - [ ] #6 PR слит в main через squash, изменения выложены в prod (после появления деплоя)
 - [ ] #7 В заметках задачи записаны оценка и фактическое время, решения по ходу работы и итоговое резюме
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Шрифты: 8 woff2 (Nunito 800, Manrope 300/400/600 × latin/cyrillic) и лицензии OFL из @fontsource v5.3.0 в packages/ui-tokens/src/fonts, без зависимости.
+2. Dev-зависимость playwright (Chromium) для браузерного теста AC-2; в CI добавить шаг playwright install chromium.
+3. Красные тесты по AC-1..AC-5 в packages/ui-tokens/tests (значения читаем из docs/design-system.md, не дублируем); отдельный коммит.
+4. Реализация: tokens.css (light-dark() + color-scheme, классы dark/light), fonts.css, theme.css (Tailwind v4 @theme inline, @utility стилей текста, переменные shadcn), index.css.
+5. sample.html: цвета, стили текста, 8 бейджей статусов в светлой и тёмной теме, без сети.
+6. Правка docs/design-system.md (§1, §8), подключение пакета в vitest.config.ts, tsconfig и CI.
+7. pnpm verify, отметка критериев, итог.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Оценка: 6 ч
+
+Решение: AC-2 проверяем браузерным тестом через библиотеку playwright (Chromium) из обычного Vitest-теста, а не Vitest browser mode. Почему: нужен один тест и одна зависимость, без отдельного проекта Vitest с провайдером (@vitest/browser-playwright) и без второго окружения; тест может читать CSS с диска и открывать страницу в Chromium. Playwright и так выбран для E2E (ТД §3), так что Chromium потом нужен будет в любом случае. Влияние: dev-зависимость playwright в packages/ui-tokens, в CI шаг playwright install chromium.
+
+Решение владельца (2026-11-12): по умолчанию в пакете светлая тема. Без класса на <html> всегда светлые цвета, prefers-color-scheme пакет не учитывает; тёмная только классом dark, класс light тоже даёт светлую. Режим «Как в системе» из Э-17 остаётся по умолчанию и ставит класс скриптом (SH-022); ДС-6 и screens.md не меняем. Текст AC-2, описание и план тестов обновлены. Браузерный тест проверяет: без класса при системной тёмной светлые цвета; dark тёмные; light при системной тёмной светлые.
+
+Решение: тема в CSS задана через color-scheme и light-dark() (одно объявление на токен, без дублирования значений). :root { color-scheme: light }, .dark { color-scheme: dark }, .light { color-scheme: light }.
+
+Решение: в design-system.md §6 'space-1 … space-8' перечислено 6 значений (4, 8, 12, 16, 24, 32). Читаем как шаги Tailwind: space-1, 2, 3, 4, 6, 8 (1 шаг = 4 px). Токены space-1/2/3/4/6/8, в Tailwind --spacing: 4px, утилиты p-6 = 24 px, p-8 = 32 px.
+<!-- SECTION:NOTES:END -->

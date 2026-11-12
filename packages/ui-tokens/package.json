@@ -1,5 +1,8 @@
 {
   "name": "@studhub/ui-tokens",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "devDependencies": {
+    "playwright": "^1.65.0"
+  }
 }
