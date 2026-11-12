@@ -12,3 +12,6 @@ test-results/
 .vite/
 .astro/
 .turbo/
+
+# Личные настройки Claude Code (SH-082)
+.claude/settings.local.json
