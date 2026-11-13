@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-11T08:58:00Z'
-updated_date: '2026-11-13T17:34:00Z'
+updated_date: '2026-11-13T17:35:00Z'
 labels:
   - infra
 milestone: m-0
@@ -47,11 +47,11 @@ ordinal: 95000
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Образ собирается одной командой, запускается от непривилегированного пользователя и отдаёт SPA и API
+- [x] #1 Образ собирается одной командой, запускается от непривилегированного пользователя и отдаёт SPA и API
 - [ ] #2 Слияние в `main` публикует образ с тегом SHA в GHCR и выкатывает его в prod: миграции → обновление → проверка `/healthz`; при неудачной проверке job красный
 - [ ] #3 `infra/deploy.sh <tag>` выкатывает указанный предыдущий тег (откат проверен в prod)
 - [ ] #4 Секреты не попадают в образ и репозиторий: они в GitHub Secrets и в `.env` на сервере с правами 600
-- [ ] #5 В CI добавлена сборка образа без публикации на каждый PR (workflow создаёт SH-009)
+- [x] #5 В CI добавлена сборка образа без публикации на каждый PR (workflow создаёт SH-009)
 <!-- AC:END -->
 
 ## Definition of Done
@@ -93,4 +93,6 @@ ordinal: 95000
 Факт AC-1 (локально): docker build ok, 279 МБ; docker run от uid 1000 (node), /healthz 200 db ok, / и /students/1 отдают index.html, /api/v1/nope 404 problem+json, healthcheck healthy; migrate применил миграции. В docker history нет секретов, .env в образе нет, vitest/biome/typescript/drizzle-kit в node_modules нет.
 
 Факт: actionlint и shellcheck на ci.yml и deploy.sh без замечаний; caddy validate по новому Caddyfile: Valid configuration.
+
+Ждёт владельца: (1) docker login ghcr.io на сервере с токеном read:packages; (2) четыре секрета GitHub DEPLOY_SSH_KEY, DEPLOY_HOST, DEPLOY_USER, DEPLOY_KNOWN_HOSTS; (3) .env на сервере (права 600) с пятью S3-заглушками; (4) прогон тестового PR и откат на предыдущий тег (AC-2, AC-3, часть AC-4). Порядок: infra/README.md шаги 7, 10, 11.
 <!-- SECTION:NOTES:END -->
