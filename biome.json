@@ -49,7 +49,7 @@
   },
   "overrides": [
     {
-      "includes": ["apps/web/**", "packages/client-core/**", "tests/**"],
+      "includes": ["apps/web/**", "apps/admin/**", "packages/client-core/**", "tests/**"],
       "linter": {
         "rules": {
           "style": {

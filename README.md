@@ -39,6 +39,16 @@ pnpm dev    # запускает API на :3000 и SPA (Vite) на :5173; ост
 Приложение ставится как PWA: manifest и service worker (vite-plugin-pwa) кэшируют только статику сборки.
 Service worker работает в собранном приложении (`pnpm --filter @studhub/web build` и `preview`), в `pnpm dev` его нет.
 
+### Админка платформы (`apps/admin`)
+
+Отдельное приложение для сотрудников платформы ([ADR-0009](docs/adr/0009-platform-admin.md)). Сейчас это заглушка:
+страница с заголовком «Админка платформы» и пометкой «Заглушка: экраны появятся в следующих задачах». Вход, API и экраны добавят следующие задачи.
+
+```bash
+pnpm --filter @studhub/admin dev      # Vite на :5174, к API не обращается
+pnpm --filter @studhub/admin build    # собирает приложение в apps/admin/dist
+```
+
 ### API (сервер)
 
 Нужны запущенный Postgres (раздел ниже) и файл `.env`.
@@ -104,7 +114,7 @@ pnpm --filter @studhub/api start migrate  # то же самое через пр
 | `pnpm check`  | Biome проверяет формат и линт (`biome ci`), TypeScript проверяет типы во всех пакетах (`tsc -b`) |
 | `pnpm test`   | Vitest запускает тесты всех проектов из `vitest.config.ts`                                       |
 | `pnpm test:api` | Запускает только API-тесты (`tests/api`): приложение на тестовой БД, клиент из OpenAPI. Нужен `pnpm db:up` |
-| `pnpm test:e2e` | Собирает SPA и запускает Playwright (`tests/e2e`) против сборки: БД `<имя>_e2e_<случайная часть>_test` рядом с `TEST_DATABASE_URL`, API и `vite preview` на свободных портах. Нужны `pnpm db:up` и Chromium (`pnpm --filter @studhub/ui-tokens exec playwright install chromium`) |
+| `pnpm test:e2e` | Собирает SPA и админку и запускает Playwright (`tests/e2e`) против сборки: БД `<имя>_e2e_<случайная часть>_test` рядом с `TEST_DATABASE_URL`, API и `vite preview` на свободных портах; админка отдаётся отдельным `vite preview` на порту `E2E_ADMIN_PORT` (по умолчанию 4174). Нужны `pnpm db:up` и Chromium (`pnpm --filter @studhub/ui-tokens exec playwright install chromium`) |
 | `pnpm gen:client:check` | Падает, если `packages/client-core/src/api/schema.ts` не совпадает с генерацией из `openapi.json` |
 | `pnpm format` | Biome исправляет формат и порядок импортов                                                       |
 | `pnpm db:check` | Падает, если схема Drizzle изменена без миграции                                               |
@@ -113,7 +123,7 @@ pnpm --filter @studhub/api start migrate  # то же самое через пр
 | `pnpm verify` | `pnpm check` и тесты с коротким выводом                                                          |
 
 Перед коммитом и пушем запускайте `pnpm verify`. CI (`.github/workflows/ci.yml`) на каждый PR и push в `main`
-запускает `pnpm check`, `pnpm db:check`, `pnpm gen:client:check`, `pnpm ac:check`, `pnpm test:api`, `pnpm test` и `pnpm test:e2e` на Postgres 18. Браузеры Playwright кэшируются по `pnpm-lock.yaml`. На PR он ещё запускает `pnpm spec:check --changed`.
+запускает `pnpm check`, сборку админки (`pnpm --filter @studhub/admin build`), `pnpm db:check`, `pnpm gen:client:check`, `pnpm ac:check`, `pnpm test:api`, `pnpm test` и `pnpm test:e2e` на Postgres 18. Браузеры Playwright кэшируются по `pnpm-lock.yaml`. На PR он ещё запускает `pnpm spec:check --changed`.
 
 Git-хуки (`lefthook.yml`):
 
