@@ -524,7 +524,7 @@ describe("factory: состояние", () => {
       denials: [],
       pr_url: "",
     });
-    expect(Object.keys(task)).toEqual(
+    expect(Object.keys(task ?? {})).toEqual(
       expect.arrayContaining([
         "stage_changed_at",
         "reason",
@@ -694,7 +694,7 @@ describe("factory-state: модуль", () => {
 
     expect(err).toBe("");
     expect(code).toBe(0);
-    expect(readTasks(s)["SH-950"].rounds).toBe(5);
+    expect(readTasks(s)["SH-950"]?.rounds).toBe(5);
     expect(existsSync(lock)).toBe(false);
   });
 
