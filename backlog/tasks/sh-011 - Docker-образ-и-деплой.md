@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-11T08:58:00Z'
-updated_date: '2026-11-13T18:39:00Z'
+updated_date: '2026-11-13T18:55:00Z'
 labels:
   - infra
 milestone: m-0
@@ -120,6 +120,8 @@ ordinal: 95000
 Находка code-review 1 исправлена: deploy.sh пишет APP_TAG в .env только после успешной проверки /healthz; тест AC-2 дополнен проверкой, что при падении тег не меняется.
 
 Находки code-review 2, 3, 4 исправлены: Cache-Control ставится только на ответы раздачи статики; /api, /ical, /__test без слэша дают 404 problem+json (новый тест); комментарий extraRoutes возвращён на место. Находка 5 (порядок COPY в Dockerfile, только скорость сборки) оставлена.
+
+Замечание 5: в Dockerfile COPY . . стоит до pnpm install, поэтому слой установки зависимостей пересобирается при любой правке исходников (кэш pnpm store смягчает). Исправление: сначала копировать только package.json, pnpm-lock.yaml, pnpm-workspace.yaml и манифесты пакетов, затем install, затем исходники. Проверка: собрать образ дважды, между сборками изменить исходник, смотреть CACHED у шага pnpm install. Вернуться, если сборка образа в Actions станет медленной.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
