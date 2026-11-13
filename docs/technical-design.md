@@ -752,7 +752,7 @@ studhub/
 ├─ apps/
 │  ├─ landing/            Astro: лендинг, юридические страницы
 │  ├─ web/                React SPA (только UI)
-│  ├─ admin/              React SPA админки платформы (стадия 2, ADR-0009)
+│  ├─ admin/              React SPA админки платформы (ADR-0009); пока заглушка
 │  └─ api/
 │     ├─ src/modules/<feature>/{domain,db,http}/
 │     ├─ src/db/          подключение к БД и запуск миграций (`migrate`); драйверы БД только здесь и в */db/
@@ -785,6 +785,8 @@ studhub/
 5. Прямой доступ к `db` есть только в `*/db/`.
 
 Правила 1, 2, 4 и 5 проверяет Biome `noRestrictedImports` с настройками по путям (`overrides` в `biome.json`). Правило 3 Biome проверяет частично: в `http/` запрещены Drizzle и драйверы БД. Тест `tools/tests/boundaries.test.ts` проверяет, что Biome находит каждое нарушение из фикстур `tools/boundary-fixtures/`.
+
+**Админка платформы (`apps/admin`, SH-076).** Пакет `@studhub/admin`: Vite, React и токены `ui-tokens`, без роутера, PWA и клиента API. Сейчас это заглушка: одна страница «Админка платформы» с пометкой, что экраны появятся позже. Страница не обращается к API и не просит вход. Запуск: `pnpm --filter @studhub/admin dev` (порт 5174), сборка: `pnpm --filter @studhub/admin build`. CI собирает приложение отдельным шагом, E2E открывают сборку через свой `vite preview`. Вход, API и экраны добавляют SH-084, SH-085 и SH-088.
 
 ## 14. Тестирование
 

@@ -57,6 +57,10 @@ jobs:
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: pnpm check
 
+      - name: Сборка админки платформы
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: pnpm --filter @studhub/admin build
+
       - name: Миграции соответствуют схеме
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: pnpm db:check

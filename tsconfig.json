@@ -1,6 +1,7 @@
 {
   "files": [],
   "references": [
+    { "path": "apps/admin" },
     { "path": "apps/api" },
     { "path": "apps/web" },
     { "path": "packages/client-core" },

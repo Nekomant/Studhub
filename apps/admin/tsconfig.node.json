@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "node_modules/.cache/tsc/node",
+    "lib": ["es2024"],
+    "types": ["node"]
+  },
+  "include": ["vite.config.ts"]
+}
