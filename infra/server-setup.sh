@@ -48,6 +48,8 @@ PasswordAuthentication no
 KbdInteractiveAuthentication no
 PubkeyAuthentication yes
 SSHD
+# На Ubuntu 24.04 sshd запускается по сокету, и каталога /run/sshd может не быть до первого входа.
+mkdir -p /run/sshd
 sshd -t
 systemctl reload ssh 2>/dev/null || systemctl reload sshd
 echo "Действующие значения sshd:"
