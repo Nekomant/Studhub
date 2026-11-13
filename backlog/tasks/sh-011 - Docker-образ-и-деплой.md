@@ -1,11 +1,11 @@
 ---
 id: SH-011
 title: Docker-образ и деплой
-status: In Progress
+status: Review
 assignee:
   - '@claude'
 created_date: '2026-11-11T08:58:00Z'
-updated_date: '2026-11-13T18:55:00Z'
+updated_date: '2026-11-13T18:57:00Z'
 labels:
   - infra
 milestone: m-0
