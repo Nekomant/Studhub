@@ -54,21 +54,25 @@ compose up -d
 # Caddyfile лежит на сервере файлом: reload применяет его без простоя. Ошибка в Caddyfile остановит выкладку.
 compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile
 
-# Тег записываем в .env на месте: так сохраняются права 600, и ручной `docker compose up` берёт тот же тег.
-tmp=$(mktemp .env.XXXXXX)
-trap 'rm -f "$tmp"' EXIT
-awk -v tag="$tag" '
-  /^APP_TAG=/ { print "APP_TAG=" tag; found = 1; next }
-  { print }
-  END { if (!found) print "APP_TAG=" tag }
-' .env > "$tmp"
-cat "$tmp" > .env
+record_tag() {
+  # Тег записываем в .env только после успешной проверки: при падении там остаётся последний рабочий тег, и подсказка отката указывает на него.
+  # Запись на месте сохраняет права 600, и ручной `docker compose up` берёт тот же тег.
+  tmp=$(mktemp .env.XXXXXX)
+  trap 'rm -f "$tmp"' EXIT
+  awk -v tag="$tag" '
+    /^APP_TAG=/ { print "APP_TAG=" tag; found = 1; next }
+    { print }
+    END { if (!found) print "APP_TAG=" tag }
+  ' .env > "$tmp"
+  cat "$tmp" > .env
+}
 
 echo "==> проверка ${url}"
 attempts="${HEALTH_ATTEMPTS:-30}"
 interval="${HEALTH_INTERVAL:-2}"
 for ((i = 1; i <= attempts; i++)); do
   if curl -fsS --max-time 5 -o /dev/null "$url"; then
+    record_tag
     echo "Готово: выложен тег ${tag}"
     exit 0
   fi

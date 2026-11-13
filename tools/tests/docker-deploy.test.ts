@@ -202,6 +202,8 @@ n=$(grep -c '^curl ' "${log}")
     expect(result.status).toBe(1);
     expect(calls().filter((line) => line.startsWith("curl ")).length).toBe(3);
     expect(`${result.stdout}${result.stderr}`).toContain("old");
+    // Тег не записывается, пока проверка не прошла: подсказка отката не должна указывать на сломанный тег.
+    expect(readFileSync(join(dir, ".env"), "utf8")).toContain("APP_TAG=old\n");
   });
 
   it("[SH-011 AC-2] если migrate упал, обновление не начинается", () => {

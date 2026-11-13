@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-11T08:58:00Z'
-updated_date: '2026-11-13T18:29:00Z'
+updated_date: '2026-11-13T18:37:00Z'
 labels:
   - infra
 milestone: m-0
@@ -116,6 +116,8 @@ ordinal: 95000
 Решение владельца по замечанию 3: лимит 30 с для тестов migrations.test.ts задан сейчас (describe timeout 30_000), замечание закрыто, отдельной задачи не нужно.
 
 Решение владельца по замечанию 4: автооткат не делаем. Падение деплоя видно красным job в Actions, в логе одна строка с командой отката.
+
+Находка code-review 1 исправлена: deploy.sh пишет APP_TAG в .env только после успешной проверки /healthz; тест AC-2 дополнен проверкой, что при падении тег не меняется.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
