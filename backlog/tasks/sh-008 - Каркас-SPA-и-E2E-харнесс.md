@@ -1,11 +1,11 @@
 ---
 id: SH-008
 title: Каркас SPA и E2E-харнесс
-status: In Progress
+status: Review
 assignee:
   - '@claude'
 created_date: '2026-11-11T08:58:00Z'
-updated_date: '2026-11-13T00:23:00Z'
+updated_date: '2026-11-13T00:29:00Z'
 labels:
   - frontend
   - pwa
