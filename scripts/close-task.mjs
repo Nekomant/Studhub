@@ -19,7 +19,7 @@
 import { spawnSync } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { git, tryGit } from "./lib/git.mjs";
+import { listWorktrees, tryGit } from "./lib/git.mjs";
 import { ciState } from "./status.mjs";
 import { fastForwardMain, mainState } from "./sync.mjs";
 
@@ -99,19 +99,6 @@ function statusInMain(id) {
   if (byFile.size === 0) return null;
   if (byFile.size > 1) return { ambiguous: byFile.size };
   return { status: [...byFile.values()][0] };
-}
-
-function listWorktrees() {
-  return git(["worktree", "list", "--porcelain"])
-    .split("\n\n")
-    .map((block) => {
-      const lines = block.split("\n");
-      const path = lines.find((line) => line.startsWith("worktree "))?.slice("worktree ".length);
-      const branch = lines.find((line) => line.startsWith("branch refs/heads/"))?.slice("branch refs/heads/".length);
-      const head = lines.find((line) => line.startsWith("HEAD "))?.slice("HEAD ".length);
-      return { path, branch: branch ?? null, head, detached: lines.includes("detached") };
-    })
-    .filter((tree) => tree.path);
 }
 
 // Worktree, который вела сессия задачи: на ветке PR, либо на отсоединённой голове в истории origin/main,

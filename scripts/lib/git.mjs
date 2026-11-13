@@ -23,3 +23,17 @@ export function git(args) {
   }
   return result.stdout;
 }
+
+// Worktree клона по `git worktree list --porcelain`. Первая запись — основная папка.
+export function listWorktrees() {
+  return git(["worktree", "list", "--porcelain"])
+    .split("\n\n")
+    .map((block) => {
+      const lines = block.split("\n");
+      const path = lines.find((line) => line.startsWith("worktree "))?.slice("worktree ".length);
+      const branch = lines.find((line) => line.startsWith("branch refs/heads/"))?.slice("branch refs/heads/".length);
+      const head = lines.find((line) => line.startsWith("HEAD "))?.slice("HEAD ".length);
+      return { path, branch: branch ?? null, head, detached: lines.includes("detached") };
+    })
+    .filter((tree) => tree.path);
+}

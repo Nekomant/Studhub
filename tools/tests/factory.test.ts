@@ -228,8 +228,8 @@ const BRANCH_901 = "sh-901-fabrika-zapusk-zadachi";
 const happy = () => makeRepo([{ id: "SH-901", title: TITLE_FABRIKA }]);
 
 describe("factory: выбор кандидатов", () => {
-  const picker = () =>
-    makeRepo(
+  const picker = () => {
+    const s = makeRepo(
       [
         { id: "SH-901", title: "Первая", priority: "high", criteria: 3 },
         { id: "SH-902", title: "Вторая", deps: ["SH-910"] },
@@ -249,10 +249,12 @@ describe("factory: выбор кандидатов", () => {
         workOnly: [{ id: "SH-908", title: "Только в папке" }],
       },
     );
+    seedRecord(s, "SH-906", "в работе");
+    return s;
+  };
 
   it("[SH-093 AC-1] номер получают только задачи Ready с зависимостями в Done без ветки, worktree и записи", () => {
     const s = picker();
-    seedRecord(s, "SH-906", "в работе");
 
     const { code, out } = runFactory(s, s.work, ["run"], { input: "\n" });
 
