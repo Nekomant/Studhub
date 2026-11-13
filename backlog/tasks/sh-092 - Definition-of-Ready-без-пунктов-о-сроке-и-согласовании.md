@@ -1,7 +1,7 @@
 ---
 id: SH-092
 title: Definition of Ready без пунктов о сроке и согласовании
-status: In Progress
+status: Review
 assignee:
   - '@claude'
 created_date: '2026-11-12T23:57:00Z'
