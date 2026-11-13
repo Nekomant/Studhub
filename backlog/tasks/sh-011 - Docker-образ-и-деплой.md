@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-11T08:58:00Z'
-updated_date: '2026-11-13T18:25:00Z'
+updated_date: '2026-11-13T18:29:00Z'
 labels:
   - infra
 milestone: m-0
@@ -114,6 +114,8 @@ ordinal: 95000
 Проверка sh-verifier: AC-5 подтверждён (tools/tests/docker-deploy.test.ts). AC-1..AC-4 по плану ручные; AC-2, AC-3, AC-4 проверяются после слияния в main на prod. Тест AC-1 после красного коммита поправлен (CMD→ENTRYPOINT, WEB_ROOT в многострочном ENV), критерии не менялись, нарушением не считается.
 
 Решение владельца по замечанию 3: лимит 30 с для тестов migrations.test.ts задан сейчас (describe timeout 30_000), замечание закрыто, отдельной задачи не нужно.
+
+Решение владельца по замечанию 4: автооткат не делаем. Падение деплоя видно красным job в Actions, в логе одна строка с командой отката.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

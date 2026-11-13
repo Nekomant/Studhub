@@ -75,6 +75,5 @@ for ((i = 1; i <= attempts; i++)); do
   [ "$i" -lt "$attempts" ] && sleep "$interval"
 done
 
-echo "Проверка /healthz не прошла за ${attempts} попыток. Предыдущий тег: ${previous:-неизвестен}." >&2
-[ -n "$previous" ] && echo "Откат: ./deploy.sh ${previous}" >&2
+echo "ДЕПЛОЙ УПАЛ: /healthz не отвечает. Откат: на сервере в /srv/studhub выполни ./deploy.sh ${previous:-<предыдущий тег>}" >&2
 exit 1
