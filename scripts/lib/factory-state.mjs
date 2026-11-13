@@ -5,6 +5,7 @@
 //   SH-NNN/log.txt  журнал: смены этапа и запуски команд; рядом лежат JSON-ответы `claude` (001-worker.json, …)
 // Запись state.json атомарная: временный файл и rename, под блокировкой. Блокировку старше 30 секунд считаем брошенной.
 import { spawnSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import {
   appendFileSync,
   mkdirSync,
@@ -13,6 +14,7 @@ import {
   rmdirSync,
   rmSync,
   statSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
@@ -98,6 +100,10 @@ export function readState() {
   }
 }
 
+// Владелец блокировки: файл `owner` в каталоге state.lock с токеном процесса.
+const OWNER_FILE = "owner";
+
+// Берёт блокировку и возвращает токен владельца: по нему releaseLock узнаёт свою блокировку.
 function takeLock() {
   const lock = lockDir();
   mkdirSync(stateDir(), { recursive: true });
@@ -105,7 +111,9 @@ function takeLock() {
   for (;;) {
     try {
       mkdirSync(lock);
-      return;
+      const token = `${process.pid}-${randomBytes(8).toString("hex")}`;
+      writeFileSync(join(lock, OWNER_FILE), token);
+      return token;
     } catch (error) {
       if (error.code !== "EEXIST") throw error;
     }
@@ -128,9 +136,14 @@ function removeStaleLock(lock) {
   }
 }
 
-function releaseLock() {
+// Снимает блокировку только со своим токеном. Если нашу блокировку сочли брошенной и забрал другой процесс,
+// в каталоге его токен (или токена ещё нет): чужую блокировку не трогаем.
+function releaseLock(token) {
+  const lock = lockDir();
   try {
-    rmdirSync(lockDir());
+    if (readFileSync(join(lock, OWNER_FILE), "utf8") !== token) return;
+    unlinkSync(join(lock, OWNER_FILE));
+    rmdirSync(lock);
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
   }
@@ -138,7 +151,7 @@ function releaseLock() {
 
 // Читает состояние под блокировкой, применяет change(state) и записывает результат.
 function withState(change) {
-  takeLock();
+  const token = takeLock();
   try {
     const state = readState();
     const result = change(state);
@@ -148,7 +161,7 @@ function withState(change) {
     renameSync(temporary, file);
     return result;
   } finally {
-    releaseLock();
+    releaseLock(token);
   }
 }
 

@@ -87,9 +87,14 @@ const oneLine = (text) =>
     .split("\n")[0]
     .trim();
 
-// Задачи из origin/main: файлы читаются через git, рабочая папка не участвует.
-function readOriginTasks() {
-  const listed = tryGit(["ls-tree", "-z", "--name-only", TARGET, "backlog/tasks/"]);
+// Каталоги задач в origin/main. Кандидаты берутся только из первого; остальные нужны, чтобы определить статус зависимости.
+const TASK_DIR = "backlog/tasks/";
+const ARCHIVE_DIRS = ["backlog/archive/tasks/", "backlog/completed/"];
+
+// Задачи из каталога dir в origin/main: файлы читаются через git, рабочая папка не участвует.
+// Каталога нет в origin/main: это не ошибка, список пуст.
+function readOriginTasks(dir) {
+  const listed = tryGit(["ls-tree", "-z", "--name-only", TARGET, dir]);
   if (!listed.ok) return [];
   return listed.stdout
     .split("\0")
@@ -283,8 +288,9 @@ async function main() {
     return;
   }
 
-  const tasks = readOriginTasks();
-  const statuses = new Map(tasks.map((task) => [task.id, task.status]));
+  const tasks = readOriginTasks(TASK_DIR);
+  // Статус зависимости определяем и для архивных задач; запись из backlog/tasks перекрывает архивную.
+  const statuses = new Map([...ARCHIVE_DIRS.flatMap(readOriginTasks), ...tasks].map((task) => [task.id, task.status]));
   const context = readContext();
 
   if (wanted) {

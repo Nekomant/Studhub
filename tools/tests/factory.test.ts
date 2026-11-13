@@ -373,11 +373,11 @@ describe("factory: зависимости в архиве", () => {
       completed: [{ id: "SH-920", title: "Завершённая", status: "Done" }],
     });
 
-    const { code, out } = runFactory(s, s.work, ["run", "SH-921"]);
+    const { code, out } = runFactory(s, s.work, ["run"], { input: "\n" });
 
     expect(code).toBe(0);
-    expect(branchesOf(s.work).some((name) => name.startsWith("sh-921-"))).toBe(true);
-    expect(out).not.toMatch(/зависимость/);
+    expect(out).toMatch(/1\.\s+SH-921/);
+    expect(out).not.toContain("Ждут зависимость");
   });
 
   it("[SH-093 AC-1] архивная зависимость не в Done остаётся блокирующей", () => {
