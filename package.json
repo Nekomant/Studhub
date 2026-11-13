@@ -28,7 +28,8 @@
     "git:prune": "node scripts/git-prune.mjs",
     "sync": "node scripts/sync.mjs",
     "close-task": "node scripts/close-task.mjs",
-    "status": "node scripts/status.mjs"
+    "status": "node scripts/status.mjs",
+    "remarks": "node scripts/remarks.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.6",
