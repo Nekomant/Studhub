@@ -1,10 +1,10 @@
 ---
 id: SH-010
 title: 'Prod-сервер: VPS, Caddy, домены'
-status: Backlog
+status: Ready
 assignee: []
 created_date: '2026-11-11T08:58:00Z'
-updated_date: '2026-11-11T18:59:00Z'
+updated_date: '2026-11-13T03:56:00Z'
 labels:
   - infra
 milestone: m-0
@@ -12,7 +12,7 @@ dependencies:
   - SH-002
 priority: high
 type: task
-ordinal: 10000
+ordinal: 95000
 ---
 
 ## Description
