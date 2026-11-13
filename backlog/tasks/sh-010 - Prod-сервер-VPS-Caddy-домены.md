@@ -5,7 +5,7 @@ status: Review
 assignee:
   - '@claude'
 created_date: '2026-11-11T08:58:00Z'
-updated_date: '2026-11-13T13:14:00Z'
+updated_date: '2026-11-13T15:37:00Z'
 labels:
   - infra
 milestone: m-0
@@ -110,6 +110,8 @@ Prod нужен с первого этапа: после каждого этап
 AC-4 подтверждён владельцем после чтения переписанного infra/README.md.
 
 Замечание 2 (решение владельца): локальный pnpm verify падал по таймауту 5 с в tools/tests/* под нагрузкой. Таймаут проекта tools поднят до 10 с (vitest.config.ts). После правки tools зелёные; остался один таймаут 5 с в apps/api (src/db/migrations.test.ts, SH-005 AC-1). Следим: если повторится, ищем причину.
+
+Замечание 2 (продолжение): по решению владельца таймаут 10 с добавлен и в apps/api (apps/api/vitest.config.ts). pnpm verify целиком зелёный: 42 файла, 947 тестов. Следим; если повторится, ищем причину.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
