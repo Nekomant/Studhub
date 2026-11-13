@@ -116,6 +116,9 @@ type Scenario = { base: string; origin: string; work: string; seed: string; log:
 type RepoOptions = {
   // Задачи только в рабочей папке основной папки, без коммита.
   workOnly?: FixtureTask[];
+  // Задачи в backlog/archive/tasks и backlog/completed в origin/main.
+  archived?: FixtureTask[];
+  completed?: FixtureTask[];
   localBranches?: string[];
   originBranches?: string[];
   // Ветки, открытые в worktree вне .claude/worktrees.
@@ -139,6 +142,14 @@ function makeRepo(tasks: FixtureTask[], options: RepoOptions = {}): Scenario {
   writeFileSync(join(seed, "README.md"), "readme\n");
   writeFileSync(join(seed, ".gitignore"), ".claude/worktrees/\n");
   for (const task of tasks) writeFileSync(join(seed, taskPath(task.id)), taskFile(task));
+  for (const [dir, list] of [
+    ["backlog/archive/tasks", options.archived],
+    ["backlog/completed", options.completed],
+  ] as const) {
+    if (!list) continue;
+    mkdirSync(join(seed, dir), { recursive: true });
+    for (const task of list) writeFileSync(join(seed, dir, `${task.id.toLowerCase()} - задача.md`), taskFile(task));
+  }
   git(seed, "add", ".");
   git(seed, "commit", "-q", "-m", "init");
   git(seed, "push", "-q", "origin", "main");
@@ -341,6 +352,56 @@ describe("factory: выбор кандидатов", () => {
 
     expect(code).toBe(0);
     expect(out).toContain("Задач в Ready нет");
+  });
+});
+
+describe("factory: зависимости в архиве", () => {
+  it("[SH-093 AC-1] зависимость в backlog/archive/tasks со статусом Done не блокирует кандидата", () => {
+    const s = makeRepo([{ id: "SH-921", title: "Зависит от архивной", deps: ["SH-920"] }], {
+      archived: [{ id: "SH-920", title: "Архивная", status: "Done" }],
+    });
+
+    const { code, out } = runFactory(s, s.work, ["run"], { input: "\n" });
+
+    expect(code).toBe(0);
+    expect(out).toMatch(/1\.\s+SH-921/);
+    expect(out).not.toContain("Ждут зависимость");
+  });
+
+  it("[SH-093 AC-1] зависимость в backlog/completed со статусом Done не блокирует кандидата", () => {
+    const s = makeRepo([{ id: "SH-921", title: "Зависит от завершённой", deps: ["SH-920"] }], {
+      completed: [{ id: "SH-920", title: "Завершённая", status: "Done" }],
+    });
+
+    const { code, out } = runFactory(s, s.work, ["run", "SH-921"]);
+
+    expect(code).toBe(0);
+    expect(branchesOf(s.work).some((name) => name.startsWith("sh-921-"))).toBe(true);
+    expect(out).not.toMatch(/зависимость/);
+  });
+
+  it("[SH-093 AC-1] архивная зависимость не в Done остаётся блокирующей", () => {
+    const s = makeRepo([{ id: "SH-921", title: "Ждёт архивную", deps: ["SH-920"] }], {
+      archived: [{ id: "SH-920", title: "Архивная", status: "In Progress" }],
+    });
+
+    const { code, out } = runFactory(s, s.work, ["run"], { input: "\n" });
+
+    expect(code).toBe(0);
+    expect(out).toContain("Ждут зависимость");
+    expect(out).toMatch(/SH-921/);
+    expect(out).toContain("Задач в Ready нет");
+  });
+
+  it("[SH-093 AC-1] архивная задача в Ready не кандидат, а запуск по ID отвечает «нет в origin/main»", () => {
+    const s = makeRepo([{ id: "SH-921" }], { archived: [{ id: "SH-922", status: "Ready" }] });
+
+    const listed = runFactory(s, s.work, ["run"], { input: "\n" });
+    const wanted = runFactory(s, s.work, ["run", "SH-922"]);
+
+    expect(listed.out).not.toContain("SH-922");
+    expect(wanted.code).toBe(1);
+    expect(wanted.out).toMatch(/нет в origin\/main/);
   });
 });
 
@@ -718,4 +779,35 @@ describe("factory-state: модуль", () => {
     expect(existsSync(join(s.work, ".claude/worktrees", BRANCH_901))).toBe(false);
     expect(existsSync(lock)).toBe(true);
   }, 60_000);
+  it("[SH-093 AC-12] процесс снимает только свою блокировку: чужая, взятая после отбора своей, остаётся", () => {
+    const s = happy();
+    seedRecord(s, "SH-950");
+    const lock = join(s.stateDir, "state.lock");
+
+    // Внутри записи имитируем второй процесс: он забрал «брошенную» блокировку и взял свою.
+    const { code, err } = nodeEval(
+      s.work,
+      `import { rmSync, mkdirSync } from "node:fs";
+       m.updateTask("SH-950", (task) => {
+         rmSync(${JSON.stringify(lock)}, { recursive: true, force: true });
+         mkdirSync(${JSON.stringify(lock)});
+         return { rounds: task.rounds + 1 };
+       });`,
+    );
+
+    expect(err).toBe("");
+    expect(code).toBe(0);
+    expect(existsSync(lock)).toBe(true);
+  });
+
+  it("[SH-093 AC-12] после обычной записи своя блокировка снята", () => {
+    const s = happy();
+    seedRecord(s, "SH-950");
+
+    const { code, err } = nodeEval(s.work, `m.updateTask("SH-950", { rounds: 1 });`);
+
+    expect(err).toBe("");
+    expect(code).toBe(0);
+    expect(existsSync(join(s.stateDir, "state.lock"))).toBe(false);
+  });
 });
