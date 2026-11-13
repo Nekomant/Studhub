@@ -1,0 +1,41 @@
+# Caddy на prod (SH-010). Домены берутся из переменной DOMAIN (по умолчанию studhub.ru).
+# TLS-сертификаты Caddy получает и продлевает сам (Let's Encrypt). Перенаправление
+# http -> https Caddy включает автоматически для каждого домена из этого файла.
+{
+	# Адрес для уведомлений Let's Encrypt. Задаётся в .env как ACME_EMAIL.
+	email {$ACME_EMAIL}
+	# Firewall пропускает 443 только по TCP, поэтому HTTP/3 (UDP) выключаем.
+	servers {
+		protocols h1 h2
+	}
+}
+
+# Лендинг. До задачи «Docker-образ и деплой» (SH-011) здесь заглушка.
+{$DOMAIN:studhub.ru} {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+	respond "Studhub" 200
+}
+
+# SPA, API и iCal. /healthz отвечает сам Caddy, пока контейнера app нет (SH-010).
+# SH-011 заменяет эту ветку на reverse_proxy app:3000: /healthz тогда показывает и состояние БД.
+app.{$DOMAIN:studhub.ru} {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+
+	handle /healthz {
+		respond "ok" 200
+	}
+
+	handle {
+		reverse_proxy app:3000
+	}
+}
