@@ -693,6 +693,7 @@ generate(slot, until):
 - `infra/docker-compose.prod.yml`: `caddy`, `app`, `postgres` (порт наружу не открыт);
 - секреты в `.env` с правами `600`;
 - домены: `studshub.ru` (лендинг), `app.studshub.ru` (SPA, API, iCal).
+- `www.studshub.ru` перенаправляет на `studshub.ru` (Caddy). Пока нет образа `app` (до SH-011), `/healthz` на `app.studshub.ru` отвечает сам Caddy.
 
 **Бэкапы:**
 - wal-g: непрерывная архивация WAL плюс полный бэкап каждую ночь в S3 **другого** провайдера (например, Yandex Object Storage), с шифрованием, хранение 30 дней;
