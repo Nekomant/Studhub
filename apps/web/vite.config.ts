@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { startPath } from "@studhub/client-core";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
@@ -8,15 +9,25 @@ import { VitePWA } from "vite-plugin-pwa";
 // /healthz лежит на корне API, поэтому его проксируем так же, как /api: в prod обе группы адресов ведёт Caddy.
 const apiTarget = process.env.API_PROXY_TARGET ?? "http://127.0.0.1:3000";
 const proxy = { "/api": apiTarget, "/healthz": apiTarget };
-// Порт dev-сервера: по умолчанию 5173. Тест `pnpm dev` задаёт WEB_PORT и требует именно его.
-const devPort = process.env.WEB_PORT === undefined ? 5173 : Number(process.env.WEB_PORT);
+
+// Порт dev-сервера: по умолчанию 5173. Тест `pnpm dev` задаёт WEB_PORT и требует именно его (strictPort).
+function readDevPort(value: string | undefined): number {
+  if (value === undefined) return 5173;
+  const port = Number(value);
+  if (value.trim() === "" || !Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error(`WEB_PORT задан неверно: «${value}». Нужно целое число от 1 до 65535.`);
+  }
+  return port;
+}
+const devPort = readDevPort(process.env.WEB_PORT);
 
 export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
     VitePWA({
-      // «Доступна новая версия»: приложение само спросит пользователя (ТД §8). Регистрируем service worker в main.tsx.
+      // Новая версия не применяется молча (ТД §8, «prompt»). Баннер «Доступна новая версия» добавит этап 7:
+      // пока обработчика нет, новый service worker начинает работать после закрытия всех вкладок. Регистрация в pwa.ts.
       registerType: "prompt",
       injectRegister: false,
       manifest: {
@@ -24,7 +35,7 @@ export default defineConfig({
         short_name: "Studhub",
         description: "Ученики, расписание и оплаты частного репетитора",
         lang: "ru",
-        start_url: "/today",
+        start_url: startPath,
         scope: "/",
         display: "standalone",
         background_color: "#f6f2ea",
