@@ -115,7 +115,7 @@
 | `/more/payments?month=YYYY-MM` | Э-12 Оплаты и отчёт | Сессия |
 | `/more/templates`, `/more/templates/{id}` | Э-14 Шаблоны, Э-15 Шаблон | Сессия |
 | `/more/settings/profile\|workspace\|login\|calendar\|data` | Э-17 Настройки | Сессия |
-| `admin.studhub.ru/metrics/{report}` | Э-18 Метрики платформы (в `apps/admin`, стадия 2) | Сессия `sh_admin_session` (вход через OAuth и TOTP), иначе 404 |
+| `admin.studshub.ru/metrics/{report}` | Э-18 Метрики платформы (в `apps/admin`, стадия 2) | Сессия `sh_admin_session` (вход через OAuth и TOTP), иначе 404 |
 
 Шторки Ш-xx и модальные окна М-xx собственного адреса не имеют.
 
@@ -123,7 +123,7 @@
 
 ```mermaid
 flowchart TD
-  open(["Открыть app.studhub.ru"]) --> hasSession{"Есть сессия?"}
+  open(["Открыть app.studshub.ru"]) --> hasSession{"Есть сессия?"}
   hasSession -- "нет" --> login["Э-01 Вход"]
   login --> oauth["Яндекс ID или VK ID"]
   oauth --> isNew{"Новый пользователь?"}
@@ -1172,7 +1172,7 @@ flowchart LR
 ### I. Платформа
 
 #### Э-18 Метрики платформы
-`admin.studhub.ru/metrics/{report}` · приложение `apps/admin` · стадия 2 (задача SH-088) · UC-P1
+`admin.studshub.ru/metrics/{report}` · приложение `apps/admin` · стадия 2 (задача SH-088) · UC-P1
 
 До этого метрики смотрят запросами из `scripts/metrics.sql` (ТД §11).
 

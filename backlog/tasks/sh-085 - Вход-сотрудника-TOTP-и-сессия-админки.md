@@ -4,7 +4,7 @@ title: 'Вход сотрудника: TOTP и сессия админки'
 status: Backlog
 assignee: []
 created_date: '2026-11-12T12:03:00Z'
-updated_date: '2026-11-12T12:37:00Z'
+updated_date: '2026-11-13T11:59:00Z'
 labels:
   - backend
   - auth
@@ -24,7 +24,7 @@ ordinal: 78000
 ## Что нужно сделать
 1. Написать API-тесты по критериям до реализации; время в тестах задаётся управляемыми часами.
 2. Добавить вход сотрудника: после входа через Яндекс ID или VK ID (повторное использование OAuth из SH-017 и SH-018) сервер просит код TOTP. Без верного кода сессия админки не создаётся.
-3. Создать сессию админки: cookie `sh_admin_session`, действует только на `admin.studhub.ru`, живёт 8 часов и не продлевается. В БД хранится хеш токена, как у `sh_session` (SH-016).
+3. Создать сессию админки: cookie `sh_admin_session`, действует только на `admin.studshub.ru`, живёт 8 часов и не продлевается. В БД хранится хеш токена, как у `sh_session` (SH-016).
 4. Разделить сессии: `sh_session` не открывает `/api/admin/v1`, `sh_admin_session` не открывает `/api/v1`.
 5. Сделать проверку «свежего» кода TOTP для команд, которые что-то меняют: эндпоинт с этим требованием снова просит код. Команд пока нет, поэтому проверку покрыть тестовым эндпоинтом, доступным только в `APP_MODE=test`.
 6. Сделать выход: `POST /api/admin/v1/auth/logout` закрывает сессию админки.
@@ -48,7 +48,7 @@ ordinal: 78000
 ## Контракт
 - `POST /api/admin/v1/auth/totp`: `{ code }` → 204 и cookie `sh_admin_session`; неверный или повторно использованный код → 401 `invalid_code`.
 - `POST /api/admin/v1/auth/logout` → 204.
-- Cookie `sh_admin_session`: `HttpOnly`, `Secure`, `SameSite=Strict`, домен `admin.studhub.ru`, срок 8 часов без продления.
+- Cookie `sh_admin_session`: `HttpOnly`, `Secure`, `SameSite=Strict`, домен `admin.studshub.ru`, срок 8 часов без продления.
 - Эндпоинты, требующие свежий TOTP: 401 `totp_required` без него.
 
 ## План тестов

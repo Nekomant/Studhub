@@ -18,9 +18,9 @@
 ```mermaid
 flowchart TB
   subgraph clients["Клиенты"]
-    pwa["PWA преподавателя<br/>app.studhub.ru"]
-    visitor["Посетитель лендинга<br/>studhub.ru"]
-    admin["Сотрудник платформы<br/>admin.studhub.ru, стадия 2"]
+    pwa["PWA преподавателя<br/>app.studshub.ru"]
+    visitor["Посетитель лендинга<br/>studshub.ru"]
+    admin["Сотрудник платформы<br/>admin.studshub.ru, стадия 2"]
     cal["Внешний календарь<br/>подписка на .ics"]
   end
 
@@ -577,7 +577,7 @@ generate(slot, until):
 - Пока запрошено удаление аккаунта, изменяющие запросы возвращают `403` с `code: account_deletion_pending` (§4.2).
 - Пагинация курсорная: `?cursor=…&limit=…` → `{ items, nextCursor }`.
 - Аутентификация — cookie `sh_session` (`httpOnly`, `Secure`, `SameSite=Lax`) или `Authorization: Bearer`. На изменяющих запросах с cookie проверяется заголовок `Origin`.
-- Админка платформы: префикс `/api/admin/v1`, своя спецификация OpenAPI и свой сгенерированный клиент. Аутентификация только по cookie `sh_admin_session`: она живёт 8 часов без продления, выдаётся после входа через Яндекс или VK и кода TOTP и действует на `admin.studhub.ru`. Сессия `sh_session` админку не открывает, `sh_admin_session` не открывает `/api/v1`. Команды, которые что-то меняют, просят код TOTP ещё раз.
+- Админка платформы: префикс `/api/admin/v1`, своя спецификация OpenAPI и свой сгенерированный клиент. Аутентификация только по cookie `sh_admin_session`: она живёт 8 часов без продления, выдаётся после входа через Яндекс или VK и кода TOTP и действует на `admin.studshub.ru`. Сессия `sh_session` админку не открывает, `sh_admin_session` не открывает `/api/v1`. Команды, которые что-то меняют, просят код TOTP ещё раз.
 - Чужой или несуществующий ресурс — `404`.
 - Изменения API только добавляют поля и эндпоинты. При несовместимом клиенте сервер отвечает `426`, и клиент перезагружается.
 
@@ -692,7 +692,7 @@ generate(slot, until):
 - VPS в РФ (по умолчанию Selectel, 2 vCPU / 4 ГБ / 40 ГБ SSD);
 - `infra/docker-compose.prod.yml`: `caddy`, `app`, `postgres` (порт наружу не открыт);
 - секреты в `.env` с правами `600`;
-- домены: `studhub.ru` (лендинг), `app.studhub.ru` (SPA, API, iCal).
+- домены: `studshub.ru` (лендинг), `app.studshub.ru` (SPA, API, iCal).
 
 **Бэкапы:**
 - wal-g: непрерывная архивация WAL плюс полный бэкап каждую ночь в S3 **другого** провайдера (например, Yandex Object Storage), с шифрованием, хранение 30 дней;
