@@ -40,7 +40,7 @@ if (config) {
   const jobs = createJobs({ databaseUrl: config.DATABASE_URL, logger });
   jobs.define(heartbeatJob);
   if (config.APP_MODE === "test") defineTestJobs(jobs);
-  const app = createApp({ logger, checkDb: () => health.ping(), testClock, jobs });
+  const app = createApp({ logger, checkDb: () => health.ping(), testClock, jobs, webRoot: config.WEB_ROOT });
 
   const server = serve({ fetch: app.fetch, port }, (info) => {
     logger.info({ port: info.port }, "API запущен");

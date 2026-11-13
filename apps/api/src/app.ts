@@ -6,6 +6,7 @@ import { ProblemError, problemResponse } from "./platform/errors/problem.ts";
 import type { Jobs } from "./platform/jobs/index.ts";
 import type { Logger } from "./platform/logger/index.ts";
 import { securityHeaders } from "./platform/security/headers.ts";
+import { createSpa } from "./platform/spa/index.ts";
 import { testRoutes } from "./platform/testing/routes.ts";
 
 export const API_PREFIX = "/api/v1";
@@ -22,6 +23,8 @@ export type AppDeps = {
   // Фоновые задачи. В тестовом режиме их маршруты запуска регистрируются в /__test/jobs.
   jobs?: Jobs | undefined;
   // Дополнительные маршруты: получают под-приложение /api/v1 и общие часы (тесты и модули первой задачи).
+  // Папка со сборкой SPA. Если задана, приложение раздаёт её файлы и index.html для маршрутов SPA (ТД §2.1).
+  webRoot?: string | undefined;
   extraRoutes?: ((api: OpenAPIHono, context: { clock: Clock }) => void) | undefined;
 };
 
@@ -69,10 +72,18 @@ export function createApp(deps: AppDeps): OpenAPIHono {
     return problemResponse(c, { status: 500, code: "internal_error", title: "Внутренняя ошибка сервера" });
   });
 
-  app.notFound((c) => problemResponse(c, { status: 404, code: "not_found", title: "Маршрут не найден" }));
+  const spa = deps.webRoot ? createSpa(deps.webRoot) : undefined;
+
+  app.notFound(
+    async (c) =>
+      (await spa?.fallback(c)) ?? problemResponse(c, { status: 404, code: "not_found", title: "Маршрут не найден" }),
+  );
 
   // /healthz на корне: его дёргает мониторинг через Caddy (ТД §6.2, §12).
   app.route("/", healthRoutes({ ping: deps.checkDb, logger: deps.logger }));
+
+  // Файлы SPA подключаем до маршрутов, чтобы корень `/` получил index.html. Пути сервера пропускаются.
+  if (spa) app.use("*", spa.files);
 
   const clock = deps.testClock ?? deps.clock ?? createSystemClock();
   if (deps.testClock) app.route("/__test", testRoutes({ clock: deps.testClock, jobs: deps.jobs }));

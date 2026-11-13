@@ -12,6 +12,8 @@ export const configSchema = z
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
     // `test` включает тестовые маршруты (`/__test/clock`). С NODE_ENV=production это сочетание запрещено.
     APP_MODE: z.enum(["test"]).optional(),
+    // Папка со сборкой SPA. В образе это /app/web; локально пусто, SPA раздаёт Vite.
+    WEB_ROOT: z.string().min(1).optional(),
     DATABASE_URL: postgresUrl,
     TEST_DATABASE_URL: postgresUrl.optional(),
     S3_ENDPOINT: z.url(),
