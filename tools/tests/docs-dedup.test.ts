@@ -8,10 +8,12 @@ import { describe, expect, it } from "vitest";
 const repoRoot = resolve(import.meta.dirname, "../..");
 const read = (path: string) => readFileSync(join(repoRoot, path), "utf8");
 
-const commands = [
+// sub — подкоманда, перед которой README описывает флаги: `pnpm factory run <флаг>`.
+const commands: { command: string; script: string; sub?: string }[] = [
   { command: "pnpm sync", script: "scripts/sync.mjs" },
   { command: "pnpm status", script: "scripts/status.mjs" },
   { command: "pnpm git:prune", script: "scripts/git-prune.mjs" },
+  { command: "pnpm factory", script: "scripts/factory.mjs", sub: "run" },
 ];
 
 // Флаги берём из исходников: args.includes("--apply").
@@ -29,10 +31,10 @@ describe("[SH-081 AC-1] описание команд лежит в README", () 
     expect(flagsOf("scripts/git-prune.mjs")).toEqual(["--delete"]);
   });
 
-  it.each(commands)("[SH-081 AC-1] README описывает $command и все её флаги", ({ command, script }) => {
+  it.each(commands)("[SH-081 AC-1] README описывает $command и все её флаги", ({ command, script, sub }) => {
     const readme = read("README.md");
     expect(readme).toContain(command);
-    for (const flag of flagsOf(script)) expect(readme).toContain(`${command} ${flag}`);
+    for (const flag of flagsOf(script)) expect(readme).toContain(`${command} ${sub ? `${sub} ` : ""}${flag}`);
   });
 
   it.each(["CLAUDE.md", "docs/process.md"])(
@@ -50,6 +52,25 @@ describe("[SH-081 AC-1] описание команд лежит в README", () 
       }
     },
   );
+
+  it("[SH-093 AC-14] README описывает pnpm factory run и pnpm factory run SH-NNN", () => {
+    const readme = read("README.md");
+    expect(readme).toContain("pnpm factory run");
+    expect(readme).toContain("pnpm factory run SH-NNN");
+    for (const flag of flagsOf("scripts/factory.mjs")) expect(readme).toContain(`pnpm factory run ${flag}`);
+  });
+
+  it("[SH-093 AC-14] docs/process.md и CLAUDE.md упоминают pnpm factory со ссылкой на README и без флагов", () => {
+    for (const file of ["docs/process.md", "CLAUDE.md"]) {
+      const lines = mentions(read(file), "pnpm factory");
+      expect(lines.length, `${file}: нет упоминания pnpm factory`).toBeGreaterThan(0);
+      for (const line of lines) {
+        expect(line, `${file}: у pnpm factory нет ссылки на README`).toMatch(/README\.md/);
+        for (const flag of flagsOf("scripts/factory.mjs"))
+          expect(line, `${file}: pnpm factory описана с флагом ${flag}`).not.toContain(flag);
+      }
+    }
+  });
 
   it("[SH-081 AC-1] в docs/process.md нет описания git:prune списком под пунктом", () => {
     const lines = read("docs/process.md").split("\n");
