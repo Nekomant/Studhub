@@ -1,10 +1,11 @@
 ---
 id: SH-011
 title: Docker-образ и деплой
-status: Ready
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-11T08:58:00Z'
-updated_date: '2026-11-13T17:20:00Z'
+updated_date: '2026-11-13T17:24:00Z'
 labels:
   - infra
 milestone: m-0
@@ -63,3 +64,21 @@ ordinal: 95000
 - [ ] #6 PR слит в main через squash, изменения выложены в prod (после появления деплоя)
 - [ ] #7 В заметках задачи записаны оценка и фактическое время, решения по ходу работы и итоговое резюме
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. SPA раздаёт процесс app (ответ владельца): serveStatic из WEB_ROOT, запасной index.html вне /api, /healthz, /ical, /__test. Правка ТД §2.1 и §12.
+2. Dockerfile (multi-stage, pnpm deploy --prod, USER node) и .dockerignore; проверка docker run локально.
+3. infra/deploy.sh <tag>: migrate, pull, up -d, проверка /healthz, код 1 при неудаче. docker-compose.prod.yml без профиля app, Caddyfile проксирует /healthz на app, .env.prod.example получает S3-переменные.
+4. ci.yml: job image (сборка на PR без публикации, публикация в GHCR с тегом SHA по push в main), job deploy (scp файлов infra и ssh deploy.sh).
+5. Тесты по критериям: tools/tests/docker-deploy.test.ts (Dockerfile, CI, deploy.sh с подменой docker и curl), apps/api/src/spa.test.ts.
+6. Ручные проверки: docker run, docker history; GitHub Secrets, .env на сервере, прогон на prod и откат делает владелец (точки СТОП).
+7. Документы: ТД §2.1, §12, infra/README.md.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Оценка: 6 ч
+<!-- SECTION:NOTES:END -->
