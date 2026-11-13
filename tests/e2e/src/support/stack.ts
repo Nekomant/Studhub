@@ -115,6 +115,28 @@ function waitForApi(child: ChildProcess, port: number): Promise<void> {
   });
 }
 
+const apiStartAttempts = 3;
+
+// Свободный порт мог занять другой процесс между проверкой и запуском API (параллельные тесты, другие сервисы).
+// Тогда API завершается при запуске, и стек повторяет запуск с новым портом.
+async function startApi(databaseUrl: string): Promise<{ api: ChildProcess; apiPort: number }> {
+  for (let attempt = 1; ; attempt += 1) {
+    const apiPort = await freePort();
+    const api = spawn(process.execPath, ["src/main.ts"], {
+      cwd: apiRoot,
+      env: apiEnv(databaseUrl, { PORT: String(apiPort) }),
+      stdio: ["ignore", "pipe", "inherit"],
+    });
+    try {
+      await waitForApi(api, apiPort);
+      return { api, apiPort };
+    } catch (error) {
+      if (attempt >= apiStartAttempts) throw error;
+      console.error(`API не запустился на порту ${apiPort}, повторяю (${attempt} из ${apiStartAttempts})`);
+    }
+  }
+}
+
 const children: ChildProcess[] = [];
 let database: string | undefined;
 let stopping = false;
@@ -138,14 +160,8 @@ try {
   const databaseUrl = withDatabase(testDatabaseUrl(), database);
   await runMigrations(databaseUrl);
 
-  const apiPort = await freePort();
-  const api = spawn(process.execPath, ["src/main.ts"], {
-    cwd: apiRoot,
-    env: apiEnv(databaseUrl, { PORT: String(apiPort) }),
-    stdio: ["ignore", "pipe", "inherit"],
-  });
+  const { api, apiPort } = await startApi(databaseUrl);
   children.push(api);
-  await waitForApi(api, apiPort);
 
   // Собранную SPA отдаёт `vite preview`: он же проксирует /api и /healthz на API, как Caddy в prod.
   const preview = spawn(
