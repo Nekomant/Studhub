@@ -1,11 +1,11 @@
 ---
 id: SH-010
 title: 'Prod-сервер: VPS, Caddy, домены'
-status: In Progress
+status: Review
 assignee:
   - '@claude'
 created_date: '2026-11-11T08:58:00Z'
-updated_date: '2026-11-13T12:37:00Z'
+updated_date: '2026-11-13T12:38:00Z'
 labels:
   - infra
 milestone: m-0
