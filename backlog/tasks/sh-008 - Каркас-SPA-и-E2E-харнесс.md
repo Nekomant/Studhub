@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-11T08:58:00Z'
-updated_date: '2026-11-13T00:00:00Z'
+updated_date: '2026-11-13T00:11:00Z'
 labels:
   - frontend
   - pwa
@@ -107,6 +107,8 @@ ordinal: 1000
 - Тесты не ослаблялись после красного коммита.
 - pnpm verify под нагрузкой машины (load average около 8–10) дважды падал по таймауту 5 с в тестах других задач, которые запускают pnpm (SH-005 migrations.test.ts, SH-091 close-task.test.ts). Каждый тест проходит отдельно, полный vitest run с --maxWorkers=3 даёт 884 из 884. Не связано с SH-008, но таймаут хрупкий.
 Факт: ≈0,5 ч по времени коммитов (оценка была 8 ч).
+
+Дополнение по замечанию sh-verifier к AC-1: добавлены tests/e2e/src/dev.spec.ts (запускает pnpm dev на свободных портах и отдельной БД: API отвечает, dev-сервер SPA отдаёт исходники, /api/v1 проксируется и отдаёт problem+json not_found от API, заглушка показывает статус /healthz, SIGINT гасит оба процесса) и proxy.spec.ts (прокси /api в vite preview, SPA запрашивает /healthz на своём адресе). Тесты добавлены после реализации; мутация «убрать /api из прокси» ломает оба. Для теста dev-сервер читает WEB_PORT (strictPort, если задан). Тесты красного коммита не менялись.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
