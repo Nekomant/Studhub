@@ -1060,7 +1060,7 @@ describe("factory: команда claude и окружение", () => {
   it("[SH-098 AC-5] аргументы и cwd вызова claude, --session-id равен session_id записи", async () => {
     const s = happy();
     const { worktree } = prepared(s);
-    const { WORKER_ALLOWED, WORKER_DISALLOWED, WORKER_BUDGET_USD } = await factoryTools();
+    const { workerAllowed, WORKER_DISALLOWED, WORKER_BUDGET_USD } = await factoryTools();
 
     runFactory(s, s.work, ["run", "SH-901"]);
 
@@ -1082,7 +1082,7 @@ describe("factory: команда claude и окружение", () => {
       "--permission-mode",
       "dontAsk",
       "--allowedTools",
-      WORKER_ALLOWED.join(","),
+      workerAllowed(worktree).join(","),
       "--disallowedTools",
       WORKER_DISALLOWED.join(","),
       "--max-budget-usd",
@@ -1153,7 +1153,7 @@ describe("factory-tools: правила воркера", () => {
   });
 
   it("[SH-098 AC-8] нужные команды воркера подходят к разрешённым правилам и не подходят к запретам", async () => {
-    const { matchesRule, WORKER_ALLOWED, WORKER_DISALLOWED } = await factoryTools();
+    const { matchesRule, WORKER_ALLOWED, WORKER_DISALLOWED, workerAllowed } = await factoryTools();
 
     for (const command of [
       "git commit -m x",
@@ -1173,7 +1173,15 @@ describe("factory-tools: правила воркера", () => {
       ).toBe(true);
       expect(WORKER_DISALLOWED.some((rule) => matchesRule(rule, command))).toBe(false);
     }
-    for (const name of ["Read", "Edit", "Write", "Grep", "Glob"]) expect(WORKER_ALLOWED).toContain(name);
+    // Файловые инструменты разрешены только внутри worktree (замечание ревью): список строится на запуск.
+    const allowed = workerAllowed(workDir);
+    for (const name of ["Read", "Edit", "Write", "Grep", "Glob"]) {
+      expect(
+        allowed.some((rule) => rule.startsWith(`${name}(//`)),
+        `${name}: нет правила с путём`,
+      ).toBe(true);
+      expect(allowed).not.toContain(name);
+    }
   });
 
   it("[SH-098 AC-5] лимит бюджета — положительное число, правила без запятых внутри", async () => {
@@ -1183,6 +1191,239 @@ describe("factory-tools: правила воркера", () => {
     expect(WORKER_BUDGET_USD).toBeGreaterThan(0);
     for (const rule of [...WORKER_ALLOWED, ...WORKER_DISALLOWED]) expect(rule).not.toContain(",");
   });
+});
+
+describe("factory-tools и запуск: замечания ревью SH-098", () => {
+  const SECRET_READS = [
+    "cat .env",
+    "cat ./.env",
+    "tail -n 3 .env",
+    "head -n 1 ./.env",
+    "grep SECRET /work/wt/.env",
+    "grep SECRET .env.local",
+    "grep -r SECRET .",
+    "grep -rn SECRET .",
+    "grep SECRET -r .",
+    "grep -R SECRET .",
+    "grep SECRET --recursive .",
+  ];
+
+  it("[SH-098 AC-7] pnpm exec и pnpm dlx не обходят запреты на push и curl", async () => {
+    const { matchesRule, WORKER_ALLOWED, WORKER_DISALLOWED } = await factoryTools();
+
+    for (const command of [
+      "pnpm exec git push origin x",
+      "pnpm exec curl x",
+      "pnpm exec gh pr create",
+      "pnpm dlx cowsay hi",
+    ]) {
+      expect(
+        WORKER_DISALLOWED.some((rule) => matchesRule(rule, command)),
+        `${command}: нет в запретах`,
+      ).toBe(true);
+      expect(WORKER_ALLOWED.filter((rule) => matchesRule(rule, command))).toEqual([]);
+    }
+    for (const command of [
+      "pnpm exec node -e 1",
+      "pnpm exec sh -c x",
+      "pnpm run anything",
+      "pnpm add left-pad",
+      "pnpm publish",
+    ]) {
+      expect(
+        WORKER_ALLOWED.filter((rule) => matchesRule(rule, command)),
+        `${command}: подходит к разрешённому`,
+      ).toEqual([]);
+    }
+  });
+
+  it("[SH-098 AC-8] скрипты pnpm и инструменты проверки из sh-worker.md разрешены", async () => {
+    const { matchesRule, WORKER_ALLOWED, WORKER_DISALLOWED } = await factoryTools();
+
+    for (const command of [
+      "pnpm verify",
+      "pnpm check",
+      "pnpm test",
+      "pnpm test:api",
+      "pnpm exec vitest run --reporter=minimal tools/tests/factory.test.ts",
+      "pnpm install --frozen-lockfile",
+    ]) {
+      expect(
+        WORKER_ALLOWED.some((rule) => matchesRule(rule, command)),
+        `${command}: нет в разрешённых`,
+      ).toBe(true);
+      expect(WORKER_DISALLOWED.some((rule) => matchesRule(rule, command))).toBe(false);
+    }
+  });
+
+  it("[SH-098 AC-7] чтение .env командами Bash запрещено, cat не разрешён", async () => {
+    const { matchesRule, WORKER_ALLOWED, WORKER_DISALLOWED } = await factoryTools();
+
+    for (const command of SECRET_READS) {
+      expect(
+        WORKER_DISALLOWED.some((rule) => matchesRule(rule, command)),
+        `${command}: нет в запретах`,
+      ).toBe(true);
+    }
+    expect(WORKER_ALLOWED.some((rule) => matchesRule(rule, "cat a.txt"))).toBe(false);
+    expect(WORKER_DISALLOWED).toEqual(
+      expect.arrayContaining(["Read(**/.env)", "Edit(**/.env)", "Read(**/.env.local)"]),
+    );
+    expect(WORKER_DISALLOWED).not.toContain("Read(**/.env.example)");
+  });
+
+  it("[SH-098 AC-8] tail, head и wc после pipe остаются разрешёнными", async () => {
+    const { matchesRule, WORKER_ALLOWED, WORKER_DISALLOWED } = await factoryTools();
+
+    for (const command of ["tail -n 40", "head -n 5", "wc -l"]) {
+      expect(
+        WORKER_ALLOWED.some((rule) => matchesRule(rule, command)),
+        command,
+      ).toBe(true);
+      expect(
+        WORKER_DISALLOWED.some((rule) => matchesRule(rule, command)),
+        command,
+      ).toBe(false);
+    }
+  });
+
+  it("[SH-098 AC-5] workerAllowed(worktree): Read, Edit, Write, Grep и Glob только внутри worktree", async () => {
+    const { workerAllowed, worktreeGlob } = await factoryTools();
+    const worktree = join(workDir, "правила-путей");
+    mkdirSync(worktree, { recursive: true });
+
+    const allowed = workerAllowed(worktree);
+
+    const glob = worktreeGlob(worktree);
+    expect(glob).toBe(`/${worktree}/**`);
+    for (const name of ["Read", "Edit", "Write", "Grep", "Glob"]) {
+      expect(allowed).toContain(`${name}(${glob})`);
+      expect(allowed).not.toContain(name);
+    }
+    expect(allowed.filter((rule) => /^(Read|Edit|Write|Grep|Glob)\(/.test(rule))).toHaveLength(5);
+    expect(() => workerAllowed(join(workDir, "с,запятой"))).toThrow(/запят/);
+  });
+
+  it("[SH-098 AC-5] бюджет и таймаут: значения по умолчанию и переопределение окружением", async () => {
+    const { WORKER_BUDGET_USD, WORKER_TIMEOUT_MIN, workerBudgetUsd, workerTimeoutMs } = await factoryTools();
+
+    expect(workerBudgetUsd({})).toBe(WORKER_BUDGET_USD);
+    expect(workerBudgetUsd({ FACTORY_WORKER_BUDGET_USD: "2.5" })).toBe(2.5);
+    expect(workerTimeoutMs({})).toBe(WORKER_TIMEOUT_MIN * 60_000);
+    expect(workerTimeoutMs({ FACTORY_WORKER_TIMEOUT_MIN: "0.5" })).toBe(30_000);
+    for (const bad of ["abc", "0", "-1", "NaN"]) {
+      expect(() => workerBudgetUsd({ FACTORY_WORKER_BUDGET_USD: bad }), bad).toThrow(/FACTORY_WORKER_BUDGET_USD/);
+      expect(() => workerTimeoutMs({ FACTORY_WORKER_TIMEOUT_MIN: bad }), bad).toThrow(/FACTORY_WORKER_TIMEOUT_MIN/);
+    }
+  });
+
+  it("[SH-098 AC-5] FACTORY_WORKER_BUDGET_USD попадает в --max-budget-usd", () => {
+    const s = happy();
+    prepared(s);
+
+    runFactory(s, s.work, ["run", "SH-901", "--foreground"], { env: { FACTORY_WORKER_BUDGET_USD: "2.5" } });
+
+    expect(flagValue(claudeCalls(s)[0] as ClaudeCall, "--max-budget-usd")).toBe("2.5");
+  }, 20_000);
+
+  it("[SH-098 AC-5] таймаут claude: этап «ошибка» с причиной, pid очищен", () => {
+    const s = happy();
+    prepared(s);
+
+    const { code } = runFactory(s, s.work, ["run", "SH-901", "--foreground"], {
+      env: { FAKE_CLAUDE_SLEEP: "20000", FACTORY_WORKER_TIMEOUT_MIN: "0.03" },
+    });
+
+    expect(code).toBe(0);
+    const task = readTasks(s)["SH-901"];
+    expect(task).toMatchObject({ stage: "ошибка", pid: null, pid_started_at: "" });
+    expect(task?.reason).toMatch(/таймаут/);
+  }, 30_000);
+
+  it.each(["в работе", "готово", "стоп", "ошибка"])(
+    "[SH-098 AC-4] _worker на записи с этапом «%s»: отказ, код 1, claude не вызван, запись не изменена",
+    (stage) => {
+      const s = happy();
+      prepared(s);
+      nodeEval(s.work, `m.setStage("SH-901", ${JSON.stringify(stage)}, "тест");`);
+      const before = snapshot(s);
+
+      const { code, out } = runFactory(s, s.work, ["_worker", "SH-901"]);
+
+      expect(code).toBe(1);
+      expect(out).toContain(`этап «${stage}»`);
+      expect(claudeCalls(s)).toHaveLength(0);
+      expect(snapshot(s).state).toEqual(before.state);
+    },
+    20_000,
+  );
+
+  it("[SH-098 AC-4] _worker на записи «подготовлена» с живым pid: отказ, claude не вызван", async () => {
+    const s = happy();
+    const live = await liveProcess();
+    prepared(
+      s,
+      "SH-901",
+      TITLE_FABRIKA,
+      BRANCH_901,
+      `, pid: ${live.pid}, pid_started_at: ${JSON.stringify(live.startedAt)}`,
+    );
+
+    const { code, out } = runFactory(s, s.work, ["_worker", "SH-901"], { settle: false });
+
+    expect(code).toBe(1);
+    expect(out).toContain("живой процесс");
+    expect(claudeCalls(s)).toHaveLength(0);
+    expect(readTasks(s)["SH-901"]?.stage).toBe("подготовлена");
+  }, 20_000);
+
+  it("[SH-098 AC-16] _worker при двух чужих живых процессах: отказ, код 1, claude не вызван", async () => {
+    const s = happy();
+    prepared(s);
+    const a = await liveProcess();
+    const b = await liveProcess();
+    const live = (id: string, p: { pid: number; startedAt: string }) =>
+      `m.createTask(${JSON.stringify(id)}, { title: "Живая", branch: "sh-x", worktree: "/x", stage: "в работе", pid: ${p.pid}, pid_started_at: ${JSON.stringify(p.startedAt)} });`;
+    expect(nodeEval(s.work, `${live("SH-902", a)}${live("SH-903", b)}`).code).toBe(0);
+
+    const { code, out } = runFactory(s, s.work, ["_worker", "SH-901"], { settle: false });
+
+    expect(code).toBe(1);
+    expect(out).toContain("SH-902");
+    expect(out).toContain("SH-903");
+    expect(claudeCalls(s)).toHaveLength(0);
+    expect(readTasks(s)["SH-901"]?.stage).toBe("подготовлена");
+  }, 20_000);
+
+  it("[SH-098 AC-16] два _worker одновременно при одном чужом живом процессе: claude запускает один", async () => {
+    const s = happy();
+    prepared(s);
+    prepared(s, "SH-902", TITLE_FABRIKA, "sh-902-second");
+    const other = await liveProcess();
+    expect(
+      nodeEval(
+        s.work,
+        `m.createTask("SH-903", { title: "Живая", branch: "sh-x", worktree: "/x", stage: "в работе", pid: ${other.pid}, pid_started_at: ${JSON.stringify(other.startedAt)} });`,
+      ).code,
+    ).toBe(0);
+    writeFileSync(s.log, "");
+    writeFileSync(`${s.log}.claude`, "");
+    const start = (id: string) =>
+      new Promise<number | null>((done) => {
+        const child = spawn(process.execPath, [script, "_worker", id], {
+          cwd: s.work,
+          stdio: "ignore",
+          env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH}`, FAKE_LOG: s.log, ...SLOW },
+        });
+        child.once("exit", done);
+      });
+
+    const codes = await Promise.all([start("SH-901"), start("SH-902")]);
+
+    expect([...codes].sort()).toEqual([0, 1]);
+    expect(claudeCalls(s)).toHaveLength(1);
+    expect(waitUntil(() => pidRecords(s).join() === "SH-903")).toBe(true);
+  }, 30_000);
 });
 
 describe("factory: parseWorkerReply", () => {
