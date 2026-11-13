@@ -1,10 +1,11 @@
 ---
 id: SH-010
 title: 'Prod-сервер: VPS, Caddy, домены'
-status: Ready
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-11T08:58:00Z'
-updated_date: '2026-11-13T03:56:00Z'
+updated_date: '2026-11-13T03:57:00Z'
 labels:
   - infra
 milestone: m-0
@@ -66,3 +67,20 @@ Prod нужен с первого этапа: после каждого этап
 - [ ] #7 В заметках задачи записаны оценка и фактическое время, решения по ходу работы и итоговое резюме
 - [ ] #8 Владелец оплатил VPS и домен и настроил DNS (покупки делает владелец)
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Написать infra/smoke-prod.sh: проверка снаружи для AC-1…AC-3 (curl по https и http, порты, вход по SSH паролем и под root). Сейчас он красный: сервера нет. Отдельный коммит.
+2. Написать infra/Caddyfile (studhub.ru, app.studhub.ru, автоматический TLS, редирект http→https, /healthz) и infra/docker-compose.prod.yml (caddy, app, postgres без внешнего порта, ротация логов 10x50 МБ).
+3. Написать infra/server-setup.sh (deploy, SSH только по ключу, ufw 22/80/443, unattended-upgrades, Docker) и infra/.env.prod.example.
+4. Написать infra/README.md: настройка сервера с нуля по шагам, DNS, проверка.
+5. Шаги владельца (VPS, домен, SSH, DNS): остановка и передача владельцу.
+6. Применить на сервере, прогнать infra/smoke-prod.sh, отметить критерии.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Оценка: 6 ч
+<!-- SECTION:NOTES:END -->
