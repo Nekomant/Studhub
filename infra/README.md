@@ -8,7 +8,7 @@
 |---|---|
 | `server-setup.sh` | Первичная настройка сервера: пользователь `deploy`, SSH, firewall, автообновления, Docker |
 | `docker-compose.prod.yml` | `caddy`, `app`, `postgres` (порт наружу не открыт) |
-| `Caddyfile` | `studhub.ru` и `app.studhub.ru`, автоматический TLS |
+| `Caddyfile` | `studshub.ru` и `app.studshub.ru`, автоматический TLS |
 | `.env.prod.example` | Шаблон `.env` для сервера |
 | `smoke-prod.sh` | Проверка снаружи: HTTPS, порты, SSH |
 
@@ -23,7 +23,7 @@
 
 ## 2. Купить домен
 
-1. Купи домен `studhub.ru` у регистратора (REG.RU, Selectel, RU-CENTER).
+1. Купи домен `studshub.ru` у регистратора (REG.RU, Selectel, RU-CENTER).
 2. Включи DNS-хостинг регистратора или Selectel.
 
 ## 3. Создать SSH-ключ
@@ -43,14 +43,14 @@ cat ~/.ssh/studhub_deploy.pub
 
 | Имя | Тип | Значение |
 |---|---|---|
-| `studhub.ru` (`@`) | A | адрес сервера |
-| `app.studhub.ru` | A | адрес сервера |
+| `studshub.ru` (`@`) | A | адрес сервера |
+| `app.studshub.ru` | A | адрес сервера |
 
 Проверь распространение записей (подожди до часа):
 
 ```bash
-dig +short studhub.ru
-dig +short app.studhub.ru
+dig +short studshub.ru
+dig +short app.studshub.ru
 ```
 
 Обе команды печатают адрес сервера. Без этого Caddy не получит сертификат.
@@ -115,7 +115,7 @@ docker compose -f docker-compose.prod.yml ps
 docker compose -f docker-compose.prod.yml logs caddy | tail -n 30
 ```
 
-В логах Caddy видно, как он получает сертификаты для двух доменов. Сервис `app` пока не запускается: образ появится в задаче «Docker-образ и деплой» (SH-011). До неё `/healthz` на `app.studhub.ru` отвечает сам Caddy, а на `studhub.ru` стоит заглушка.
+В логах Caddy видно, как он получает сертификаты для двух доменов. Сервис `app` пока не запускается: образ появится в задаче «Docker-образ и деплой» (SH-011). До неё `/healthz` на `app.studshub.ru` отвечает сам Caddy, а на `studshub.ru` стоит заглушка.
 
 Если `docker compose pull` не качает образы с Docker Hub (ограничения для российских адресов), настрой зеркало в `/etc/docker/daemon.json` (`registry-mirrors`) и перезапусти Docker.
 
@@ -129,7 +129,7 @@ SSH_KEY=~/.ssh/studhub_deploy infra/smoke-prod.sh
 
 Скрипт проверяет:
 
-- `https://app.studhub.ru/healthz` отвечает 200 с валидным сертификатом;
+- `https://app.studshub.ru/healthz` отвечает 200 с валидным сертификатом;
 - `http://` перенаправляет на `https://`;
 - порты 22, 80 и 443 открыты, а 3000, 3306, 5432, 6379, 8080 и 9000 закрыты;
 - SSH не принимает пароль и вход под `root`;

@@ -1,4 +1,4 @@
-# Caddy на prod (SH-010). Домены берутся из переменной DOMAIN (по умолчанию studhub.ru).
+# Caddy на prod (SH-010). Домены берутся из переменной DOMAIN (по умолчанию studshub.ru).
 # TLS-сертификаты Caddy получает и продлевает сам (Let's Encrypt). Перенаправление
 # http -> https Caddy включает автоматически для каждого домена из этого файла.
 {
@@ -11,7 +11,7 @@
 }
 
 # Лендинг. До задачи «Docker-образ и деплой» (SH-011) здесь заглушка.
-{$DOMAIN:studhub.ru} {
+{$DOMAIN:studshub.ru} {
 	encode zstd gzip
 	header {
 		Strict-Transport-Security "max-age=31536000"
@@ -21,9 +21,14 @@
 	respond "Studhub" 200
 }
 
+# www ведёт на основной домен.
+www.{$DOMAIN:studshub.ru} {
+	redir https://{$DOMAIN:studshub.ru}{uri} permanent
+}
+
 # SPA, API и iCal. /healthz отвечает сам Caddy, пока контейнера app нет (SH-010).
 # SH-011 заменяет эту ветку на reverse_proxy app:3000: /healthz тогда показывает и состояние БД.
-app.{$DOMAIN:studhub.ru} {
+app.{$DOMAIN:studshub.ru} {
 	encode zstd gzip
 	header {
 		Strict-Transport-Security "max-age=31536000"

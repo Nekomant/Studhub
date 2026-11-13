@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Проверка prod-сервера снаружи (SH-010, критерии AC-1…AC-3).
 # Запуск с любой машины, не с сервера: `infra/smoke-prod.sh`.
-# Переменные: DOMAIN (по умолчанию studhub.ru), SSH_USER (по умолчанию deploy),
+# Переменные: DOMAIN (по умолчанию studshub.ru), SSH_USER (по умолчанию deploy),
 # SSH_KEY (путь к ключу для проверки автообновлений; без него эта проверка пропускается).
 set -u
 
-DOMAIN="${DOMAIN:-studhub.ru}"
+DOMAIN="${DOMAIN:-studshub.ru}"
 APP_HOST="app.${DOMAIN}"
 SSH_USER="${SSH_USER:-deploy}"
 SSH_KEY="${SSH_KEY:-}"
