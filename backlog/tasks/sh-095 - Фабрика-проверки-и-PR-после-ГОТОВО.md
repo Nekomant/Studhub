@@ -22,7 +22,7 @@ ordinal: 88000
 ## Что нужно сделать
 1. Написать тесты по критериям до реализации в `tools/tests/factory.test.ts` с фикстурами SH-093 и SH-094. Подставной `claude` различает вызовы по аргументам (`--agent sh-worker`, `--agent sh-verifier`, `/code-review`) и печатает заготовленный ответ для каждого. `pnpm verify` в фикстуре подменить скриптом с заданным кодом выхода.
 2. Этап «готово» перенести в список этапов, где работает процесс (`scripts/lib/factory-state.mjs`). Когда воркер вернул `ГОТОВО`, фоновый процесс ставит этап «проверки» и выполняет по порядку. Следующий шаг идёт, только если предыдущий чистый:
-   1. `pnpm verify` в worktree. Код не 0 — замечание с выводом команды;
+   1. `pnpm verify` в worktree. Фабрика запускает его сама, без хука SessionStart, поэтому передаёт в окружение переменные из `.env` основной папки только из списка `ALLOWED` в `scripts/hooks/session-env.mjs` (`.env` worktree важнее), значения не печатает и не пишет в журнал. Код не 0 — замечание с выводом команды;
    2. верификатор: `claude -p "Проверь SH-NNN" --agent sh-verifier --output-format json --permission-mode dontAsk --allowedTools <список верификатора> --max-budget-usd <лимит>`, `cwd` — worktree;
    3. ревью: `claude -p "/code-review high" --model sonnet --append-system-prompt "Последней строкой выведи: ЗАМЕЧАНИЙ: <число>" --output-format json --permission-mode dontAsk --allowedTools <список ревью> --disallowedTools <запреты ревью> --max-budget-usd <лимит>`, `cwd` — worktree.
 3. Разбор отчёта верификатора без модели:
@@ -83,7 +83,8 @@ API и БД не меняются. Новое: проверки после `ГО
 | 12 | Юнит | через `matchesRule`: список ревью не пропускает Edit, Write, `git commit`, `git push`, `git branch -D`, `git diff --output=x`, `gh`, они в запретах; пропускает `git diff origin/main...HEAD` |
 | 13 | Юнит | `continue` на «нужен штаб» и «ошибка проверок»: `rounds` 0, `rounds_total` сохранён, проверки с `pnpm verify` |
 | 14 | Ручная | живой прогон на ветке задачи с непустым диффом: верификатор вернул `ПРОВЕРКА SH-NNN` без отказов, а мутирующую команду блокирует хук; ревью вывело `ЗАМЕЧАНИЙ: N` последней строкой без отказов; итог в заметках SH-095 |
-| 15 | Ревью | `process.md` §7, §7.1, подраздел про `sh-verifier`, `CLAUDE.md`, `README.md` по шагу 12 |
+| 15 | Юнит | `pnpm verify` получает `TEST_DATABASE_URL` из `.env` основной папки и не получает переменную вне `ALLOWED`; значений нет в `log.txt` |
+| 16 | Ревью | `process.md` §7, §7.1, подраздел про `sh-verifier`, `CLAUDE.md`, `README.md` по шагу 12 |
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -102,7 +103,8 @@ API и БД не меняются. Новое: проверки после `ГО
 - [ ] #12 По matchesRule список ревью не пропускает Edit, Write, git commit, git push, git branch -D, git diff --output=x и gh, список запретов ревью содержит правила для них, а git diff origin/main...HEAD разрешён
 - [ ] #13 pnpm factory continue SH-NNN на этапах «нужен штаб» и «ошибка проверок» обнуляет rounds, сохраняет rounds_total и запускает проверки заново с pnpm verify
 - [ ] #14 Живой прогон на ветке задачи с непустым диффом: верификатор вернул ПРОВЕРКА SH-NNN без отказов в разрешениях, мутирующую команду блокирует его хук; ревью вывело замечания или «нет» и последнюю строку ЗАМЕЧАНИЙ: <число> без отказов; итог записан в заметки SH-095
-- [ ] #15 docs/process.md §7 (шаг 7), §7.1 (шаг 5), подраздел «Проверка тестов: sh-verifier», CLAUDE.md и README.md содержат правки шага 12
+- [ ] #15 pnpm verify, запущенный фабрикой, получает переменные из .env основной папки только из списка ALLOWED в scripts/hooks/session-env.mjs (.env worktree важнее); значения переменных не попадают в вывод и log.txt
+- [ ] #16 docs/process.md §7 (шаг 7), §7.1 (шаг 5), подраздел «Проверка тестов: sh-verifier», CLAUDE.md и README.md содержат правки шага 12
 <!-- AC:END -->
 
 ## Definition of Done
