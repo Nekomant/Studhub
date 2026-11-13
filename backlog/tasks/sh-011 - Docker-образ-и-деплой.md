@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-11T08:58:00Z'
-updated_date: '2026-11-13T18:22:00Z'
+updated_date: '2026-11-13T18:23:00Z'
 labels:
   - infra
 milestone: m-0
@@ -108,6 +108,10 @@ ordinal: 95000
 Замечание 3: apps/api/src/db/migrations.test.ts ([SH-005 AC-1]) упал по таймауту 10 с под нагрузкой параллельной docker build, отдельно проходит за 8 с. Грозит нестабильным CI на медленном раннере.
 
 Замечание 4: deploy.sh не откатывается сам при красной проверке /healthz, а печатает команду отката (так требует критерий «job красный»). Грозит простоем до ручного отката.
+
+Решение владельца по замечанию 2: автоочистку старых образов на prod делаем в SH-012. Штабу: добавить в спецификацию SH-012 (pnpm remarks).
+
+Проверка sh-verifier: AC-5 подтверждён (tools/tests/docker-deploy.test.ts). AC-1..AC-4 по плану ручные; AC-2, AC-3, AC-4 проверяются после слияния в main на prod. Тест AC-1 после красного коммита поправлен (CMD→ENTRYPOINT, WEB_ROOT в многострочном ENV), критерии не менялись, нарушением не считается.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
