@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-11T08:58:00Z'
-updated_date: '2026-11-13T00:14:00Z'
+updated_date: '2026-11-13T00:23:00Z'
 labels:
   - frontend
   - pwa
@@ -111,6 +111,8 @@ ordinal: 1000
 Дополнение по замечанию sh-verifier к AC-1: добавлены tests/e2e/src/dev.spec.ts (запускает pnpm dev на свободных портах и отдельной БД: API отвечает, dev-сервер SPA отдаёт исходники, /api/v1 проксируется и отдаёт problem+json not_found от API, заглушка показывает статус /healthz, SIGINT гасит оба процесса) и proxy.spec.ts (прокси /api в vite preview, SPA запрашивает /healthz на своём адресе). Тесты добавлены после реализации; мутация «убрать /api из прокси» ломает оба. Для теста dev-сервер читает WEB_PORT (strictPort, если задан). Тесты красного коммита не менялись.
 
 Проверка sh-verifier (повторная, HEAD a9927cd): AC-1..AC-6 подтверждены; нарушений правила тестов нет. Первая проверка: AC-1 сомнительно (pnpm dev и прокси /api не покрыты), по ответу владельца дописаны тесты dev.spec.ts и proxy.spec.ts. pnpm verify падает по таймауту 5 с в SH-005 migrations.test.ts под нагрузкой; решение владельца: смотреть CI на PR.
+
+Правки по /code-review: (1) scripts/dev.mjs выходит с кодом первого упавшего процесса (code || 1), 0 после Ctrl+C; node --watch держит API после ошибки конфигурации, поэтому тест выхода использует занятый WEB_PORT (strictPort, Vite завершается с кодом 1). (2) WEB_PORT проверяется: целое 1–65535, иначе ошибка с понятным текстом. (3) Комментарии про prompt приведены к факту: onNeedRefresh нет, баннер добавит этап 7. (4) start_url берётся из startPath client-core. (5) freePort: повтор запуска API (stack.ts) и pnpm dev (dev.spec.ts) до 3 попыток, если процесс завершился сразу. (6) tsconfig web разделён: tsconfig.app.json без Node-типов и tsconfig.node.json для vite.config.ts.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
