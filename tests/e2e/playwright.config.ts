@@ -5,7 +5,8 @@ import { defineConfig, devices } from "@playwright/test";
 const port = Number(process.env.E2E_PORT ?? 4173);
 const baseURL = `http://127.0.0.1:${port}`;
 // Админка платформы (apps/admin) отдаётся отдельным `vite preview` на своём порту: в prod это другой домен.
-const adminPort = Number(process.env.E2E_ADMIN_PORT ?? 4174);
+// По умолчанию порт стека + 1: смена E2E_PORT сдвигает оба порта, и параллельные запуски не сталкиваются.
+const adminPort = Number(process.env.E2E_ADMIN_PORT ?? port + 1);
 const adminBaseURL = `http://127.0.0.1:${adminPort}`;
 
 export default defineConfig({

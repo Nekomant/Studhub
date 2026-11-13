@@ -114,7 +114,7 @@ pnpm --filter @studhub/api start migrate  # то же самое через пр
 | `pnpm check`  | Biome проверяет формат и линт (`biome ci`), TypeScript проверяет типы во всех пакетах (`tsc -b`) |
 | `pnpm test`   | Vitest запускает тесты всех проектов из `vitest.config.ts`                                       |
 | `pnpm test:api` | Запускает только API-тесты (`tests/api`): приложение на тестовой БД, клиент из OpenAPI. Нужен `pnpm db:up` |
-| `pnpm test:e2e` | Собирает SPA и админку и запускает Playwright (`tests/e2e`) против сборки: БД `<имя>_e2e_<случайная часть>_test` рядом с `TEST_DATABASE_URL`, API и `vite preview` на свободных портах; админка отдаётся отдельным `vite preview` на порту `E2E_ADMIN_PORT` (по умолчанию 4174). Нужны `pnpm db:up` и Chromium (`pnpm --filter @studhub/ui-tokens exec playwright install chromium`) |
+| `pnpm test:e2e` | Собирает SPA и админку и запускает Playwright (`tests/e2e`) против сборки: БД `<имя>_e2e_<случайная часть>_test` рядом с `TEST_DATABASE_URL`, API и `vite preview` на свободных портах; админка отдаётся отдельным `vite preview` на порту `E2E_ADMIN_PORT` (по умолчанию `E2E_PORT` + 1, то есть 4174). Нужны `pnpm db:up` и Chromium (`pnpm --filter @studhub/ui-tokens exec playwright install chromium`) |
 | `pnpm gen:client:check` | Падает, если `packages/client-core/src/api/schema.ts` не совпадает с генерацией из `openapi.json` |
 | `pnpm format` | Biome исправляет формат и порядок импортов                                                       |
 | `pnpm db:check` | Падает, если схема Drizzle изменена без миграции                                               |

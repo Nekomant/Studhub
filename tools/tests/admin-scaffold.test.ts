@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import YAML from "yaml";
@@ -14,14 +15,21 @@ type Step = { name?: string; run?: string };
 type Workflow = { jobs: { checks: { steps: Step[] } } };
 
 describe("[SH-076 AC-1] сборка apps/admin", () => {
-  it("[SH-076 AC-1] `pnpm --filter @studhub/admin build` завершается с кодом 0 и создаёт dist", () => {
-    const dist = join(repoRoot, "apps/admin/dist");
-    rmSync(dist, { recursive: true, force: true });
+  it("[SH-076 AC-1] `pnpm --filter @studhub/admin build` завершается с кодом 0 и создаёт сборку", () => {
+    // Собираем во временную папку: общий `apps/admin/dist` нужен E2E и не должен пропадать посреди прогона.
+    const outDir = mkdtempSync(join(tmpdir(), "admin-build-"));
 
-    const result = spawnSync("pnpm", ["--filter", "@studhub/admin", "build"], { cwd: repoRoot, encoding: "utf8" });
+    try {
+      const result = spawnSync("pnpm", ["--filter", "@studhub/admin", "build", "--outDir", outDir, "--emptyOutDir"], {
+        cwd: repoRoot,
+        encoding: "utf8",
+      });
 
-    expect(result.status, `${result.stdout}${result.stderr}`).toBe(0);
-    expect(existsSync(join(dist, "index.html"))).toBe(true);
+      expect(result.status, `${result.stdout}${result.stderr}`).toBe(0);
+      expect(existsSync(join(outDir, "index.html"))).toBe(true);
+    } finally {
+      rmSync(outDir, { recursive: true, force: true });
+    }
   }, 120_000);
 });
 
