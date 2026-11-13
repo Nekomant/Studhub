@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-11T08:58:00Z'
-updated_date: '2026-11-13T11:07:00Z'
+updated_date: '2026-11-13T11:24:00Z'
 labels:
   - infra
 milestone: m-0
@@ -91,4 +91,7 @@ Prod нужен с первого этапа: после каждого этап
 
 Замечание 1: реальный домен владельца studshub.ru (две «s»). В docs/, ТД, ADR, критерии AC-1 и других задачах написано studhub.ru. В infra/ домен заменён на studshub.ru, остальное не тронуто. Чем грозит: AC-1 и документы называют другой домен; нужно решить, менять ли их.
 Ждёт владельца: SSH-вход на 195.209.210.7 не работает (порт 22 открыт, но баннер SSH не приходит, таймаут). Нужны: состояние сервера в панели Selectel, первый вход под root, DNS studshub.ru пока даёт NXDOMAIN.
+
+Факт: шаги 5–6 выполнены (server-setup.sh через ssh vps под ubuntu): deploy по ключу, sshd без пароля и root, ufw 22/80/443, unattended-upgrades active, Docker 29.9.3, файлы в /srv/studhub, .env создан с правами 600 из шаблона. Ошибка скрипта на Ubuntu 24.04 (нет /run/sshd при sshd -t) исправлена.
+Дальше: DNS studshub.ru, app, www теперь резолвятся в 195.209.210.7. Ждёт владельца: ввести в /srv/studhub/.env значения ACME_EMAIL и POSTGRES_PASSWORD, потом шаг 8 (запуск compose) и шаг 9 (smoke-prod.sh).
 <!-- SECTION:NOTES:END -->
