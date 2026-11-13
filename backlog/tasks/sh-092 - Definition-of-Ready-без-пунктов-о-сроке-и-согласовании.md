@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-12T23:57:00Z'
-updated_date: '2026-11-13T16:18:00Z'
+updated_date: '2026-11-13T16:19:00Z'
 labels:
   - infra
   - docs
@@ -94,6 +94,8 @@ API и БД не меняются. Меняются `docs/process.md` §5, `scri
 Оценка: 0,5 ч
 
 Факт: 0,5 ч. Тест SH-005 AC-3 (migrate) один раз упал по таймауту 10 с при параллельной нагрузке; повторный pnpm verify зелёный (947 тестов).
+
+Проверка sh-verifier: AC-4 подтверждён, тест не менялся после красного коммита 1e08662, нарушений нет. AC-1,2,3,5,6,7 — на ревью.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
