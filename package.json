@@ -29,6 +29,7 @@
     "sync": "node scripts/sync.mjs",
     "close-task": "node scripts/close-task.mjs",
     "status": "node scripts/status.mjs",
+    "factory": "node scripts/factory.mjs",
     "remarks": "node scripts/remarks.mjs"
   },
   "devDependencies": {

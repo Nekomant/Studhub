@@ -121,6 +121,8 @@ export function parseTask(text) {
   const description = section(text, "<!-- SECTION:DESCRIPTION:BEGIN -->", DESCRIPTION_END);
   return {
     id: String(meta.id ?? "").toUpperCase(),
+    title: String(meta.title ?? ""),
+    priority: String(meta.priority ?? ""),
     status: String(meta.status ?? ""),
     milestone: meta.milestone ? String(meta.milestone) : "",
     dependencies: toArray(meta.dependencies),

@@ -857,3 +857,4 @@ studhub/
 - [0007 — VPS + Docker Compose + wal-g вместо управляемых сервисов](adr/0007-vps-hosting.md)
 - [0008 — Garage вместо MinIO локально, без версионирования файлов](adr/0008-garage-local-s3.md)
 - [0009 — Отдельная админка платформы, сотрудники в `platform_staff`, маскировка ПДн](adr/0009-platform-admin.md)
+- [0010 — Фабрика задач: локальный скрипт без модели](adr/0010-factory.md)
