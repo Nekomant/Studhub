@@ -65,7 +65,10 @@ const violations: Record<string, string[]> = {
     "apps/api/src/modules/students/domain/own-db.bad.ts",
     "apps/api/src/modules/students/domain/own-http.bad.ts",
   ],
-  "импорт apps/api из apps/web, packages/client-core или tests/*": [
+  "импорт apps/api из apps/web, apps/admin, packages/client-core или tests/*": [
+    "apps/admin/src/api-package.bad.ts",
+    "apps/admin/src/api-package-subpath.bad.ts",
+    "apps/admin/src/api-relative.bad.ts",
     "apps/web/src/api-package.bad.ts",
     "apps/web/src/api-package-subpath.bad.ts",
     "apps/web/src/api-relative.bad.ts",
@@ -120,6 +123,18 @@ describe("[SH-002 AC-2] Biome находит нарушения границ с�
 
   it("[SH-006 AC-5] tests/api может импортировать client-core", () => {
     expect(restrictedImports("tests/api/src/client-core.ok.ts")).toEqual([]);
+  });
+
+  it.each([
+    "apps/admin/src/api-package.bad.ts",
+    "apps/admin/src/api-package-subpath.bad.ts",
+    "apps/admin/src/api-relative.bad.ts",
+  ])("[SH-076 AC-3] apps/admin не импортирует apps/api: %s даёт ошибку Biome", (file) => {
+    expect(restrictedImports(file)).toHaveLength(1);
+  });
+
+  it("[SH-076 AC-3] apps/admin может импортировать client-core", () => {
+    expect(restrictedImports("apps/admin/src/client-core.ok.ts")).toEqual([]);
   });
 
   it("[SH-002 AC-2] каждая фикстура-нарушение описана в тесте", () => {

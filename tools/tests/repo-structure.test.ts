@@ -12,6 +12,7 @@ const read = (path: string) => readFileSync(join(repoRoot, path), "utf8");
 const workspacePackages = {
   "apps/api": "@studhub/api",
   "apps/web": "@studhub/web",
+  "apps/admin": "@studhub/admin",
   "apps/landing": "@studhub/landing",
   "packages/client-core": "@studhub/client-core",
   "packages/ui-tokens": "@studhub/ui-tokens",
