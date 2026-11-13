@@ -1,10 +1,10 @@
 ---
 id: SH-011
 title: Docker-образ и деплой
-status: Backlog
+status: Ready
 assignee: []
 created_date: '2026-11-11T08:58:00Z'
-updated_date: '2026-11-11T22:20:00Z'
+updated_date: '2026-11-13T17:20:00Z'
 labels:
   - infra
 milestone: m-0
@@ -13,7 +13,7 @@ dependencies:
   - SH-010
 priority: high
 type: chore
-ordinal: 11000
+ordinal: 95000
 ---
 
 ## Description
