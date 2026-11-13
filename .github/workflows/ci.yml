@@ -1,7 +1,7 @@
 # Проверки на каждый PR и push в main (ТД §12, docs/process.md §9).
 # Обязательная проверка для защиты main — задача `checks`.
 # Шаги после установки выполняются, даже если предыдущая проверка упала: в одном прогоне видны все ошибки.
-# Новые проверки добавляют задачи, которые их создают: E2E (SH-008), образ (SH-011).
+# Новые проверки добавляют задачи, которые их создают: образ (SH-011).
 name: CI
 
 on:
@@ -77,7 +77,14 @@ jobs:
           git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
           node scripts/check-spec.mjs --changed
 
-      # Браузерный тест темы (SH-073) запускает Chromium из Playwright.
+      # Браузерный тест темы (SH-073) и E2E (SH-008) запускают Chromium из Playwright.
+      # Кэш браузеров привязан к lockfile: версия Playwright лежит в нём, новая версия сбрасывает кэш.
+      - name: Кэш браузеров Playwright
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
       - name: Chromium для Playwright
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: pnpm --filter @studhub/ui-tokens exec playwright install --with-deps chromium
@@ -91,3 +98,8 @@ jobs:
       - name: Vitest на Postgres 18
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: pnpm test --project '!@studhub/tests-api'
+
+      # Собирает SPA, поднимает API и vite preview на свободных портах и гоняет Playwright (tests/e2e).
+      - name: E2E в Playwright
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: pnpm test:e2e

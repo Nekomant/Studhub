@@ -1,5 +1,14 @@
 {
   "name": "@studhub/tests-e2e",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.0",
+    "@types/node": "^24.19.2",
+    "@types/pg": "^8.23.1",
+    "pg": "^8.23.1"
+  }
 }

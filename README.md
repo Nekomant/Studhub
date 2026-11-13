@@ -25,7 +25,19 @@ pnpm --filter @studhub/ui-tokens exec playwright install chromium
 
 ## Запуск
 
-SPA пока пустая, её запуск добавит задача «Каркас SPA и E2E-харнесс» (SH-008).
+Нужны запущенный Postgres, `pnpm db:up`, и файл `.env` (раздел «Локальное окружение» ниже).
+
+```bash
+pnpm dev    # запускает API на :3000 и SPA (Vite) на :5173; остановка Ctrl+C гасит оба процесса
+```
+
+Откройте <http://localhost:5173>. Vite проксирует `/api` и `/healthz` на API (адрес меняет `API_PROXY_TARGET`),
+поэтому SPA ходит к API с того же адреса, как в продакшене. Порт SPA меняет `WEB_PORT` (тогда порт обязателен). На экране «Сегодня» заглушка показывает статус `/healthz`.
+Отдельно SPA запускает `pnpm --filter @studhub/web dev`, API запускает `pnpm --filter @studhub/api dev` (перезапуск при правке файлов).
+
+Оболочка SPA: на ширине меньше 768 px нижняя панель с пятью вкладками, от 768 px боковая панель (screens.md §3.1–3.2).
+Приложение ставится как PWA: manifest и service worker (vite-plugin-pwa) кэшируют только статику сборки.
+Service worker работает в собранном приложении (`pnpm --filter @studhub/web build` и `preview`), в `pnpm dev` его нет.
 
 ### API (сервер)
 
@@ -92,6 +104,7 @@ pnpm --filter @studhub/api start migrate  # то же самое через пр
 | `pnpm check`  | Biome проверяет формат и линт (`biome ci`), TypeScript проверяет типы во всех пакетах (`tsc -b`) |
 | `pnpm test`   | Vitest запускает тесты всех проектов из `vitest.config.ts`                                       |
 | `pnpm test:api` | Запускает только API-тесты (`tests/api`): приложение на тестовой БД, клиент из OpenAPI. Нужен `pnpm db:up` |
+| `pnpm test:e2e` | Собирает SPA и запускает Playwright (`tests/e2e`) против сборки: БД `<имя>_e2e_<случайная часть>_test` рядом с `TEST_DATABASE_URL`, API и `vite preview` на свободных портах. Нужны `pnpm db:up` и Chromium (`pnpm --filter @studhub/ui-tokens exec playwright install chromium`) |
 | `pnpm gen:client:check` | Падает, если `packages/client-core/src/api/schema.ts` не совпадает с генерацией из `openapi.json` |
 | `pnpm format` | Biome исправляет формат и порядок импортов                                                       |
 | `pnpm db:check` | Падает, если схема Drizzle изменена без миграции                                               |
@@ -100,7 +113,7 @@ pnpm --filter @studhub/api start migrate  # то же самое через пр
 | `pnpm verify` | `pnpm check` и тесты с коротким выводом                                                          |
 
 Перед коммитом и пушем запускайте `pnpm verify`. CI (`.github/workflows/ci.yml`) на каждый PR и push в `main`
-запускает `pnpm check`, `pnpm db:check`, `pnpm gen:client:check`, `pnpm ac:check`, `pnpm test:api` и `pnpm test` на Postgres 18. На PR он ещё запускает `pnpm spec:check --changed`.
+запускает `pnpm check`, `pnpm db:check`, `pnpm gen:client:check`, `pnpm ac:check`, `pnpm test:api`, `pnpm test` и `pnpm test:e2e` на Postgres 18. Браузеры Playwright кэшируются по `pnpm-lock.yaml`. На PR он ещё запускает `pnpm spec:check --changed`.
 
 Git-хуки (`lefthook.yml`):
 

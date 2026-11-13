@@ -1,10 +1,8 @@
 {
-  "extends": "../../tsconfig.base.json",
-  "compilerOptions": {
-    "rootDir": "src",
-    "outDir": "node_modules/.cache/tsc",
-    "lib": ["es2024", "dom", "dom.iterable"]
-  },
-  "include": ["src"],
-  "references": [{ "path": "../../packages/client-core" }]
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.node.json" },
+    { "path": "../../packages/client-core" }
+  ]
 }
