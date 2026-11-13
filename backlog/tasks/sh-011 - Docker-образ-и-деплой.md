@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-11T08:58:00Z'
-updated_date: '2026-11-13T19:00:00Z'
+updated_date: '2026-11-13T19:45:00Z'
 labels:
   - infra
 milestone: m-0
@@ -122,6 +122,8 @@ ordinal: 95000
 Находки code-review 2, 3, 4 исправлены: Cache-Control ставится только на ответы раздачи статики; /api, /ical, /__test без слэша дают 404 problem+json (новый тест); комментарий extraRoutes возвращён на место. Находка 5 (порядок COPY в Dockerfile, только скорость сборки) оставлена.
 
 Замечание 5: в Dockerfile COPY . . стоит до pnpm install, поэтому слой установки зависимостей пересобирается при любой правке исходников (кэш pnpm store смягчает). Исправление: сначала копировать только package.json, pnpm-lock.yaml, pnpm-workspace.yaml и манифесты пакетов, затем install, затем исходники. Проверка: собрать образ дважды, между сборками изменить исходник, смотреть CACHED у шага pnpm install. Вернуться, если сборка образа в Actions станет медленной.
+
+Факт: первый деплой по слиянию в main (тег 5fd8e4d): job deploy отменён по лимиту 10 минут, сервер медленно качал образ из GHCR. Образ дозагружен вручную (docker pull, 2,5 мин), job перезапущен и прошёл: migrate, pull, up -d, /healthz 200. Проверено: /healthz ok db ok, / и /students/1 отдают SPA, /api/v1/nope 404 problem+json, процесс от uid 1000, права .env 600, APP_TAG равен тегу, app healthy. AC-2 и часть AC-4 подтверждены. Лимит job deploy поднят до 30 минут (этот PR, он же второй тестовый деплой). Откат (AC-3) проверяется после слияния.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

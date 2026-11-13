@@ -148,7 +148,8 @@ jobs:
     needs: [checks, image]
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 30 минут: сервер в РФ качает образ из GHCR медленно, первый деплой SH-011 не уложился в 10 минут.
+    timeout-minutes: 30
     # Две выкладки подряд не идут одновременно, и новая не отменяет ту, что уже идёт.
     concurrency:
       group: deploy-prod
