@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-11T08:58:00Z'
-updated_date: '2026-11-13T03:57:00Z'
+updated_date: '2026-11-13T10:34:00Z'
 labels:
   - infra
 milestone: m-0
@@ -83,4 +83,9 @@ Prod нужен с первого этапа: после каждого этап
 
 <!-- SECTION:NOTES:BEGIN -->
 Оценка: 6 ч
+
+Решение: пока нет образа app (SH-011), /healthz на app.studhub.ru отвечает сам Caddy (respond 200), сервис app в compose в профиле app и не стартует. SH-011 убирает заглушку и профиль.
+Решение: deploy получает sudo без пароля (root-вход закрыт, пароля нет). HTTP/3 выключен: firewall пропускает только TCP 443.
+Решение: проверка AC-1…AC-3 снаружи — скрипт infra/smoke-prod.sh (красный до появления сервера).
+Ждёт владельца: арендовать VPS (Selectel, 2 vCPU/4 ГБ/40 ГБ, Ubuntu 24.04), купить studhub.ru, создать SSH-ключ, настроить A-записи studhub.ru и app.studhub.ru, передать адрес сервера и публичный ключ
 <!-- SECTION:NOTES:END -->
