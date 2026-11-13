@@ -1,11 +1,11 @@
 ---
 id: SH-010
 title: 'Prod-сервер: VPS, Caddy, домены'
-status: Review
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-11T08:58:00Z'
-updated_date: '2026-11-13T15:37:00Z'
+updated_date: '2026-11-13T15:40:00Z'
 labels:
   - infra
 milestone: m-0
@@ -59,11 +59,11 @@ Prod нужен с первого этапа: после каждого этап
 ## Definition of Done
 <!-- DOD:BEGIN -->
 - [ ] #1 Каждый критерий приёмки покрыт тестом, в названии теста есть ID критерия (AC-n), все тесты зелёные
-- [ ] #2 CI зелёный: Biome, tsc, Vitest, API-тесты, E2E, миграции и OpenAPI-клиент актуальны (с момента, когда эти проверки появились в CI)
+- [x] #2 CI зелёный: Biome, tsc, Vitest, API-тесты, E2E, миграции и OpenAPI-клиент актуальны (с момента, когда эти проверки появились в CI)
 - [x] #3 Документы (use-cases, screens, technical-design, ADR) обновлены в этом же PR, если поведение или решения изменились
 - [ ] #4 Новые эндпоинты покрыты тестом изоляции (чужой кабинет → 404); в логах и product_event нет ПДн; деньги только в minor units
-- [ ] #5 Пройдено ревью (/code-review и просмотр диффа владельцем), замечания закрыты
-- [ ] #6 PR слит в main через squash, изменения выложены в prod (после появления деплоя)
+- [x] #5 Пройдено ревью (/code-review и просмотр диффа владельцем), замечания закрыты
+- [x] #6 PR слит в main через squash, изменения выложены в prod (после появления деплоя)
 - [x] #7 В заметках задачи записаны оценка и фактическое время, решения по ходу работы и итоговое резюме
 - [x] #8 Владелец оплатил VPS и домен и настроил DNS (покупки делает владелец)
 <!-- DOD:END -->
@@ -117,5 +117,5 @@ AC-4 подтверждён владельцем после чтения пер�
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
-Prod-сервер настроен: VPS (Ubuntu 24.04), пользователь deploy по ключу, SSH без пароля и root, ufw 22/80/443, unattended-upgrades, Docker. В infra/ добавлены docker-compose.prod.yml (caddy, app в профиле, postgres без порта), Caddyfile с автоматическим TLS и редиректом http→https и www→основной домен, server-setup.sh, .env.prod.example, README с пошаговой настройкой и smoke-prod.sh для проверки снаружи. Проверено: smoke-prod.sh зелёный, скан портов 1–65535 показал только 22, 80, 443. Домен в infra/ studshub.ru (реальный), документы и задачи приведены к этому домену. До SH-011 /healthz отвечает сам Caddy.
+Prod-сервер поднят: VPS, Caddy с автоматическим HTTPS, Postgres без внешнего порта, домен studshub.ru. Критерии AC-1…AC-4 подтверждены прогоном infra/smoke-prod.sh против живого сервера и чтением infra/README.md владельцем. Домен studhub.ru заменён на studshub.ru в docs/ и задачах, название провайдера убрано из документов. Таймаут тестов tools и apps/api поднят до 10 с (Замечание 2), pnpm verify зелёный. Риски: образ app появится в SH-011, до него /healthz отвечает Caddy.
 <!-- SECTION:FINAL_SUMMARY:END -->
