@@ -22,9 +22,9 @@ export type AppDeps = {
   testClock?: ControllableClock | undefined;
   // Фоновые задачи. В тестовом режиме их маршруты запуска регистрируются в /__test/jobs.
   jobs?: Jobs | undefined;
-  // Дополнительные маршруты: получают под-приложение /api/v1 и общие часы (тесты и модули первой задачи).
   // Папка со сборкой SPA. Если задана, приложение раздаёт её файлы и index.html для маршрутов SPA (ТД §2.1).
   webRoot?: string | undefined;
+  // Дополнительные маршруты: получают под-приложение /api/v1 и общие часы (тесты и модули первой задачи).
   extraRoutes?: ((api: OpenAPIHono, context: { clock: Clock }) => void) | undefined;
 };
 

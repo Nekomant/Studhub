@@ -62,6 +62,15 @@ describe("раздача SPA процессом app (webRoot)", () => {
     expect(await health.json()).toEqual({ status: "ok", db: "ok" });
   });
 
+  it("[SH-011 AC-1] /api, /ical и /__test без слэша принадлежат серверу: 404 problem+json, а не index.html", async () => {
+    const app = makeApp(root);
+    for (const path of ["/api", "/ical", "/__test"]) {
+      const response = await app.request(path);
+      expect(response.status, path).toBe(404);
+      expect(response.headers.get("content-type"), path).toMatch(/^application\/problem\+json/);
+    }
+  });
+
   it("[SH-011 AC-1] несуществующий файл с расширением даёт 404 problem+json, а не index.html", async () => {
     const response = await makeApp(root).request("/assets/missing.js");
     expect(response.status).toBe(404);
