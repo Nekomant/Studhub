@@ -2,7 +2,8 @@
 # Проверка prod-сервера снаружи (SH-010, критерии AC-1…AC-3).
 # Запуск с любой машины, не с сервера: `infra/smoke-prod.sh`.
 # Переменные: DOMAIN (по умолчанию studshub.ru), SSH_USER (по умолчанию deploy),
-# SSH_KEY (путь к ключу для проверки автообновлений; без него эта проверка пропускается).
+# SSH_KEY (путь к ключу для проверки автообновлений; без него эта проверка пропускается),
+# IFACE (сетевой интерфейс для проверки портов в обход VPN, только macOS).
 set -u
 
 DOMAIN="${DOMAIN:-studshub.ru}"
@@ -14,8 +15,22 @@ failed=0
 pass() { echo "ok   $1"; }
 fail() { echo "FAIL $1"; failed=$((failed + 1)); }
 
-# Проверки порта: nc -z с таймаутом 3 с.
-port_open() { nc -z -w 3 "$1" "$2" >/dev/null 2>&1; }
+# Проверка порта: TCP-соединение с таймаутом 3 с. IFACE (например, en0 на macOS) привязывает
+# соединение к сетевому интерфейсу в обход VPN: VPN и прокси иногда принимают любое соединение.
+port_open() {
+  python3 - "$1" "$2" "${IFACE:-}" <<'PY'
+import socket, sys
+host, port, iface = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+s = socket.socket()
+s.settimeout(3)
+if iface and hasattr(socket, "if_nametoindex") and sys.platform == "darwin":
+    s.setsockopt(socket.IPPROTO_IP, 25, socket.if_nametoindex(iface))  # IP_BOUND_IF
+try:
+    s.connect((host, port))
+except OSError:
+    sys.exit(1)
+PY
+}
 
 echo "[SH-010 AC-1] HTTPS и перенаправление с HTTP"
 # curl без -k: недействительный сертификат даёт ненулевой код возврата.
@@ -34,6 +49,10 @@ code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://${DOMAIN}/
 [ "$code" = "200" ] && pass "https://${DOMAIN}/ -> 200 с валидным TLS" || fail "https://${DOMAIN}/ -> '${code}', нужно 200 с валидным TLS"
 
 echo "[SH-010 AC-2] Открытые порты"
+# Контроль: порт 54321 на сервере заведомо закрыт. Если он «открыт», сеть подменяет ответы.
+if port_open "$APP_HOST" 54321; then
+  fail "контрольный порт 54321 «открыт»: VPN или прокси подменяет соединения, задай IFACE=en0 или отключи VPN"
+fi
 for p in 22 80 443; do
   port_open "$APP_HOST" "$p" && pass "порт ${p} открыт" || fail "порт ${p} закрыт, нужен открытым"
 done
