@@ -84,7 +84,7 @@ hooks:
 - Документы читай по разделам: `node scripts/doc.mjs td 4.1`, `node scripts/doc.mjs uc UC-01`, `node scripts/doc.mjs screens Э-01`. Без раздела скрипт печатает список разделов. ТД, `use-cases.md` и `screens.md` целиком не читай.
 - Проверки запускай одной командой `pnpm verify`: при успехе она печатает итог, при падении только упавшие тесты. Отдельный тест: `pnpm exec vitest run --reporter=minimal <файл>`.
 - Длинный вывод обрезай: `| tail -n 40`, `git status --short`, `git log --oneline -n 10`, `git diff --stat`.
-- Файл читай частями (`offset`, `limit`) или ищи по нему `grep -n` в Bash, если нужна только часть.
+- Файл читай частями (`offset`, `limit`) или ищи по нему инструментом Grep, если нужна только часть. Команду `grep` в Bash фабрика запрещает.
 
 ## Правила
 

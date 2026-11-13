@@ -11,7 +11,8 @@
 // 5. После подготовки (или для задачи на этапе «подготовлена») фабрика запускает воркер `claude -p --agent sh-worker`
 //    в worktree задачи и разбирает его JSON-ответ кодом: этап «готово», «стоп» или «ошибка» (SH-098).
 //    Без --foreground воркера ведёт фоновый процесс `node scripts/factory.mjs _worker SH-NNN`, команда сразу завершается.
-//    Не больше двух задач с живым фоновым процессом.
+//    Не больше двух задач с живым фоновым процессом. Этап, pid и лимит проверяются при записи «в работе» под блокировкой.
+//    Таймаут claude и бюджет задают FACTORY_WORKER_TIMEOUT_MIN и FACTORY_WORKER_BUDGET_USD (scripts/lib/factory-tools.mjs).
 // Состояние: scripts/lib/factory-state.mjs. Права воркера: scripts/lib/factory-tools.mjs. Окружение: scripts/lib/local-env.mjs.
 // Коды выхода: 0 — задача подготовлена и воркер запущен или ничего не запущено по выбору; 1 — задача не запущена; 2 — неверный вызов.
 import { spawn, spawnSync } from "node:child_process";
@@ -41,7 +42,7 @@ import {
   stateDir,
   updateTask,
 } from "./lib/factory-state.mjs";
-import { WORKER_ALLOWED, WORKER_BUDGET_USD, WORKER_DISALLOWED } from "./lib/factory-tools.mjs";
+import { WORKER_DISALLOWED, workerAllowed, workerBudgetUsd, workerTimeoutMs } from "./lib/factory-tools.mjs";
 import { listWorktrees, tryGit } from "./lib/git.mjs";
 import { readLocalEnv } from "./lib/local-env.mjs";
 
@@ -288,40 +289,82 @@ function workerArgs(record) {
     "--permission-mode",
     "dontAsk",
     "--allowedTools",
-    WORKER_ALLOWED.join(","),
+    workerAllowed(record.worktree).join(","),
     "--disallowedTools",
     WORKER_DISALLOWED.join(","),
     "--max-budget-usd",
-    String(WORKER_BUDGET_USD),
+    String(workerBudgetUsd()),
   ];
 }
 
 const quoteArg = (arg) => (/^[\w./:=,()*@%+-]+$/.test(arg) ? arg : JSON.stringify(arg));
 
-// Выполняет воркера в текущем процессе: этап «в работе» с pid и временем старта этого процесса (одна запись под
-// блокировкой, до запуска claude), запуск claude, разбор и запись ответа. В конце pid очищается при любом исходе.
+// Отказ занять задачу: этап не «подготовлена», живой pid или лимит живых процессов.
+class ClaimError extends Error {}
+
+// Переводит запись в «в работе» с pid и временем старта этого процесса. Проверки этапа, pid и лимита живых
+// процессов идут в той же записи под одной блокировкой состояния: два процесса не пройдут проверку вместе.
+// Новый session_id пишется там же: второй запуск не подменит session_id работающего воркера. Возвращает запись.
+function claimWorker(id) {
+  const startedAt = processStartedAt(process.pid);
+  return setStage(id, "в работе", "воркер запущен", (current) => {
+    if (current.stage !== "подготовлена")
+      throw new ClaimError(`${id} не запущена: этап «${current.stage}», нужен «подготовлена»`);
+    if (isAlive(current)) throw new ClaimError(`${id} не запущена: у записи живой процесс ${current.pid}`);
+    const live = Object.values(readState().tasks)
+      .filter((record) => record.id !== id && isAlive(record))
+      .map((record) => record.id);
+    if (live.length >= MAX_LIVE)
+      throw new ClaimError(
+        `${id} не запущена: живой фоновый процесс у ${live.length} задач (${live.join(", ")}), максимум ${MAX_LIVE}`,
+      );
+    return { pid: process.pid, pid_started_at: startedAt, session_id: randomUUID() };
+  });
+}
+
+// Выполняет воркера в текущем процессе: проверка и этап «в работе» с pid (одна запись под блокировкой, до запуска
+// claude), запуск claude с таймаутом, разбор и запись ответа. В конце pid очищается при любом исходе.
+// Возвращает false, если запуск отклонён: причина напечатана, код выхода 1.
 function runWorker(id, primaryFolder) {
-  const record = readState().tasks[id];
-  if (!record) throw new Error(`нет записи фабрики для ${id}`);
-  setStage(id, "в работе", "воркер запущен", { pid: process.pid, pid_started_at: processStartedAt(process.pid) });
+  if (!readState().tasks[id]) throw new Error(`нет записи фабрики для ${id}`);
+  let record;
+  try {
+    record = claimWorker(id);
+  } catch (error) {
+    if (!(error instanceof ClaimError)) throw error;
+    logLine(id, error.message);
+    process.stdout.write(`${error.message}\n`);
+    process.exitCode = 1;
+    return false;
+  }
   try {
     const args = workerArgs(record);
     logLine(id, `claude ${args.map(quoteArg).join(" ")} (cwd ${record.worktree})`);
     const env = { ...process.env, ...readLocalEnv(primaryFolder), ...readLocalEnv(record.worktree) };
+    const timeoutMs = workerTimeoutMs();
     const result = spawnSync("claude", args, {
       cwd: record.worktree,
       env,
       encoding: "utf8",
       maxBuffer: REPLY_MAX_BUFFER,
+      timeout: timeoutMs,
       stdio: ["ignore", "pipe", "pipe"],
     });
     const stdout = result.stdout ?? "";
     saveReply(id, "worker", stdout);
     const stderr = firstLine(result.stderr ?? "");
     if (stderr) logLine(id, `claude stderr: ${stderr.slice(0, 200)}`);
+    const reply = parseWorkerReply({
+      stdout,
+      code: result.status,
+      error: result.error,
+      taskId: id,
+      sessionId: record.session_id,
+    });
+    const timedOut = result.error?.code === "ETIMEDOUT";
     applyWorkerReply(
       id,
-      parseWorkerReply({ stdout, code: result.status, error: result.error, taskId: id, sessionId: record.session_id }),
+      timedOut ? { ...reply, stage: "ошибка", reason: `таймаут ${timeoutMs / 60_000} мин, claude остановлен` } : reply,
     );
   } catch (error) {
     try {
@@ -336,6 +379,7 @@ function runWorker(id, primaryFolder) {
       // Запись не обновить: мёртвый pid не считается живым (isAlive сверяет время старта).
     }
   }
+  return true;
 }
 
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
@@ -348,13 +392,11 @@ async function launchWorker(record, primaryFolder, foreground) {
     process.exitCode = 1;
     return;
   }
-  const sessionId = randomUUID();
-  updateTask(id, { session_id: sessionId });
   const logPath = join(stateDir(), id, "log.txt");
   process.stdout.write(`${id}: воркер запущен\nВетка: ${record.branch}\nЖурнал: ${logPath}\n`);
 
   if (foreground) {
-    runWorker(id, primaryFolder);
+    if (!runWorker(id, primaryFolder)) return;
     const done = readState().tasks[id];
     process.stdout.write(`${id}: ${done.stage}${done.reason ? `; ${done.reason}` : ""}\n`);
     return;
