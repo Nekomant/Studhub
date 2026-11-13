@@ -1,10 +1,11 @@
 ---
 id: SH-093
 title: 'Фабрика: выбор задачи и подготовка worktree'
-status: Ready
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-12T23:58:00Z'
-updated_date: '2026-11-13T01:13:00Z'
+updated_date: '2026-11-13T01:37:00Z'
 labels:
   - infra
   - docs
@@ -125,3 +126,19 @@ API и БД не меняются. Новое: `scripts/factory.mjs`, `scripts/l
 - [ ] #6 PR слит в main через squash, изменения выложены в prod (после появления деплоя)
 - [ ] #7 В заметках задачи записаны оценка и фактическое время, решения по ходу работы и итоговое резюме
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Тесты tools/tests/factory.test.ts по AC-1–13 (фикстуры: bare origin, основная папка, подмена pnpm/claude/gh в PATH), правка docs-dedup.test.ts по AC-14; красный коммит.
+2. scripts/lib/factory-state.mjs: схема, этапы, блокировка state.lock, атомарная запись, журнал.
+3. scripts/factory.mjs: выбор кандидатов из origin/main, транслитерация slug, worktree, check-spec, pnpm install, запись состояния; команда factory в package.json.
+4. ADR 0010, README, process.md §7 и §7.1, CLAUDE.md.
+5. pnpm verify, критерии, итог.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Оценка: 6 ч
+<!-- SECTION:NOTES:END -->
