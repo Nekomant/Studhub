@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-11T08:58:00Z'
-updated_date: '2026-11-13T17:24:00Z'
+updated_date: '2026-11-13T17:34:00Z'
 labels:
   - infra
 milestone: m-0
@@ -81,4 +81,16 @@ ordinal: 95000
 
 <!-- SECTION:NOTES:BEGIN -->
 Оценка: 6 ч
+
+Решение: SPA раздаёт процесс app (ответ владельца, вариант А). ТД §2.1 и §12 исправлены.
+
+Решение: ENTRYPOINT [node, src/main.ts] вместо CMD, чтобы docker compose run --rm app migrate передавал migrate аргументом. Регулярное выражение в тесте было неверным (искало CMD); критерии не менялись.
+
+Решение: образ в GHCR пушит GITHUB_TOKEN, сервер тянет образ по docker login с токеном read:packages (один раз, вручную). Секреты GitHub: DEPLOY_SSH_KEY, DEPLOY_HOST, DEPLOY_USER, DEPLOY_KNOWN_HOSTS.
+
+Решение: deploy.sh передаёт тег в compose переменной окружения, а APP_TAG в .env записывает после успешного up -d. Автоотката нет: при красной проверке скрипт печатает команду отката.
+
+Факт AC-1 (локально): docker build ok, 279 МБ; docker run от uid 1000 (node), /healthz 200 db ok, / и /students/1 отдают index.html, /api/v1/nope 404 problem+json, healthcheck healthy; migrate применил миграции. В docker history нет секретов, .env в образе нет, vitest/biome/typescript/drizzle-kit в node_modules нет.
+
+Факт: actionlint и shellcheck на ci.yml и deploy.sh без замечаний; caddy validate по новому Caddyfile: Valid configuration.
 <!-- SECTION:NOTES:END -->
