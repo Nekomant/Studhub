@@ -213,7 +213,7 @@ sequenceDiagram
 | Логи | pino (JSON в stdout) | Маскировка ПДн |
 | Инструменты | pnpm workspaces, TypeScript strict, Biome, Vitest, Playwright, lefthook | Минимум инструментов |
 | Лендинг | Astro, статика | SEO, отсутствие JS, островки на React или Vue при необходимости |
-| Инфраструктура | VPS в РФ (по умолчанию Selectel), Docker Compose, Caddy, wal-g, GitHub Actions, GHCR | См. раздел 12 |
+| Инфраструктура | VPS в РФ, Docker Compose, Caddy, wal-g, GitHub Actions, GHCR | См. раздел 12 |
 
 ## 4. Доменная модель
 
@@ -689,7 +689,7 @@ generate(slot, until):
 - staging появится к стадии 2.
 
 **Prod:**
-- VPS в РФ (по умолчанию Selectel, 2 vCPU / 4 ГБ / 40 ГБ SSD);
+- VPS в РФ (2 vCPU / 4 ГБ / 40 ГБ SSD);
 - `infra/docker-compose.prod.yml`: `caddy`, `app`, `postgres` (порт наружу не открыт);
 - секреты в `.env` с правами `600`;
 - домены: `studshub.ru` (лендинг), `app.studshub.ru` (SPA, API, iCal).
