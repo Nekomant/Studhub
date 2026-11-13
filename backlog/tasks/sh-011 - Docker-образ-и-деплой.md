@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-11T08:58:00Z'
-updated_date: '2026-11-13T17:35:00Z'
+updated_date: '2026-11-13T18:16:00Z'
 labels:
   - infra
 milestone: m-0
@@ -58,8 +58,8 @@ ordinal: 95000
 <!-- DOD:BEGIN -->
 - [ ] #1 Каждый критерий приёмки покрыт тестом, в названии теста есть ID критерия (AC-n), все тесты зелёные
 - [ ] #2 CI зелёный: Biome, tsc, Vitest, API-тесты, E2E, миграции и OpenAPI-клиент актуальны (с момента, когда эти проверки появились в CI)
-- [ ] #3 Документы (use-cases, screens, technical-design, ADR) обновлены в этом же PR, если поведение или решения изменились
-- [ ] #4 Новые эндпоинты покрыты тестом изоляции (чужой кабинет → 404); в логах и product_event нет ПДн; деньги только в minor units
+- [x] #3 Документы (use-cases, screens, technical-design, ADR) обновлены в этом же PR, если поведение или решения изменились
+- [x] #4 Новые эндпоинты покрыты тестом изоляции (чужой кабинет → 404); в логах и product_event нет ПДн; деньги только в minor units
 - [ ] #5 Пройдено ревью (/code-review и просмотр диффа владельцем), замечания закрыты
 - [ ] #6 PR слит в main через squash, изменения выложены в prod (после появления деплоя)
 - [ ] #7 В заметках задачи записаны оценка и фактическое время, решения по ходу работы и итоговое резюме
@@ -95,4 +95,14 @@ ordinal: 95000
 Факт: actionlint и shellcheck на ci.yml и deploy.sh без замечаний; caddy validate по новому Caddyfile: Valid configuration.
 
 Ждёт владельца: (1) docker login ghcr.io на сервере с токеном read:packages; (2) четыре секрета GitHub DEPLOY_SSH_KEY, DEPLOY_HOST, DEPLOY_USER, DEPLOY_KNOWN_HOSTS; (3) .env на сервере (права 600) с пятью S3-заглушками; (4) прогон тестового PR и откат на предыдущий тег (AC-2, AC-3, часть AC-4). Порядок: infra/README.md шаги 7, 10, 11.
+
+Факт: 6 ч (без прогона на prod)
+
+Не проверено без слияния: AC-2 (первый деплой по слиянию в main), AC-3 (откат на предыдущий тег), часть AC-4 (права 600 на сервере владелец подтвердил словами, вывод stat не получен).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Сделано: процесс app раздаёт собранную SPA (WEB_ROOT, apps/api/src/platform/spa); Dockerfile (multi-stage, pnpm deploy --prod, USER node, HEALTHCHECK) и .dockerignore; infra/deploy.sh <тег> (migrate, pull app, up -d, caddy reload, проверка /healthz с повторами, код 1 при неудаче, отказ при правах .env шире 600); prod-compose без профиля app; Caddyfile проксирует всё на app; job image (сборка на PR, публикация в GHCR с тегом SHA по push в main) и job deploy (scp файлов infra и ssh deploy.sh) в ci.yml. Проверено: pnpm verify зелёный (974 теста), docker build и docker run локально (uid 1000, /healthz, SPA, problem+json, healthy), actionlint, shellcheck, caddy validate. Документы: ТД §2.1 и §12, ADR-0007, infra/README.md. Осталось после слияния: первый деплой, второй тестовый PR, откат.
+<!-- SECTION:FINAL_SUMMARY:END -->
