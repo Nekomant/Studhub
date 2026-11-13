@@ -12,7 +12,8 @@ export default defineConfig({
       "packages/client-core",
       "packages/ui-tokens",
       "tests/api",
-      { test: { name: "tools", include: ["tools/tests/**/*.test.ts"] } },
+      // tools запускает настоящий git и скрипты проекта: под нагрузкой не укладывается в 5 секунд по умолчанию.
+      { test: { name: "tools", include: ["tools/tests/**/*.test.ts"], testTimeout: 10_000 } },
     ],
   },
 });
