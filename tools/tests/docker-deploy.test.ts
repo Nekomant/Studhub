@@ -47,8 +47,8 @@ describe("Dockerfile", () => {
     expect(text).toMatch(/pnpm[^\n]*@studhub\/web[^\n]*build/);
     const last = stages().at(-1) ?? "";
     expect(last).not.toMatch(/pnpm\s+install/);
-    expect(last).toMatch(/ENV[^\n]*WEB_ROOT=/);
-    expect(last).toMatch(/CMD\s+\[[^\]]*"node"/);
+    expect(last).toMatch(/ENV[\s\S]*?WEB_ROOT=/);
+    expect(last).toMatch(/ENTRYPOINT\s+\[[^\]]*"node"/);
   });
 
   it("[SH-011 AC-1] в образе есть HEALTHCHECK на /healthz", () => {
