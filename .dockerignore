@@ -1,0 +1,20 @@
+# Контекст сборки образа (SH-011): без секретов, истории git и локальных артефактов.
+.git
+.github
+.claude
+.env
+.env.*
+!.env.example
+node_modules
+**/node_modules
+**/dist
+coverage
+playwright-report
+test-results
+backlog
+docs
+infra
+tests
+tools
+*.tsbuildinfo
+.DS_Store

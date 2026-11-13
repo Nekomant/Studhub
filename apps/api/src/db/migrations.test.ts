@@ -65,7 +65,8 @@ function runMigrateCommand() {
   });
 }
 
-describe("миграции БД", () => {
+// Тесты запускают pnpm и миграции процессами: на нагруженной машине 10 с по умолчанию не хватает (SH-011, замечание 3).
+describe("миграции БД", { timeout: 30_000 }, () => {
   beforeEach(async () => {
     await resetTestDatabase();
   });

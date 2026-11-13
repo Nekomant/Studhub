@@ -25,8 +25,8 @@ flowchart TB
   end
 
   subgraph vps["VPS в РФ · Docker Compose"]
-    caddy["Caddy<br/>TLS, статика лендинга, SPA и админки,<br/>прокси /api и /ical"]
-    app["app · Node 24 + Hono<br/>API, iCal-лента, воркер pg-boss"]
+    caddy["Caddy<br/>TLS, статика лендинга и админки,<br/>прокси остальных запросов в app"]
+    app["app · Node 24 + Hono<br/>SPA кабинета, API, iCal-лента, воркер pg-boss"]
     pg[("PostgreSQL 18<br/>данные, очередь, поиск")]
   end
 
@@ -693,7 +693,8 @@ generate(slot, until):
 - `infra/docker-compose.prod.yml`: `caddy`, `app`, `postgres` (порт наружу не открыт);
 - секреты в `.env` с правами `600`;
 - домены: `studshub.ru` (лендинг), `app.studshub.ru` (SPA, API, iCal).
-- `www.studshub.ru` перенаправляет на `studshub.ru` (Caddy). Пока нет образа `app` (до SH-011), `/healthz` на `app.studshub.ru` отвечает сам Caddy.
+- `www.studshub.ru` перенаправляет на `studshub.ru` (Caddy). `app.studshub.ru` целиком проксируется в `app`, в том числе `/healthz`: он показывает и состояние БД.
+- SPA кабинета раздаёт процесс `app` из папки `WEB_ROOT` (в образе `/app/web`): файлы с хешем в имени кэшируются на год, остальные отдаются с `no-cache`; для маршрутов SPA вне `/api`, `/ical`, `/healthz` и `/__test` приложение отвечает `index.html`. Образ собирает `Dockerfile` в корне: этап сборки (SPA и `pnpm deploy --prod` для API) и итоговый образ без dev-зависимостей, запуск от пользователя `node`.
 
 **Бэкапы:**
 - wal-g: непрерывная архивация WAL плюс полный бэкап каждую ночь в S3 **другого** провайдера (например, Yandex Object Storage), с шифрованием, хранение 30 дней;
@@ -710,11 +711,13 @@ generate(slot, until):
 - сборка образа.
 
 **CD (по слиянию в `main`):**
-1. образ с тегом SHA публикуется в GHCR;
-2. Actions подключается к VPS по SSH;
+1. образ с тегом SHA публикуется в GHCR (job `image`; на PR тот же job собирает образ без публикации);
+2. job `deploy` после зелёных `checks` и `image` копирует `infra/docker-compose.prod.yml`, `infra/Caddyfile` и `infra/deploy.sh` в `/srv/studhub` и вызывает `deploy.sh <SHA>` по SSH;
 3. `docker compose run --rm app migrate`;
-4. `pull` и `up -d`;
-5. проверка `/healthz`.
+4. `pull app` и `up -d`, затем `caddy reload` (Caddyfile лежит на сервере файлом);
+5. проверка `https://app.studshub.ru/healthz` с повторами до 30 раз; если она не прошла, `deploy.sh` завершается с кодом 1, и job красный.
+
+`deploy.sh` отказывается работать, если права `.env` шире `600`, и после успешной выкладки записывает тег в `APP_TAG` в `.env`. Секреты GitHub: `DEPLOY_SSH_KEY`, `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_KNOWN_HOSTS`. Образ в GHCR публикуется по `GITHUB_TOKEN`, а сервер забирает его под своим входом в реестр (`docker login ghcr.io`, токен `read:packages`).
 
 Миграции только вперёд по схеме «расширить → сжать». Откат — повторный деплой предыдущего тега.
 

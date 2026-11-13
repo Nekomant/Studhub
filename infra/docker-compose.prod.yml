@@ -1,5 +1,5 @@
-# Prod: Caddy, app и Postgres 18 (ТД §12, ADR-0007). Запуск на сервере из /srv/studhub:
-#   docker compose -f docker-compose.prod.yml --env-file .env up -d
+# Prod: Caddy, app и Postgres 18 (ТД §12, ADR-0007). Выкладку делает `./deploy.sh <тег>` на сервере из /srv/studhub.
+# Вручную: docker compose -f docker-compose.prod.yml --env-file .env up -d
 # Секреты лежат в .env рядом с файлом, права 600 (см. .env.prod.example).
 name: studhub
 
@@ -28,11 +28,9 @@ services:
       - caddy-config:/config
     logging: *logging
 
-  # Образ приложения собирает и публикует SH-011. До этого сервис не запускается:
-  # профиль `app` выключен по умолчанию. SH-011 убирает профиль.
+  # Образ собирает и публикует CI (SH-011), тег задаёт deploy.sh. Порты не публикуются: Caddy ходит по сети compose.
   app:
     image: ghcr.io/nekomant/studhub:${APP_TAG:-latest}
-    profiles: ["app"]
     restart: unless-stopped
     env_file: .env
     environment:

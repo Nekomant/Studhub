@@ -1,7 +1,8 @@
 # Проверки на каждый PR и push в main (ТД §12, docs/process.md §9).
 # Обязательная проверка для защиты main — задача `checks`.
 # Шаги после установки выполняются, даже если предыдущая проверка упала: в одном прогоне видны все ошибки.
-# Новые проверки добавляют задачи, которые их создают: образ (SH-011).
+# Новые проверки добавляют задачи, которые их создают.
+# Job image собирает образ на каждый PR и публикует его в GHCR по слиянию в main. Job deploy выкладывает образ в prod (SH-011).
 name: CI
 
 on:
@@ -107,3 +108,73 @@ jobs:
       - name: E2E в Playwright
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: pnpm test:e2e
+
+  # Образ (Dockerfile) собирается на каждый PR, чтобы поломка сборки была видна до слияния.
+  # Публикация в GHCR с тегом SHA идёт только по push в main. Реестр принимает образ по GITHUB_TOKEN, отдельного секрета нет.
+  image:
+    name: image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Вход в GHCR
+        if: ${{ github.event_name == 'push' }}
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Сборка образа
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: ${{ github.event_name == 'push' }}
+          tags: ghcr.io/nekomant/studhub:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Выкладка в prod: только по слиянию в main и только когда зелёные checks и сборка образа.
+  # Скрипт infra/deploy.sh делает migrate, pull, up -d и проверку /healthz. Если проверка не прошла, job красный.
+  # Секреты (Settings > Secrets and variables > Actions): DEPLOY_SSH_KEY, DEPLOY_HOST, DEPLOY_USER, DEPLOY_KNOWN_HOSTS.
+  deploy:
+    name: deploy
+    needs: [checks, image]
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Две выкладки подряд не идут одновременно, и новая не отменяет ту, что уже идёт.
+    concurrency:
+      group: deploy-prod
+      cancel-in-progress: false
+    env:
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+      DEPLOY_TARGET: ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}
+    steps:
+      - uses: actions/checkout@v5
+
+      # Отпечаток сервера берётся из секрета DEPLOY_KNOWN_HOSTS: подмена сервера не пройдёт проверку.
+      - name: Ключ SSH
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      # Файлы infra лежат в репозитории: сервер всегда выкладывает ту версию compose и Caddyfile, что в этом коммите.
+      - name: Файлы infra на сервер
+        run: >-
+          scp -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes
+          infra/docker-compose.prod.yml infra/Caddyfile infra/deploy.sh "$DEPLOY_TARGET":/srv/studhub/
+
+      - name: Выкладка образа
+        run: >-
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes "$DEPLOY_TARGET"
+          "cd /srv/studhub && chmod +x deploy.sh && ./deploy.sh ${{ github.sha }}"
