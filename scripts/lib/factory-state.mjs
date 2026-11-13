@@ -231,12 +231,15 @@ export function updateTask(id, patch) {
 }
 
 // Меняет этап и пишет смену в журнал. Неизвестный этап — ошибка.
-export function setStage(id, stage, reason = "") {
+// extra — объект или функция (запись) → объект: другие поля, которые меняются вместе с этапом одной записью
+// под одной блокировкой (например, pid процесса при смене этапа на «в работе»).
+export function setStage(id, stage, reason = "", extra = {}) {
   assertStage(stage);
   let from = "—";
   const task = updateTask(id, (current) => {
     from = current.stage;
-    return { stage, reason, stage_changed_at: now() };
+    const more = typeof extra === "function" ? extra(current) : extra;
+    return { ...more, stage, reason, stage_changed_at: now() };
   });
   logLine(id, stageLine(from, stage, reason));
   return task;
