@@ -8,6 +8,8 @@ import { VitePWA } from "vite-plugin-pwa";
 // /healthz лежит на корне API, поэтому его проксируем так же, как /api: в prod обе группы адресов ведёт Caddy.
 const apiTarget = process.env.API_PROXY_TARGET ?? "http://127.0.0.1:3000";
 const proxy = { "/api": apiTarget, "/healthz": apiTarget };
+// Порт dev-сервера: по умолчанию 5173. Тест `pnpm dev` задаёт WEB_PORT и требует именно его.
+const devPort = process.env.WEB_PORT === undefined ? 5173 : Number(process.env.WEB_PORT);
 
 export default defineConfig({
   plugins: [
@@ -40,6 +42,6 @@ export default defineConfig({
     }),
   ],
   resolve: { alias: { "@": resolve(import.meta.dirname, "src") } },
-  server: { proxy },
+  server: { proxy, port: devPort, strictPort: process.env.WEB_PORT !== undefined },
   preview: { proxy },
 });
