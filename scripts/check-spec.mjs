@@ -12,7 +12,6 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { LEVELS, normalizeLevel, parseSections, readTasks } from "./lib/backlog-task.mjs";
 
 const REQUIRED_SECTIONS = ["Что нужно сделать", "Зачем", "Контекст", "Не входит", "Контракт", "План тестов"];
-const MAX_CRITERIA = 10;
 // Статусы зависимости, при которых задачу в Ready можно брать в работу.
 const DEPENDENCY_STATUSES_OK = new Set(["Done", "In Progress", "Review"]);
 const OWNER_ACTION =
@@ -90,9 +89,6 @@ export function checkTask(task, byId) {
     if (OWNER_ACTION.test(item) && !/^Владелец:/.test(item))
       warnings.push(`шаг с действием владельца не начинается с «Владелец:»: ${item.slice(0, 60)}`);
   }
-
-  if (criteria.length > MAX_CRITERIA)
-    warnings.push(`критериев ${criteria.length} (больше ${MAX_CRITERIA}): задача, возможно, не укладывается в 2 дня`);
 
   return { errors, warnings };
 }
