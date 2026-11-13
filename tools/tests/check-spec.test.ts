@@ -296,16 +296,15 @@ describe("[SH-089 AC-6] предупреждения", () => {
     expect(result.status).toBe(0);
     expect(result.output).toContain("SH-928: OK");
   });
+});
 
-  it("[SH-089 AC-6] 11 критериев: предупреждение, код 0; 10 критериев: без предупреждения", () => {
+describe("[SH-092 AC-4] число критериев не проверяется", () => {
+  it("[SH-092 AC-4] 11 критериев с полным планом: OK без предупреждения, код 0", () => {
     const eleven = Array.from({ length: 11 }, (_, i) => `критерий ${i + 1}`);
-    const many = run(setup({ id: "SH-930", criteria: eleven, plan: [["1–11", "Юнит"]] }), "SH-930");
-    expect(many.status).toBe(0);
-    expect(many.output).toMatch(/ПРЕДУПРЕЖДЕНИЕ: [^\n]*11/);
-
-    const ten = run(setup({ id: "SH-931", criteria: eleven.slice(0, 10), plan: [["1–10", "Юнит"]] }), "SH-931");
-    expect(ten.status).toBe(0);
-    expect(ten.output).toContain("SH-931: OK");
+    const result = run(setup({ id: "SH-930", criteria: eleven, plan: [["1–11", "Юнит"]] }), "SH-930");
+    expect(result.status).toBe(0);
+    expect(result.output).toContain("SH-930: OK");
+    expect(result.output).not.toContain("ПРЕДУПРЕЖДЕНИЕ");
   });
 });
 
