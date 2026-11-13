@@ -1,11 +1,11 @@
 ---
 id: SH-092
 title: Definition of Ready без пунктов о сроке и согласовании
-status: Review
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-12T23:57:00Z'
-updated_date: '2026-11-13T16:19:00Z'
+updated_date: '2026-11-13T17:07:00Z'
 labels:
   - infra
   - docs
