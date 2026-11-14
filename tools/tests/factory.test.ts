@@ -342,7 +342,8 @@ describe("factory: выбор кандидатов", () => {
         workOnly: [{ id: "SH-908", title: "Только в папке" }],
       },
     );
-    seedRecord(s, "SH-906", "в работе");
+    // Этап не «в работе»: у такой записи без живого процесса SH-094 AC-11 меняет этап на «ошибка».
+    seedRecord(s, "SH-906", "стоп");
     return s;
   };
 
@@ -507,8 +508,8 @@ describe("factory: run SH-NNN", () => {
     {
       name: "есть запись на другом этапе",
       id: "SH-906",
-      reason: /этапе «в работе»/,
-      setup: (s) => seedRecord(s, "SH-906", "в работе"),
+      reason: /этапе «стоп»/,
+      setup: (s) => seedRecord(s, "SH-906", "стоп"),
     },
   ];
 
