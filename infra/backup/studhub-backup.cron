@@ -1,0 +1,10 @@
+# Расписание бэкапов и алертов Studhub (SH-012). Ставит infra/backup/install.sh в /etc/cron.d/studhub-backup.
+# Время серверное. Журнал: /var/log/studhub-backup.log (ротация: /etc/logrotate.d/studhub-backup).
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+MAILTO=""
+# Полный бэкап каждую ночь, затем удаление бэкапов старше 30 штук.
+30 3 * * * deploy bash /srv/studhub/backup/full-backup.sh >> /var/log/studhub-backup.log 2>&1
+# Проверка восстановления раз в неделю, в воскресенье, после бэкапа.
+0 5 * * 0 deploy bash /srv/studhub/backup/restore-check.sh >> /var/log/studhub-backup.log 2>&1
+# Алерты в Telegram каждые 10 минут.
+*/10 * * * * deploy bash /srv/studhub/backup/alerts.sh >> /var/log/studhub-backup.log 2>&1

@@ -45,13 +45,38 @@ services:
     image: postgres:18
     restart: unless-stopped
     # Порт наружу не публикуется: приложение ходит по внутренней сети compose.
+    # Непрерывная архивация WAL в S3 другого провайдера через wal-g (SH-012, ТД §12 «Бэкапы»).
+    # archive_timeout: простой сервер всё равно отправляет WAL не реже раза в 5 минут.
+    command:
+      - postgres
+      - -c
+      - archive_mode=on
+      - -c
+      - archive_command=/opt/walg/wal-g wal-push %p
+      - -c
+      - archive_timeout=300
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-studhub}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?задайте POSTGRES_PASSWORD в .env}
       POSTGRES_DB: ${POSTGRES_DB:-studhub}
+      # Данные бакета и ключ шифрования wal-g. Они отделены от S3_* (файлы приложения).
+      # Ключ шифрования: 64 шестнадцатеричных символа (`openssl rand -hex 32`). Потеряешь ключ — бэкапы не прочитать.
+      WALG_S3_PREFIX: ${WALG_S3_PREFIX:?задайте WALG_S3_PREFIX в .env (бэкапы, infra/README.md)}
+      AWS_ENDPOINT: ${AWS_ENDPOINT:?задайте AWS_ENDPOINT в .env}
+      AWS_REGION: ${AWS_REGION:?задайте AWS_REGION в .env}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:?задайте AWS_ACCESS_KEY_ID в .env}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:?задайте AWS_SECRET_ACCESS_KEY в .env}
+      AWS_S3_FORCE_PATH_STYLE: "true"
+      WALG_LIBSODIUM_KEY: ${WALG_LIBSODIUM_KEY:?задайте WALG_LIBSODIUM_KEY в .env}
+      WALG_LIBSODIUM_KEY_TRANSFORM: hex
+      WALG_COMPRESSION_METHOD: zstd
+      PGUSER: ${POSTGRES_USER:-studhub}
+      PGDATABASE: ${POSTGRES_DB:-studhub}
     # Postgres 18 хранит данные в подпапке версии, поэтому монтируем родительскую папку.
+    # ./bin/wal-g кладёт backup/install.sh; папку монтируем целиком, чтобы Docker не создал вместо файла каталог.
     volumes:
       - postgres-data:/var/lib/postgresql
+      - ./bin:/opt/walg:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 10s
