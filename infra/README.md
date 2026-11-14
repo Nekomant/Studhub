@@ -223,6 +223,7 @@ nmap -Pn -p- <адрес>
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | Ключ доступа к бакету |
 | `WALG_LIBSODIUM_KEY` | Ключ шифрования: 64 шестнадцатеричных символа, получить: `openssl rand -hex 32` |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Токен бота и число chat id, куда писать алерты |
+| `TELEGRAM_API_URL`, `TELEGRAM_PROXY_SECRET` | Адрес прокси и общий секрет, если Telegram закрыт с сервера. Без прокси оставь пустыми (см. «Прокси для Telegram») |
 
 ❗ Сохрани копию `WALG_LIBSODIUM_KEY` в менеджере паролей вне сервера. Без ключа бэкапы не прочитать, и сменить ключ на уже записанных данных нельзя: после смены ключа старые бэкапы остаются на старом ключе.
 
@@ -235,7 +236,7 @@ wal-g принимает путь к бакету в стиле `AWS_S3_FORCE_PA
 1. Создай `.env.backup` из шаблона и заполни значения из таблицы выше. Права файла: `chmod 600 .env.backup`. Если эти ключи уже лежат в `.env`, перенеси их в `.env.backup` и удали из `.env`.
 2. Скопируй папку `backup`, шаблон и compose на сервер: `scp -r -i ~/.ssh/studhub_deploy infra/backup infra/docker-compose.prod.yml infra/.env.backup.example deploy@<адрес>:/srv/studhub/`. После слияния в `main` job `deploy` копирует их сам.
 3. На сервере выполни `cd /srv/studhub && bash backup/install.sh`. Скрипт скачивает wal-g, сверяет контрольную сумму, ставит расписание в `/etc/cron.d/studhub-backup` и ничего не печатает из `.env` и `.env.backup`. Скрипт отказывается работать, если права файлов шире 600, значение пусто или ключи бэкапа остались в `.env`.
-4. Проверь Telegram: `bash backup/alerts.sh --test`. Сообщение должно прийти в чат. Если команда напечатала «Telegram недоступен», с этого сервера нет доступа к `api.telegram.org`: сообщи разработчику, тогда нужен прокси (`TELEGRAM_API_URL` в `.env.backup`).
+4. Проверь Telegram: `bash backup/alerts.sh --test`. Сообщение должно прийти в чат. Если команда напечатала «Telegram недоступен» и `curl -sS -m 10 -o /dev/null -w '%{http_code}' https://api.telegram.org` зависает, сервер не достаёт до `api.telegram.org`. Тогда настрой прокси по разделу «Прокси для Telegram» и повтори шаг.
 5. Включи архивацию WAL: `docker compose -f docker-compose.prod.yml --env-file .env up -d postgres`. Контейнер Postgres перезапускается за несколько секунд.
 6. Проверь архивацию:
 
@@ -270,6 +271,32 @@ $W st ls basebackups_005/
 ### Что считается ключевыми таблицами и допуском
 
 Скрипт сравнивает все таблицы схем `public` (данные приложения) и `drizzle` (журнал миграций). Очередь pg-boss не сравнивается: она меняется каждую минуту. Копия снимается через несколько минут после prod, поэтому допустима разница не больше `max(3, 2% от числа строк на prod)`. Допуск задают `RESTORE_CHECK_MAX_ABS_DIFF` и `RESTORE_CHECK_MAX_PCT_DIFF`. Таблица, которой нет в копии или на prod, и пустой список таблиц дают ошибку.
+
+### Прокси для Telegram
+
+С нашего VPS `api.telegram.org` не открывается. Алерты идут через Cloudflare Worker: сервер шлёт запрос на адрес Worker, а Worker пересылает его в Telegram. Код лежит в `infra/telegram-proxy/worker.js`.
+
+Worker не работает как открытый прокси:
+
+- он пересылает только `POST /bot<токен>/sendMessage` на `api.telegram.org`, остальные запросы получают 404;
+- каждый запрос должен нести заголовок `X-Proxy-Secret` с общим секретом, иначе ответ 403;
+- он не пишет в лог токен бота и тексты сообщений.
+
+Токен бота виден Cloudflare, потому что он входит в адрес запроса. Тексты алертов не содержат ПДн.
+
+Создание Worker (владелец, один раз, в личном кабинете Cloudflare, бесплатного тарифа достаточно):
+
+1. Открой `dash.cloudflare.com`, раздел Workers & Pages, кнопка Create, затем Create Worker. Назови его `studhub-telegram-proxy` и нажми Deploy.
+2. Нажми Edit code. Удали пример кода, вставь целиком содержимое файла `infra/telegram-proxy/worker.js` и нажми Deploy.
+3. Сгенерируй общий секрет на своём компьютере: `openssl rand -hex 32`. Сохрани его в менеджере паролей.
+4. В Worker открой Settings, Variables and Secrets, Add. Тип Secret, имя `PROXY_SECRET`, значение из шага 3. Нажми Deploy.
+5. Скопируй адрес Worker вида `https://studhub-telegram-proxy.<аккаунт>.workers.dev` (в Settings, Domains & Routes).
+6. Внеси в `/srv/studhub/.env.backup`: `TELEGRAM_API_URL=<адрес из шага 5 без слэша в конце>` и `TELEGRAM_PROXY_SECRET=<секрет из шага 3>`. Права файла остаются 600.
+7. Проверь: `bash backup/alerts.sh --test`. Сообщение приходит в чат.
+
+Если адрес `workers.dev` с сервера не открывается, привяжи к Worker свой домен (Settings, Domains & Routes, Add, Custom domain) и подставь его в `TELEGRAM_API_URL`. Проверка доступности с сервера: `curl -sS -m 10 -o /dev/null -w '%{http_code}\n' <адрес>`: ответ 403 значит, что Worker отвечает.
+
+Если сообщения перестали приходить, проверь по очереди: адрес Worker, совпадение секретов в Cloudflare и `.env.backup`, токен и chat id.
 
 ### Алерты
 

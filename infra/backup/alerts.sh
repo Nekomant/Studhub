@@ -14,7 +14,7 @@ if [ "${1:-}" = "--test" ]; then
     echo "Сообщение отправлено, проверь чат."
     exit 0
   fi
-  echo "Telegram недоступен с этого сервера или токен и chat id неверны." >&2
+  echo "Telegram недоступен с этого сервера, прокси не отвечает, либо токен, chat id или TELEGRAM_PROXY_SECRET неверны. Прокси: infra/README.md, шаг 12." >&2
   exit 1
 fi
 

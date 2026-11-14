@@ -46,7 +46,7 @@ export_walg_env() {
 # Отправляет текст в Telegram. Токен и адрес передаём curl через stdin, чтобы токен не попал в список процессов.
 # Текст пишем без ПДн: только фиксированные фразы и числа. Код возврата 1, если Telegram не принял сообщение.
 notify() {
-  local token chat base text
+  local token chat base text proxy_secret header
   token="$(backup_value TELEGRAM_BOT_TOKEN)"
   chat="$(backup_value TELEGRAM_CHAT_ID)"
   base="$(backup_value TELEGRAM_API_URL)"
@@ -58,8 +58,14 @@ notify() {
   text="[studhub prod] $1"
   text="${text//\\/\\\\}"
   text="${text//\"/\\\"}"
-  if ! printf 'url = "%s/bot%s/sendMessage"\ndata-urlencode = "chat_id=%s"\ndata-urlencode = "text=%s"\n' \
-    "$base" "$token" "$chat" "$text" | curl -sS -f --max-time 15 -K - -o /dev/null; then
+  # Если Telegram закрыт с сервера, TELEGRAM_API_URL указывает на прокси (infra/telegram-proxy), а общий секрет уходит заголовком.
+  proxy_secret="$(backup_value TELEGRAM_PROXY_SECRET)"
+  proxy_secret="${proxy_secret//\\/\\\\}"
+  proxy_secret="${proxy_secret//\"/\\\"}"
+  header=""
+  [ -z "$proxy_secret" ] || header="$(printf 'header = "X-Proxy-Secret: %s"\n' "$proxy_secret")"
+  if ! { printf 'url = "%s/bot%s/sendMessage"\ndata-urlencode = "chat_id=%s"\ndata-urlencode = "text=%s"\n' \
+    "$base" "$token" "$chat" "$text"; [ -z "$header" ] || printf '%s\n' "$header"; } | curl -sS -f --max-time 15 -K - -o /dev/null; then
     log "Telegram не принял сообщение." >&2
     return 1
   fi
