@@ -43,8 +43,11 @@ const BACKUP_ENV_FILE = [
   "AWS_ACCESS_KEY_ID=SECRET-KEY-ID",
   "AWS_SECRET_ACCESS_KEY=SECRET-ACCESS",
   "WALG_LIBSODIUM_KEY=SECRET-ENC-KEY",
-  // Алерты идут через прокси: токен бота хранится только в Cloudflare, в .env.backup его нет.
-  "TELEGRAM_CHAT_ID=42",
+  "",
+].join("\n");
+// Настройки Telegram лежат в отдельном файле .env.telegram: его читают только скрипты на хосте, контейнер postgres не получает.
+// Алерты идут через прокси: токен бота хранится только в Cloudflare, в этом файле его нет.
+const TELEGRAM_ENV_FILE = [
   "TELEGRAM_API_URL=https://telegram.example.test",
   "TELEGRAM_PROXY_SECRET=PROXY-SHARED-SECRET",
   "",
@@ -110,14 +113,83 @@ describe("compose и шаблон .env", () => {
     expect(envFiles("caddy")).not.toContain(".env.backup");
   });
 
-  it("[SH-012 AC-1, AC-3] шаблон .env.backup.example содержит пустые WALG_*, AWS_* и TELEGRAM_*, а .env.prod.example их не содержит", () => {
+  it("[SH-012 AC-1] контейнер postgres получает только ключи wal-g: .env.backup без TELEGRAM_*, файл .env.telegram не читает ни один сервис", () => {
+    expect(envFiles("postgres")).toEqual([".env.backup"]);
+    expect(JSON.stringify(postgres())).not.toMatch(/TELEGRAM_/);
+    for (const service of Object.keys(compose().services)) {
+      expect(envFiles(service), service).not.toContain(".env.telegram");
+    }
     const example = read("infra/.env.backup.example");
-    for (const name of [...BACKUP_NAMES, "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"]) {
+    expect(example).not.toMatch(/TELEGRAM_/);
+    const names = [...example.matchAll(/^([A-Z][A-Z0-9_]*)=/gm)].map((match) => match[1]);
+    expect(names.sort()).toEqual([...BACKUP_NAMES].sort());
+  });
+
+  it("[SH-012 AC-1, AC-3] шаблон .env.telegram.example содержит пустые TELEGRAM_*, а .env.prod.example их не содержит", () => {
+    const example = read("infra/.env.telegram.example");
+    for (const name of ["TELEGRAM_API_URL", "TELEGRAM_PROXY_SECRET", "TELEGRAM_CHAT_ID", "TELEGRAM_BOT_TOKEN"]) {
       expect(example, name).toMatch(new RegExp(`^${name}=$`, "m"));
     }
+    expect(example).not.toMatch(/^(WALG_|AWS_)\w*=/m);
     expect(read("infra/.env.prod.example")).not.toMatch(/^(WALG_|AWS_|TELEGRAM_)\w*=/m);
   });
 });
+
+// Запуск install.sh на подменённых sudo, curl, tar и sha256sum: ничего не скачивается и не ставится в систему.
+// Без аргументов в каталоге лежат корректные .env, .env.backup и .env.telegram; null вместо файла не создаёт его.
+type InstallFiles = { env?: string; backup?: string; telegram?: string | null; telegramMode?: number };
+function installRun(files: InstallFiles = {}, extraEnv: Record<string, string> = {}) {
+  const dir = mkdtempSync(join(tmpdir(), "install-"));
+  const bin = join(dir, "fakebin");
+  const log = join(dir, "calls.log");
+  mkdirSync(bin);
+  const put = (name: string, body: string, mode = 0o600) => {
+    writeFileSync(join(dir, name), body);
+    chmodSync(join(dir, name), mode);
+  };
+  put(".env", files.env ?? ENV_FILE);
+  put(".env.backup", files.backup ?? BACKUP_ENV_FILE.replace("SECRET-ENC-KEY", "a".repeat(64)));
+  if (files.telegram !== null) put(".env.telegram", files.telegram ?? TELEGRAM_ENV_FILE, files.telegramMode ?? 0o600);
+  const fake = (name: string, lines: string[]) => {
+    writeFileSync(join(bin, name), `#!/usr/bin/env bash\n${lines.join("\n")}\n`);
+    chmodSync(join(bin, name), 0o755);
+  };
+  fake("sudo", [`echo "sudo $*" >> "${log}"`, "cat > /dev/null"]);
+  fake("curl", ['out=""', 'while [ $# -gt 0 ]; do [ "$1" = -o ] && out="$2"; shift; done', 'echo archive > "$out"']);
+  fake("sha256sum", ["cat > /dev/null"]);
+  fake("tar", [
+    'dir=""',
+    'while [ $# -gt 0 ]; do [ "$1" = -C ] && dir="$2"; shift; done',
+    'printf "#!/usr/bin/env bash\\necho wal-g fake\\n" > "$dir/wal-g-pg-24.04-amd64"',
+    'chmod +x "$dir/wal-g-pg-24.04-amd64"',
+  ]);
+  const result = spawnSync("bash", [script("install.sh")], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      PATH: `${bin}:${process.env.PATH}`,
+      DEPLOY_DIR: dir,
+      CA_BUNDLE: join(dir, ".env"),
+      BACKUP_LOG: join(dir, "studhub-backup.log"),
+      ...extraEnv,
+    },
+  });
+  const calls = existsSync(log) ? readFileSync(log, "utf8").trim().split("\n") : [];
+  return { dir, result, calls, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+}
+// Выполняет сценарий и всегда убирает временный каталог.
+function installCheck<T>(
+  files: InstallFiles,
+  check: (run: ReturnType<typeof installRun>) => T,
+  extraEnv: Record<string, string> = {},
+) {
+  const run = installRun(files, extraEnv);
+  try {
+    return check(run);
+  } finally {
+    run.cleanup();
+  }
+}
 
 describe("cron, установка и выкладка", () => {
   const cron = () =>
@@ -152,23 +224,12 @@ describe("cron, установка и выкладка", () => {
   });
 
   it("[SH-012 AC-1] install.sh отказывается работать, если ключи бэкапа остались в .env (его читает app)", () => {
-    const dir = mkdtempSync(join(tmpdir(), "install-"));
-    try {
-      writeFileSync(join(dir, ".env"), `${ENV_FILE}AWS_ACCESS_KEY_ID=SECRET-KEY-ID\n`);
-      writeFileSync(join(dir, ".env.backup"), BACKUP_ENV_FILE.replace("SECRET-ENC-KEY", "a".repeat(64)));
-      chmodSync(join(dir, ".env"), 0o600);
-      chmodSync(join(dir, ".env.backup"), 0o600);
-      const result = spawnSync("bash", [script("install.sh")], {
-        encoding: "utf8",
-        env: { ...process.env, DEPLOY_DIR: dir, CA_BUNDLE: join(dir, ".env") },
-      });
+    installCheck({ env: `${ENV_FILE}AWS_ACCESS_KEY_ID=SECRET-KEY-ID\n` }, ({ result }) => {
       expect(result.status).not.toBe(0);
       expect(result.stderr).toContain(".env.backup");
       expect(result.stderr).toContain("AWS_ACCESS_KEY_ID");
       expect(result.stderr).not.toContain("SECRET-KEY-ID");
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
+    });
   });
 
   // Каждое значение проверяется отдельно: и когда строки нет в .env.backup, и когда значение пустое.
@@ -181,25 +242,21 @@ describe("cron, установка и выкладка", () => {
   for (const name of REQUIRED_BACKUP_NAMES) {
     for (const mode of ["removed", "empty"] as const) {
       it(`[SH-012 AC-1] install.sh отказывается работать, если в .env.backup ${mode === "empty" ? "пусто" : "нет"} ${name}`, () => {
-        const dir = mkdtempSync(join(tmpdir(), "install-"));
-        try {
-          writeFileSync(join(dir, ".env"), ENV_FILE);
-          writeFileSync(join(dir, ".env.backup"), withoutValue(name, mode));
-          chmodSync(join(dir, ".env"), 0o600);
-          chmodSync(join(dir, ".env.backup"), 0o600);
-          const result = spawnSync("bash", [script("install.sh")], {
-            encoding: "utf8",
-            env: { ...process.env, DEPLOY_DIR: dir, CA_BUNDLE: join(dir, ".env") },
-          });
+        installCheck({ backup: withoutValue(name, mode) }, ({ result }) => {
           expect(result.status).not.toBe(0);
           expect(result.stderr).toContain("В .env.backup не заданы");
           expect(result.stderr).toContain(name);
-        } finally {
-          rmSync(dir, { recursive: true, force: true });
-        }
+        });
       });
     }
   }
+
+  it("[SH-012 AC-1] install.sh с корректными файлами проходит до конца и ставит расписание", () => {
+    installCheck({}, ({ result, calls }) => {
+      expect(result.status, `${result.stdout}${result.stderr}`).toBe(0);
+      expect(calls.some((line) => line.includes("/etc/cron.d/studhub-backup"))).toBe(true);
+    });
+  });
 
   it("[SH-012 AC-1] install.sh отказывается работать без файла корневых сертификатов хоста", () => {
     const result = spawnSync("bash", [script("install.sh")], {
@@ -208,6 +265,33 @@ describe("cron, установка и выкладка", () => {
     });
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain("ca-certificates");
+  });
+
+  it("[SH-012 AC-1] install.sh не стирает существующий журнал бэкапа при повторном запуске", () => {
+    const run = installRun({}, {});
+    try {
+      // Первый запуск: журнала нет, скрипт создаёт его.
+      expect(run.result.status).toBe(0);
+      expect(run.calls.some((line) => line.includes("/dev/null") && line.includes("studhub-backup.log"))).toBe(true);
+    } finally {
+      run.cleanup();
+    }
+    const dir = mkdtempSync(join(tmpdir(), "install-log-"));
+    try {
+      const logFile = join(dir, "existing.log");
+      writeFileSync(logFile, "старая запись\n");
+      installCheck(
+        {},
+        ({ result, calls }) => {
+          expect(result.status, `${result.stdout}${result.stderr}`).toBe(0);
+          expect(calls.some((line) => line.includes("/dev/null") && line.includes(logFile))).toBe(false);
+        },
+        { BACKUP_LOG: logFile },
+      );
+      expect(readFileSync(logFile, "utf8")).toBe("старая запись\n");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("[SH-012 AC-1] CI копирует infra/backup на сервер вместе с compose", () => {
@@ -239,6 +323,8 @@ function fixture(): Fixture {
   chmodSync(join(dir, ".env"), 0o600);
   writeFileSync(join(dir, ".env.backup"), BACKUP_ENV_FILE);
   chmodSync(join(dir, ".env.backup"), 0o600);
+  writeFileSync(join(dir, ".env.telegram"), TELEGRAM_ENV_FILE);
+  chmodSync(join(dir, ".env.telegram"), 0o600);
 
   const fake = (name: string, body: string) => {
     writeFileSync(join(bin, name), `#!/usr/bin/env bash\n${body}\n`);
@@ -250,6 +336,11 @@ function fixture(): Fixture {
     `echo "docker $*" >> "${log}"
 if [ -n "\${FAKE_FAIL_ON:-}" ] && [[ "$*" == *"$FAKE_FAIL_ON"* ]]; then exit 1; fi
 if [ -n "\${FAKE_TIMEOUT_ON:-}" ] && [[ "$*" == *"$FAKE_TIMEOUT_ON"* ]]; then exit 124; fi
+if [[ "$*" == *"pg_stat_archiver"* ]]; then
+  [ -n "\${FAKE_ARCHIVER_EXIT:-}" ] && exit "$FAKE_ARCHIVER_EXIT"
+  echo "\${FAKE_ARCHIVER:-0|120}"
+  exit 0
+fi
 if [[ "$*" == *"backup-list"* ]]; then
   [ -n "\${FAKE_LIST_EXIT:-}" ] && exit "$FAKE_LIST_EXIT"
   cat "\${FAKE_BACKUP_LIST:-/dev/null}"
@@ -361,7 +452,7 @@ describe("infra/backup/full-backup.sh", () => {
   });
 
   it("[SH-012 AC-1] отказывается работать без данных бакета и не вызывает docker", () => {
-    writeFileSync(join(f.dir, ".env.backup"), "TELEGRAM_CHAT_ID=42\n");
+    writeFileSync(join(f.dir, ".env.backup"), "# пусто\n");
     chmodSync(join(f.dir, ".env.backup"), 0o600);
     const result = f.run("full-backup.sh");
     expect(result.status).not.toBe(0);
@@ -399,6 +490,31 @@ describe("infra/backup/full-backup.sh", () => {
         bad,
       ).toEqual([]);
     }
+  });
+
+  const lastBackup = () => join(f.state, "last-backup.status");
+
+  it("[SH-012 AC-3] после успешного backup-push пишет время успеха в last-backup.status", () => {
+    const before = Math.floor(Date.now() / 1000);
+    expect(f.run("full-backup.sh").status).toBe(0);
+    const [kind, stamp] = readFileSync(lastBackup(), "utf8").trim().split(" ");
+    expect(kind).toBe("ok");
+    expect(Number(stamp)).toBeGreaterThanOrEqual(before - 1);
+    expect(Number(stamp)).toBeLessThanOrEqual(Math.floor(Date.now() / 1000) + 1);
+  });
+
+  it("[SH-012 AC-3] если backup-push упал или не уложился во время, прежнее время успеха не меняется", () => {
+    writeFileSync(lastBackup(), "ok 1\n");
+    expect(f.run("full-backup.sh", [], { FAKE_FAIL_ON: "backup-push" }).status).toBe(1);
+    expect(readFileSync(lastBackup(), "utf8")).toBe("ok 1\n");
+    expect(f.run("full-backup.sh", [], { FAKE_TIMEOUT_ON: "backup-push" }).status).toBe(1);
+    expect(readFileSync(lastBackup(), "utf8")).toBe("ok 1\n");
+  });
+
+  it("[SH-012 AC-3] если бэкап сделан, а удаление старых упало, время успеха всё равно записано", () => {
+    const result = f.run("full-backup.sh", [], { FAKE_FAIL_ON: "delete retain" });
+    expect(result.status).toBe(1);
+    expect(readFileSync(lastBackup(), "utf8")).toMatch(/^ok \d+/);
   });
 
   for (const name of REQUIRED_BACKUP_NAMES) {
@@ -672,15 +788,20 @@ describe("infra/backup/alerts.sh", () => {
   });
   afterEach(() => rmSync(f.dir, { recursive: true, force: true }));
 
-  const healthy = () => ({
-    FAKE_BACKUP_LIST: backupList(f.dir, 3),
-  });
+  // Время последнего успешного бэкапа пишет full-backup.sh; здесь оно задаётся файлом, запрос в хранилище не нужен.
+  const writeBackup = (hours: number) =>
+    writeFileSync(join(f.state, "last-backup.status"), `ok ${Math.floor((Date.now() - hours * 3600_000) / 1000)}\n`);
+  const healthy = () => {
+    writeBackup(3);
+    return {};
+  };
   const writeStatus = (kind: "ok" | "fail", hours: number) =>
     writeFileSync(
       join(f.state, "restore-check.status"),
       `${kind} ${Math.floor((Date.now() - hours * 3600_000) / 1000)}\n`,
     );
   const sent = () => f.calls().filter((line) => line.startsWith("curl-stdin"));
+  const listCalls = () => f.calls().filter((line) => line.includes("backup-list"));
 
   it("[SH-012 AC-3] если всё в порядке, сообщений нет", () => {
     writeStatus("ok", 24);
@@ -691,22 +812,59 @@ describe("infra/backup/alerts.sh", () => {
 
   it("[SH-012 AC-3] последнему бэкапу больше 26 часов: алерт", () => {
     writeStatus("ok", 24);
-    const result = f.run("alerts.sh", [], { FAKE_BACKUP_LIST: backupList(f.dir, 27) });
+    writeBackup(27);
+    const result = f.run("alerts.sh");
     expect(result.status).toBe(0);
     expect(sent().length).toBe(1);
     expect(sent()[0]).toMatch(/бэкап/iu);
+    expect(sent()[0]).toContain("27 ч");
   });
 
   it("[SH-012 AC-3] последнему бэкапу 25 часов: алерта нет", () => {
     writeStatus("ok", 24);
-    f.run("alerts.sh", [], { FAKE_BACKUP_LIST: backupList(f.dir, 25) });
+    writeBackup(25);
+    f.run("alerts.sh");
     expect(sent()).toEqual([]);
   });
 
-  it("[SH-012 AC-3] бэкапов нет или список не получен: алерт", () => {
+  it("[SH-012 AC-3] порог возраста бэкапа задаёт BACKUP_MAX_AGE_HOURS", () => {
+    writeStatus("ok", 24);
+    writeBackup(5);
+    f.run("alerts.sh", [], { BACKUP_MAX_AGE_HOURS: "4" });
+    expect(sent().length).toBe(1);
+  });
+
+  it("[SH-012 AC-3] возраст бэкапа берётся из last-backup.status: хранилище не опрашивается", () => {
+    writeStatus("ok", 24);
+    writeBackup(3);
+    f.run("alerts.sh");
+    f.run("alerts.sh");
+    expect(listCalls()).toEqual([]);
+  });
+
+  it("[SH-012 AC-3] нет last-backup.status: один запрос списка бэкапов, свежий бэкап не даёт алерта и запоминается", () => {
+    writeStatus("ok", 24);
+    const list = backupList(f.dir, 3);
+    f.run("alerts.sh", [], { FAKE_BACKUP_LIST: list });
+    expect(listCalls().length).toBe(1);
+    expect(sent()).toEqual([]);
+    expect(readFileSync(join(f.state, "last-backup.status"), "utf8")).toMatch(/^ok \d+/);
+    f.run("alerts.sh", [], { FAKE_BACKUP_LIST: list });
+    expect(listCalls().length).toBe(1);
+  });
+
+  it("[SH-012 AC-3] нет last-backup.status и в хранилище бэкап старше 26 часов: алерт", () => {
+    writeStatus("ok", 24);
+    f.run("alerts.sh", [], { FAKE_BACKUP_LIST: backupList(f.dir, 27) });
+    expect(sent().length).toBe(1);
+    expect(sent()[0]).toMatch(/бэкап/iu);
+  });
+
+  it("[SH-012 AC-3] нет last-backup.status и бэкапов в хранилище нет или список не получен: алерт", () => {
     writeStatus("ok", 24);
     f.run("alerts.sh", [], { FAKE_BACKUP_LIST: backupList(f.dir, null) });
     expect(sent().length).toBe(1);
+    expect(existsSync(join(f.state, "last-backup.status"))).toBe(false);
     rmSync(join(f.state, "alerts"), { recursive: true, force: true });
     rmSync(f.log);
     f.run("alerts.sh", [], { FAKE_BACKUP_LIST: backupList(f.dir, 3), FAKE_LIST_EXIT: "1" });
@@ -770,19 +928,81 @@ describe("infra/backup/alerts.sh", () => {
   it("[SH-012 AC-3] алерт не содержит секретов, токен бота не попадает в аргументы curl", () => {
     writeStatus("fail", 2);
     writeFileSync(join(f.dir, "meminfo"), "MemTotal:        4000000 kB\nMemAvailable:     100000 kB\n");
+    writeBackup(30);
     f.run("alerts.sh", [], {
-      FAKE_BACKUP_LIST: backupList(f.dir, 30),
       FAKE_DISK_PERCENT: "95",
       MEMINFO_FILE: join(f.dir, "meminfo"),
+      FAKE_ARCHIVER: "1|7200",
     });
     const calls = f.calls();
-    expect(sent().length).toBe(4);
+    expect(sent().length).toBe(5);
     for (const line of calls) {
       for (const secret of SECRETS) expect(line).not.toContain(secret);
     }
     for (const line of calls.filter((entry) => entry.startsWith("curl-args"))) {
       expect(line).not.toContain(TOKEN);
     }
+  });
+
+  // Архивация WAL: alerts.sh спрашивает pg_stat_archiver у Postgres. Ответ фальшивого docker: «<сбой 0|1>|<секунд с последнего успеха, -1 если успехов не было>».
+  const archiverCalls = () => f.calls().filter((line) => line.includes("pg_stat_archiver"));
+
+  it("[SH-012 AC-3] архивация WAL здорова: запрос к pg_stat_archiver идёт в контейнер postgres, алерта нет", () => {
+    writeStatus("ok", 24);
+    const result = f.run("alerts.sh", [], { ...healthy(), FAKE_ARCHIVER: "0|120" });
+    expect(result.status, f.text(result)).toBe(0);
+    expect(archiverCalls().length).toBe(1);
+    expect(archiverCalls()[0]).toMatch(/^docker compose .* exec -T .*postgres /);
+    expect(sent()).toEqual([]);
+  });
+
+  it("[SH-012 AC-3] последняя отправка WAL упала позже успешной и успеха нет дольше 30 минут: алерт", () => {
+    writeStatus("ok", 24);
+    const result = f.run("alerts.sh", [], { ...healthy(), FAKE_ARCHIVER: "1|2400" });
+    expect(result.status).toBe(0);
+    expect(sent().length).toBe(1);
+    expect(sent()[0]).toMatch(/архивац/iu);
+    expect(sent()[0]).toMatch(/WAL/);
+    expect(sent()[0]).toContain("40 мин");
+  });
+
+  it("[SH-012 AC-3] сбой архивации моложе порога (10 минут): алерта нет, порог задаёт ARCHIVE_FAIL_MINUTES", () => {
+    writeStatus("ok", 24);
+    f.run("alerts.sh", [], { ...healthy(), FAKE_ARCHIVER: "1|600" });
+    expect(sent()).toEqual([]);
+    f.run("alerts.sh", [], { ...healthy(), FAKE_ARCHIVER: "1|600", ARCHIVE_FAIL_MINUTES: "5" });
+    expect(sent().length).toBe(1);
+  });
+
+  it("[SH-012 AC-3] старый успех без новых сбоев (тихая база) не даёт алерта", () => {
+    writeStatus("ok", 24);
+    f.run("alerts.sh", [], { ...healthy(), FAKE_ARCHIVER: "0|86400" });
+    expect(sent()).toEqual([]);
+  });
+
+  it("[SH-012 AC-3] сбои есть, успехов ещё не было: алерт", () => {
+    writeStatus("ok", 24);
+    f.run("alerts.sh", [], { ...healthy(), FAKE_ARCHIVER: "1|-1" });
+    expect(sent().length).toBe(1);
+    expect(sent()[0]).toMatch(/архивац/iu);
+  });
+
+  it("[SH-012 AC-3] не удалось спросить Postgres об архивации: алерт", () => {
+    writeStatus("ok", 24);
+    f.run("alerts.sh", [], { ...healthy(), FAKE_ARCHIVER_EXIT: "1" });
+    expect(sent().length).toBe(1);
+    expect(sent()[0]).toMatch(/архивац/iu);
+  });
+
+  it("[SH-012 AC-3] алерт об архивации повторяется не чаще ALERT_REPEAT_HOURS, а после восстановления следующий сбой уходит сразу", () => {
+    writeStatus("ok", 24);
+    const failing = { ...healthy(), FAKE_ARCHIVER: "1|2400" };
+    f.run("alerts.sh", [], failing);
+    f.run("alerts.sh", [], failing);
+    expect(sent().length).toBe(1);
+    f.run("alerts.sh", [], { ...healthy(), FAKE_ARCHIVER: "0|60" });
+    f.run("alerts.sh", [], failing);
+    expect(sent().length).toBe(2);
   });
 
   it("[SH-012 AC-3] --test отправляет тестовое сообщение и сообщает, если Telegram недоступен", () => {
@@ -803,27 +1023,23 @@ describe("прокси Telegram: notify и Cloudflare Worker", () => {
   });
   afterEach(() => rmSync(f.dir, { recursive: true, force: true }));
 
-  // Переписывает строки Telegram в .env.backup: остальные значения остаются из шаблона теста.
-  const setBackupEnv = (extra: string[]) => {
-    const kept = BACKUP_ENV_FILE.split("\n").filter((line) => !/^TELEGRAM_/.test(line));
-    writeFileSync(join(f.dir, ".env.backup"), `${kept.join("\n")}${extra.join("\n")}\n`);
-  };
+  // Переписывает .env.telegram: настройки Telegram лежат только в нём, .env.backup их не содержит.
+  const setTelegramEnv = (lines: string[]) => writeFileSync(join(f.dir, ".env.telegram"), `${lines.join("\n")}\n`);
   const stdin = () => f.calls().find((line) => line.startsWith("curl-stdin")) ?? "";
 
   it("[SH-012 AC-3] с TELEGRAM_API_URL запрос идёт на $TELEGRAM_API_URL/send, секрет прокси уходит заголовком через stdin", () => {
-    setBackupEnv([`TELEGRAM_API_URL=${PROXY}`, "TELEGRAM_PROXY_SECRET=PROXY-SHARED-SECRET", "TELEGRAM_CHAT_ID=42"]);
+    setTelegramEnv([`TELEGRAM_API_URL=${PROXY}`, "TELEGRAM_PROXY_SECRET=PROXY-SHARED-SECRET"]);
     const result = f.run("alerts.sh", ["--test"]);
     expect(result.status, f.text(result)).toBe(0);
     expect(stdin()).toContain(`url = "${PROXY}/send"`);
     expect(stdin()).toContain('header = "X-Proxy-Secret: PROXY-SHARED-SECRET"');
-    expect(stdin()).toContain("chat_id=42");
     for (const line of f.calls().filter((entry) => entry.startsWith("curl-args"))) {
       expect(line).not.toContain("PROXY-SHARED-SECRET");
     }
   });
 
-  it("[SH-012 AC-3] в режиме прокси токен бота не нужен и не используется, даже если он есть в .env.backup", () => {
-    setBackupEnv([
+  it("[SH-012 AC-3] в режиме прокси токен бота не нужен и не используется, даже если он есть в .env.telegram", () => {
+    setTelegramEnv([
       `TELEGRAM_API_URL=${PROXY}`,
       "TELEGRAM_PROXY_SECRET=PROXY-SHARED-SECRET",
       "TELEGRAM_CHAT_ID=42",
@@ -835,8 +1051,8 @@ describe("прокси Telegram: notify и Cloudflare Worker", () => {
     expect(stdin()).not.toContain("/bot");
   });
 
-  it("[SH-012 AC-3] в режиме прокси chat id можно не задавать: его фиксирует Worker", () => {
-    setBackupEnv([`TELEGRAM_API_URL=${PROXY}`, "TELEGRAM_PROXY_SECRET=PROXY-SHARED-SECRET"]);
+  it("[SH-012 AC-3] в режиме прокси chat id не передаётся, даже если он задан: его хранит Worker", () => {
+    setTelegramEnv([`TELEGRAM_API_URL=${PROXY}`, "TELEGRAM_PROXY_SECRET=PROXY-SHARED-SECRET", "TELEGRAM_CHAT_ID=42"]);
     const result = f.run("alerts.sh", ["--test"]);
     expect(result.status, f.text(result)).toBe(0);
     expect(stdin()).not.toContain("chat_id");
@@ -844,7 +1060,7 @@ describe("прокси Telegram: notify и Cloudflare Worker", () => {
   });
 
   it("[SH-012 AC-3] TELEGRAM_API_URL без TELEGRAM_PROXY_SECRET: отказ без запроса", () => {
-    setBackupEnv([`TELEGRAM_API_URL=${PROXY}`, "TELEGRAM_PROXY_SECRET="]);
+    setTelegramEnv([`TELEGRAM_API_URL=${PROXY}`, "TELEGRAM_PROXY_SECRET="]);
     const result = f.run("alerts.sh", ["--test"]);
     expect(result.status).toBe(1);
     expect(f.calls().some((line) => line.startsWith("curl"))).toBe(false);
@@ -852,10 +1068,16 @@ describe("прокси Telegram: notify и Cloudflare Worker", () => {
   });
 
   it("[SH-012 AC-3] без прокси запрос идёт на api.telegram.org с токеном через stdin и без заголовка с секретом", () => {
-    setBackupEnv(["TELEGRAM_API_URL=", "TELEGRAM_PROXY_SECRET=", "TELEGRAM_CHAT_ID=42", `TELEGRAM_BOT_TOKEN=${TOKEN}`]);
+    setTelegramEnv([
+      "TELEGRAM_API_URL=",
+      "TELEGRAM_PROXY_SECRET=",
+      "TELEGRAM_CHAT_ID=42",
+      `TELEGRAM_BOT_TOKEN=${TOKEN}`,
+    ]);
     const result = f.run("alerts.sh", ["--test"]);
     expect(result.status, f.text(result)).toBe(0);
     expect(stdin()).toContain(`url = "https://api.telegram.org/bot${TOKEN}/sendMessage"`);
+    expect(stdin()).toContain("chat_id=42");
     expect(stdin()).not.toContain("X-Proxy-Secret");
     for (const line of f.calls().filter((entry) => entry.startsWith("curl-args"))) {
       expect(line).not.toContain(TOKEN);
@@ -863,54 +1085,92 @@ describe("прокси Telegram: notify и Cloudflare Worker", () => {
   });
 
   it("[SH-012 AC-3] без прокси и без токена бота: отказ без запроса", () => {
-    setBackupEnv(["TELEGRAM_API_URL=", "TELEGRAM_CHAT_ID=42"]);
+    setTelegramEnv(["TELEGRAM_API_URL=", "TELEGRAM_CHAT_ID=42"]);
     const result = f.run("alerts.sh", ["--test"]);
     expect(result.status).toBe(1);
     expect(f.calls().some((line) => line.startsWith("curl"))).toBe(false);
   });
 
-  describe("install.sh и шаблон", () => {
-    const install = (extra: string[], drop: string[] = []) => {
-      const dir = mkdtempSync(join(tmpdir(), "install-"));
-      try {
-        const kept = BACKUP_ENV_FILE.replace("SECRET-ENC-KEY", "a".repeat(64))
-          .split("\n")
-          .filter((line) => !/^TELEGRAM_/.test(line) && !drop.some((name) => line.startsWith(`${name}=`)));
-        writeFileSync(join(dir, ".env"), ENV_FILE);
-        writeFileSync(join(dir, ".env.backup"), `${kept.join("\n")}${extra.join("\n")}\n`);
-        chmodSync(join(dir, ".env"), 0o600);
-        chmodSync(join(dir, ".env.backup"), 0o600);
-        return spawnSync("bash", [script("install.sh")], {
-          encoding: "utf8",
-          env: { ...process.env, DEPLOY_DIR: dir, CA_BUNDLE: join(dir, ".env") },
-        });
-      } finally {
-        rmSync(dir, { recursive: true, force: true });
-      }
-    };
+  it("[SH-012 AC-3] настройки Telegram читаются только из .env.telegram: значения в .env.backup игнорируются", () => {
+    rmSync(join(f.dir, ".env.telegram"));
+    writeFileSync(
+      join(f.dir, ".env.backup"),
+      `${BACKUP_ENV_FILE}TELEGRAM_API_URL=${PROXY}\nTELEGRAM_PROXY_SECRET=PROXY-SHARED-SECRET\n`,
+    );
+    const result = f.run("alerts.sh", ["--test"]);
+    expect(result.status).toBe(1);
+    expect(f.calls().some((line) => line.startsWith("curl"))).toBe(false);
+  });
 
-    // Чтобы скрипт не пошёл скачивать wal-g, в каждом сценарии убрана AWS_REGION: проверяется список недостающих значений.
-    it("[SH-012 AC-3] в режиме прокси install.sh не требует TELEGRAM_BOT_TOKEN", () => {
-      const result = install([`TELEGRAM_API_URL=${PROXY}`, "TELEGRAM_PROXY_SECRET=s"], ["AWS_REGION"]);
-      expect(result.status).not.toBe(0);
-      expect(result.stderr).toContain("AWS_REGION");
-      expect(result.stderr).not.toContain("TELEGRAM_BOT_TOKEN");
-      expect(result.stderr).not.toContain("TELEGRAM_CHAT_ID");
+  it("[SH-012 AC-3] без файла .env.telegram бэкап не падает из-за алерта: full-backup.sh проходит, алерт не уходит", () => {
+    rmSync(join(f.dir, ".env.telegram"));
+    expect(f.run("full-backup.sh").status).toBe(0);
+    expect(f.calls().some((line) => line.startsWith("curl"))).toBe(false);
+  });
+
+  describe("install.sh и шаблон", () => {
+    const TELEGRAM_PROXY = `TELEGRAM_API_URL=${PROXY}\nTELEGRAM_PROXY_SECRET=s\n`;
+
+    it("[SH-012 AC-3] в режиме прокси install.sh не требует ни TELEGRAM_BOT_TOKEN, ни TELEGRAM_CHAT_ID", () => {
+      installCheck({ telegram: TELEGRAM_PROXY }, ({ result }) => {
+        expect(result.status, `${result.stdout}${result.stderr}`).toBe(0);
+      });
     });
 
     it("[SH-012 AC-3] в режиме прокси install.sh требует TELEGRAM_PROXY_SECRET", () => {
-      const result = install([`TELEGRAM_API_URL=${PROXY}`, "TELEGRAM_PROXY_SECRET="], ["AWS_REGION"]);
-      expect(result.stderr).toContain("TELEGRAM_PROXY_SECRET");
+      installCheck({ telegram: `TELEGRAM_API_URL=${PROXY}\nTELEGRAM_PROXY_SECRET=\n` }, ({ result }) => {
+        expect(result.status).not.toBe(0);
+        expect(result.stderr).toContain("В .env.telegram не заданы");
+        expect(result.stderr).toContain("TELEGRAM_PROXY_SECRET");
+      });
     });
 
     it("[SH-012 AC-3] без прокси install.sh требует TELEGRAM_BOT_TOKEN и TELEGRAM_CHAT_ID", () => {
-      const result = install(["TELEGRAM_API_URL="], ["AWS_REGION"]);
-      expect(result.stderr).toContain("TELEGRAM_BOT_TOKEN");
-      expect(result.stderr).toContain("TELEGRAM_CHAT_ID");
+      installCheck({ telegram: "TELEGRAM_API_URL=\n" }, ({ result }) => {
+        expect(result.status).not.toBe(0);
+        expect(result.stderr).toContain("TELEGRAM_BOT_TOKEN");
+        expect(result.stderr).toContain("TELEGRAM_CHAT_ID");
+      });
     });
 
-    it("[SH-012 AC-3] шаблон .env.backup.example содержит пустые TELEGRAM_API_URL и TELEGRAM_PROXY_SECRET", () => {
-      const example = read("infra/.env.backup.example");
+    it("[SH-012 AC-3] install.sh отказывается работать без файла .env.telegram и с правами шире 600", () => {
+      installCheck({ telegram: null }, ({ result }) => {
+        expect(result.status).not.toBe(0);
+        expect(result.stderr).toContain(".env.telegram");
+      });
+      installCheck({ telegramMode: 0o644 }, ({ result }) => {
+        expect(result.status).not.toBe(0);
+        expect(result.stderr).toContain(".env.telegram");
+        expect(result.stderr).toContain("600");
+      });
+    });
+
+    it("[SH-012 AC-1] install.sh отказывается работать, если в .env.backup остались TELEGRAM_* или другие лишние переменные (их получит postgres)", () => {
+      for (const extra of ["TELEGRAM_CHAT_ID=42", "TELEGRAM_PROXY_SECRET=SECRET-PROXY", "DOMAIN=example.test"]) {
+        installCheck(
+          { backup: `${BACKUP_ENV_FILE.replace("SECRET-ENC-KEY", "a".repeat(64))}${extra}\n` },
+          ({ result }) => {
+            const name = extra.split("=")[0] ?? "";
+            expect(result.status, extra).not.toBe(0);
+            expect(result.stderr, extra).toContain(".env.backup");
+            expect(result.stderr, extra).toContain(name);
+            expect(result.stderr, extra).toContain(".env.telegram");
+            expect(result.stderr, extra).not.toContain("SECRET-PROXY");
+          },
+        );
+      }
+    });
+
+    it("[SH-012 AC-3] install.sh отказывается работать, если TELEGRAM_* остались в .env (его читает app)", () => {
+      installCheck({ env: `${ENV_FILE}TELEGRAM_BOT_TOKEN=${TOKEN}\n` }, ({ result }) => {
+        expect(result.status).not.toBe(0);
+        expect(result.stderr).toContain("TELEGRAM_BOT_TOKEN");
+        expect(result.stderr).not.toContain(TOKEN);
+      });
+    });
+
+    it("[SH-012 AC-3] шаблон .env.telegram.example описывает прокси и прямой режим", () => {
+      const example = read("infra/.env.telegram.example");
       expect(example).toMatch(/^TELEGRAM_API_URL=$/m);
       expect(example).toMatch(/^TELEGRAM_PROXY_SECRET=$/m);
     });
@@ -921,7 +1181,7 @@ describe("прокси Telegram: notify и Cloudflare Worker", () => {
     const SECRET = "PROXY-SHARED-SECRET";
     const BOT_TOKEN = "123456:ABC-def_1";
     const SEND = "https://proxy.example.test/send";
-    const baseEnv = { PROXY_SECRET: SECRET, TELEGRAM_BOT_TOKEN: BOT_TOKEN };
+    const baseEnv = { PROXY_SECRET: SECRET, TELEGRAM_BOT_TOKEN: BOT_TOKEN, TELEGRAM_CHAT_ID: "42" };
     const realFetch = globalThis.fetch;
     let upstream: { url: string; init: RequestInit | undefined }[];
     let worker: Worker;
@@ -1046,9 +1306,22 @@ describe("прокси Telegram: notify и Cloudflare Worker", () => {
       expect(upstream).toHaveLength(1);
     });
 
-    it("[SH-012 AC-3] без chat_id в запросе и в окружении ответ 400", async () => {
-      expect((await send(SEND, { body: "text=hi" })).status).toBe(400);
+    it("[SH-012 AC-3] TELEGRAM_CHAT_ID в окружении Worker обязателен: без него ответ 500, запрос в Telegram не уходит, даже если chat_id есть в теле", async () => {
+      const env = { PROXY_SECRET: SECRET, TELEGRAM_BOT_TOKEN: BOT_TOKEN };
+      for (const body of ["text=hi", "chat_id=42&text=hi"]) {
+        const response = await send(SEND, { env, body });
+        expect(response.status, body).toBe(500);
+        expect(await response.text()).toBe("chat id is not configured");
+      }
+      expect((await send(SEND, { env: { ...env, TELEGRAM_CHAT_ID: "" }, body: "text=hi" })).status).toBe(500);
       expect(upstream).toEqual([]);
+    });
+
+    it("[SH-012 AC-3] чат всегда берётся из окружения Worker: chat_id в запросе не нужен, а чужой даёт 403", async () => {
+      expect((await send(SEND, { body: "text=hi" })).status).toBe(200);
+      expect(upstreamBody()).toEqual({ chat_id: "42", text: "hi" });
+      expect((await send(SEND, { body: "chat_id=999&text=hi" })).status).toBe(403);
+      expect(upstream).toHaveLength(1);
     });
 
     it("[SH-012 AC-3] Worker не пишет в лог токен и текст сообщений", async () => {
@@ -1068,7 +1341,35 @@ describe("прокси Telegram: notify и Cloudflare Worker", () => {
   });
 });
 
+describe("общий список переменных wal-g", () => {
+  const scripts = ["lib.sh", "full-backup.sh", "restore-check.sh", "install.sh", "alerts.sh"];
+
+  it("[SH-012 AC-1] шесть переменных wal-g перечислены один раз, в walg-vars.sh, а скрипты берут их оттуда", () => {
+    const vars = read("infra/backup/walg-vars.sh");
+    expect(vars).toMatch(/WALG_VARS=\(/);
+    for (const name of REQUIRED_BACKUP_NAMES) expect(vars, name).toContain(name);
+    for (const name of scripts) {
+      const text = read(`infra/backup/${name}`);
+      for (const variable of REQUIRED_BACKUP_NAMES) expect(text, `${name}: ${variable}`).not.toContain(variable);
+    }
+    expect(read("infra/backup/lib.sh")).toContain("walg-vars.sh");
+    expect(read("infra/backup/install.sh")).toContain("walg-vars.sh");
+    expect(read("infra/backup/lib.sh")).toContain("WALG_VARS");
+    expect(read("infra/backup/full-backup.sh")).toContain("WALG_VARS");
+    expect(read("infra/backup/restore-check.sh")).toContain("WALG_VARS");
+  });
+});
+
 describe("infra/README.md", () => {
+  it("[SH-012 AC-3] описывает .env.telegram, обязательный TELEGRAM_CHAT_ID в Worker и алерт об архивации WAL", () => {
+    const text = read("infra/README.md");
+    expect(text).toContain(".env.telegram");
+    expect(text).toMatch(/TELEGRAM_CHAT_ID[^.\n]*обязательн/iu);
+    expect(text).toContain("pg_stat_archiver");
+    expect(text).toContain("ARCHIVE_FAIL_MINUTES");
+    expect(text).toContain("last-backup.status");
+  });
+
   it("[SH-012 AC-3] раздел о прокси Telegram: токен хранится только в Cloudflare, адрес /send", () => {
     const text = read("infra/README.md");
     expect(text).toContain("TELEGRAM_BOT_TOKEN");
