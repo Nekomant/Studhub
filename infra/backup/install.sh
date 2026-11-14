@@ -18,6 +18,9 @@ deploy_dir="${DEPLOY_DIR:-$(dirname "$here")}"
 cd "$deploy_dir"
 
 command -v python3 >/dev/null || { echo "Нужен python3 (разбор списка бэкапов в alerts.sh): sudo apt-get install -y python3" >&2; exit 1; }
+# Compose монтирует этот файл в контейнер postgres: в образе нет корневых сертификатов. Без файла Docker создаст вместо него каталог.
+ca_bundle="${CA_BUNDLE:-/etc/ssl/certs/ca-certificates.crt}"
+[ -f "$ca_bundle" ] || { echo "Нет $ca_bundle: sudo apt-get install -y ca-certificates" >&2; exit 1; }
 for file in .env .env.backup; do
   [ -f "$file" ] || { echo "Нет файла $deploy_dir/$file." >&2; exit 1; }
   mode="$(stat -c %a "$file" 2>/dev/null || stat -f %Lp "$file")"

@@ -47,12 +47,13 @@ services:
     # Порт наружу не публикуется: приложение ходит по внутренней сети compose.
     # Непрерывная архивация WAL в S3 другого провайдера через wal-g (SH-012, ТД §12 «Бэкапы»).
     # archive_timeout: простой сервер всё равно отправляет WAL не реже раза в 5 минут.
+    # timeout 180: зависший wal-g не блокирует архивацию бесконечно. Postgres повторяет неудавшийся archive_command сам.
     command:
       - postgres
       - -c
       - archive_mode=on
       - -c
-      - archive_command=/opt/walg/wal-g wal-push %p
+      - archive_command=timeout 180 /opt/walg/wal-g wal-push %p
       - -c
       - archive_timeout=300
     # .env.backup: WALG_*, AWS_*, TELEGRAM_* (шаблон .env.backup.example, права 600). Контейнер app этот файл не читает.
@@ -67,6 +68,9 @@ services:
       AWS_S3_FORCE_PATH_STYLE: "true"
       WALG_LIBSODIUM_KEY_TRANSFORM: hex
       WALG_COMPRESSION_METHOD: zstd
+      # В образе postgres нет корневых сертификатов. Берём набор с хоста (том ниже), иначе wal-g не проходит TLS и повторяет запрос минутами.
+      SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt
+      WALG_S3_MAX_RETRIES: "5"
       PGUSER: ${POSTGRES_USER:-studhub}
       PGDATABASE: ${POSTGRES_DB:-studhub}
     # Postgres 18 хранит данные в подпапке версии, поэтому монтируем родительскую папку.
@@ -74,6 +78,7 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql
       - ./bin:/opt/walg:ro
+      - /etc/ssl/certs/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 10s

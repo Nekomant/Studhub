@@ -31,7 +31,7 @@ volume="studhub-restore-check-$suffix"
 container="studhub-restore-check-$suffix"
 work="$(mktemp -d)"
 wal_env=(-e WALG_S3_PREFIX -e AWS_ENDPOINT -e AWS_REGION -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e WALG_LIBSODIUM_KEY
-  -e WALG_LIBSODIUM_KEY_TRANSFORM=hex -e AWS_S3_FORCE_PATH_STYLE=true -e WALG_COMPRESSION_METHOD=zstd)
+  -e WALG_LIBSODIUM_KEY_TRANSFORM=hex -e AWS_S3_FORCE_PATH_STYLE=true -e WALG_COMPRESSION_METHOD=zstd -e WALG_S3_MAX_RETRIES=5)
 
 # Только эти таблицы: public (данные приложения) и drizzle (журнал миграций). Очередь pg-boss меняется каждую минуту.
 count_sql="select table_schema||'.'||table_name||'|'||(xpath('/row/c/text()', query_to_xml(format('select count(*) as c from %I.%I', table_schema, table_name), false, true, '')))[1]::text from information_schema.tables where table_type='BASE TABLE' and table_schema in ('public','drizzle') order by 1"
@@ -66,12 +66,14 @@ fetch_env=()
 [ -z "$target" ] || { export RESTORE_TARGET_TIME="$target"; fetch_env=(-e RESTORE_TARGET_TIME); }
 docker run --rm --user root --entrypoint bash \
   -v "$volume":/var/lib/postgresql -v "$DEPLOY_DIR/bin":/opt/walg:ro -v "$here/restore-fetch.sh":/restore-fetch.sh:ro \
+  "${ca_args[@]}" \
   "${wal_env[@]}" ${fetch_env[@]+"${fetch_env[@]}"} \
   "$image" /restore-fetch.sh || fail_check "не удалось восстановить данные из бэкапа"
 
 log "копия: запускаю Postgres"
 docker run -d --name "$container" --memory 1g \
   -v "$volume":/var/lib/postgresql -v "$DEPLOY_DIR/bin":/opt/walg:ro \
+  "${ca_args[@]}" \
   "${wal_env[@]}" \
   "$image" -c listen_addresses= -c archive_mode=off >/dev/null || fail_check "копия не запустилась"
 

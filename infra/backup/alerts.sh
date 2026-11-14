@@ -36,7 +36,7 @@ ok() { rm -f "$STATE_DIR/alerts/$1"; }
 # 1. Возраст последнего бэкапа по списку в хранилище.
 max_age=$(( ${BACKUP_MAX_AGE_HOURS:-26} * 3600 ))
 age="error"
-if list="$(compose exec -T -u postgres postgres /opt/walg/wal-g backup-list --json 2>/dev/null)"; then
+if list="$(compose exec -T -u postgres postgres timeout 60 /opt/walg/wal-g backup-list --json 2>/dev/null)"; then
   age="$(printf '%s' "$list" | python3 -c '
 import datetime, json, re, sys
 try:

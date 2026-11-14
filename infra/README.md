@@ -268,6 +268,22 @@ $W st ls basebackups_005/
 
 9. Запусти проверку восстановления: `bash backup/restore-check.sh`. Скрипт печатает `OK <таблица>: prod=… копия=…` по каждой таблице и в конце «проверка восстановления прошла». Статус лежит в `/var/lib/studhub-backup/restore-check.status`.
 
+### Если архивация WAL не идёт
+
+Симптом: после `pg_switch_wal()` в `pg_stat_archiver` остаются `archived_count=0` и `failed_count=0`, а в `/var/lib/postgresql/18/docker/pg_wal/archive_status` копятся файлы `.ready`. Процесс `wal-g wal-push` висит минутами. Проверка:
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env exec -T -u postgres postgres timeout 60 /opt/walg/wal-g st ls
+```
+
+Что проверить по очереди:
+
+1. Корневые сертификаты. В образе `postgres` их нет, поэтому compose монтирует `/etc/ssl/certs/ca-certificates.crt` с хоста и задаёт `SSL_CERT_FILE`. Без сертификатов `wal-g` не проходит TLS (в `openssl s_client` внутри контейнера: «unable to get local issuer certificate») и повторяет запрос минутами. Файл есть на Ubuntu после `sudo apt-get install -y ca-certificates`. `install.sh` проверяет его наличие.
+2. Значения `WALG_*` и `AWS_*` в `.env.backup` (права 600, без кавычек и пробелов вокруг `=`).
+3. Доступ контейнера к бакету: `curl -sS -m 10 -o /dev/null -w '%{http_code}\n' <AWS_ENDPOINT>` на хосте.
+
+Зависший `wal-g` больше не блокирует архивацию бесконечно: `archive_command` обёрнут в `timeout 180`, Postgres сам повторяет неудачную отправку. Ошибки видны в `docker compose … logs postgres` и в `failed_count`.
+
 ### Что считается ключевыми таблицами и допуском
 
 Скрипт сравнивает все таблицы схем `public` (данные приложения) и `drizzle` (журнал миграций). Очередь pg-boss не сравнивается: она меняется каждую минуту. Копия снимается через несколько минут после prod, поэтому допустима разница не больше `max(3, 2% от числа строк на prod)`. Допуск задают `RESTORE_CHECK_MAX_ABS_DIFF` и `RESTORE_CHECK_MAX_PCT_DIFF`. Таблица, которой нет в копии или на prod, и пустой список таблиц дают ошибку.
@@ -363,6 +379,7 @@ docker volume create studhub_postgres-data
 set -a; . ./.env.backup; set +a
 docker run --rm --user root --entrypoint bash \
   -v studhub_postgres-data:/var/lib/postgresql -v "$PWD/bin":/opt/walg:ro -v "$PWD/backup/restore-fetch.sh":/restore-fetch.sh:ro \
+  -v /etc/ssl/certs/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro -e SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
   -e WALG_S3_PREFIX -e AWS_ENDPOINT -e AWS_REGION -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e WALG_LIBSODIUM_KEY \
   -e WALG_LIBSODIUM_KEY_TRANSFORM=hex -e AWS_S3_FORCE_PATH_STYLE=true -e WALG_COMPRESSION_METHOD=zstd \
   -e RESTORE_TARGET_TIME="${RESTORE_TARGET_TIME:-}" \

@@ -21,6 +21,10 @@ done
 env_value() { grep -E "^$1=" .env | tail -n 1 | cut -d= -f2- | tr -d "\"'" || true; }
 backup_value() { grep -E "^$1=" .env.backup | tail -n 1 | cut -d= -f2- | tr -d "\"'" || true; }
 
+# Корневые сертификаты хоста для временных контейнеров postgres: в образе их нет, без них wal-g не проходит TLS.
+CA_BUNDLE="${CA_BUNDLE:-/etc/ssl/certs/ca-certificates.crt}"
+ca_args=(-v "$CA_BUNDLE":/etc/ssl/certs/ca-certificates.crt:ro -e SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt)
+
 compose() { docker compose -f docker-compose.prod.yml --env-file .env "$@"; }
 
 # Завершает скрипт, если в .env.backup не задано одно из значений. Сами значения не печатаем.
