@@ -1809,3 +1809,83 @@ describe("local-env: общий список переменных", () => {
     expect(hook.indexOf("lib/local-env.mjs")).toBeGreaterThan(tryIndex);
   });
 });
+
+// SH-098: инструкция воркера и права фабрики не расходятся. Живые пробы claude 2.1.325 (заметки SH-098):
+// `$'…'`, `$?`, `$(…)` и `grep` отклоняются, одинарные кавычки с переводом строки, `2>&1` и конвейер в `tail` проходят.
+describe("factory: инструкция sh-worker.md и права воркера", () => {
+  const workerDoc = readFileSync(join(repoRoot, ".claude/agents/sh-worker.md"), "utf8");
+  const section = (() => {
+    const start = workerDoc.indexOf("## Команды Bash под фабрикой");
+    if (start < 0) return "";
+    const next = workerDoc.indexOf("\n## ", start + 1);
+    return workerDoc.slice(start, next < 0 ? undefined : next);
+  })();
+
+  it("[SH-098 AC-8] sh-worker.md: раздел о командах Bash отправляет к Read и Grep и по одной команде за вызов", () => {
+    expect(section).not.toBe("");
+    for (const word of ["Read", "Grep", "одну команду", "одинарных кавычках", "dontAsk"])
+      expect(section).toContain(word);
+    for (const banned of ["`;`", "`&&`", "`echo`", "`$?`", "`$(…)`", "`$'…'`"]) expect(section).toContain(banned);
+  });
+
+  it("[SH-098 AC-8] sh-worker.md: команды из текста подходят к разрешённым правилам и не подходят к запретам", async () => {
+    const { matchesRule, WORKER_ALLOWED, WORKER_DISALLOWED } = await factoryTools();
+    const spans = [...workerDoc.matchAll(/`([^`\n]+)`/g)].map((match) => match[1] ?? "");
+    const commands = spans
+      .filter((span) => /^(pnpm (?!factory)|node scripts\/|git (?!push)|backlog task )/.test(span))
+      .map((span) => span.replace(/ [<'|].*$/, ""));
+    expect(commands.length).toBeGreaterThan(8);
+    for (const command of commands) {
+      expect(
+        WORKER_ALLOWED.some((rule) => matchesRule(rule, command)),
+        `${command}: нет в разрешённых`,
+      ).toBe(true);
+      expect(
+        WORKER_DISALLOWED.some((rule) => matchesRule(rule, command)),
+        `${command}: подходит к запрету`,
+      ).toBe(false);
+    }
+  });
+
+  it("[SH-098 AC-8] формы с многострочным текстом из проб подходят к разрешённым правилам", async () => {
+    const { matchesRule, WORKER_ALLOWED, WORKER_DISALLOWED } = await factoryTools();
+    const forms = [
+      "backlog task edit SH-1 --plan '1. шаг\n2. шаг'",
+      "backlog task edit SH-1 --notes 'Оценка: 2 ч'",
+      "backlog task edit SH-1 --append-notes 'Решение: x'",
+      "backlog task edit SH-1 --check-ac 1 --check-ac 2",
+      "backlog task edit SH-1 --check-dod 1",
+      "backlog task edit SH-1 -s 'In Progress' -a @claude",
+      "backlog task edit SH-1 --final-summary 'a\nb'",
+      "git commit -m 'feat(x): SH-1 a\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>'",
+      "git commit -m 'feat(x): SH-1 a' -m 'Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>'",
+    ];
+    for (const form of forms) {
+      expect(
+        WORKER_ALLOWED.some((rule) => matchesRule(rule, form)),
+        `${form}: нет в разрешённых`,
+      ).toBe(true);
+      expect(WORKER_DISALLOWED.some((rule) => matchesRule(rule, form))).toBe(false);
+    }
+  });
+
+  it("[SH-098 AC-7] права воркера не ослаблены: grep и rg запрещены, cat не разрешён, .env закрыт", async () => {
+    const { matchesRule, WORKER_ALLOWED, WORKER_DISALLOWED } = await factoryTools();
+    for (const command of [
+      "grep -n x f",
+      "rg x",
+      "egrep x f",
+      "git push origin x",
+      "gh pr list",
+      "curl x",
+      "pnpm dlx x",
+    ])
+      expect(
+        WORKER_DISALLOWED.some((rule) => matchesRule(rule, command)),
+        command,
+      ).toBe(true);
+    expect(WORKER_ALLOWED.some((rule) => matchesRule(rule, "cat f"))).toBe(false);
+    expect(WORKER_ALLOWED.some((rule) => matchesRule(rule, "echo x"))).toBe(false);
+    expect(WORKER_DISALLOWED.some((rule) => matchesRule(rule, "cat .env"))).toBe(true);
+  });
+});
