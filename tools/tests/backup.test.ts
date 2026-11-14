@@ -17,6 +17,15 @@ const script = (name: string) => join(repoRoot, "infra/backup", name);
 type Compose = { services: Record<string, Record<string, unknown>> };
 const compose = () => YAML.parse(read("infra/docker-compose.prod.yml")) as Compose;
 
+// Без этих шести значений wal-g не работает; скрипты бэкапа и install.sh проверяют каждое.
+const REQUIRED_BACKUP_NAMES = [
+  "WALG_S3_PREFIX",
+  "AWS_ENDPOINT",
+  "AWS_REGION",
+  "AWS_ACCESS_KEY_ID",
+  "AWS_SECRET_ACCESS_KEY",
+  "WALG_LIBSODIUM_KEY",
+];
 const TOKEN = "123456:SECRET-BOT-TOKEN";
 const SECRETS = ["SECRET-PASS", "SECRET-KEY-ID", "SECRET-ACCESS", "SECRET-ENC-KEY"];
 const ENV_FILE = [
@@ -160,6 +169,36 @@ describe("cron, установка и выкладка", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  // Каждое значение проверяется отдельно: и когда строки нет в .env.backup, и когда значение пустое.
+  const withoutValue = (name: string, mode: "removed" | "empty") =>
+    BACKUP_ENV_FILE.replace("SECRET-ENC-KEY", "a".repeat(64))
+      .split("\n")
+      .flatMap((line) => (line.startsWith(`${name}=`) ? (mode === "empty" ? [`${name}=`] : []) : [line]))
+      .join("\n");
+
+  for (const name of REQUIRED_BACKUP_NAMES) {
+    for (const mode of ["removed", "empty"] as const) {
+      it(`[SH-012 AC-1] install.sh отказывается работать, если в .env.backup ${mode === "empty" ? "пусто" : "нет"} ${name}`, () => {
+        const dir = mkdtempSync(join(tmpdir(), "install-"));
+        try {
+          writeFileSync(join(dir, ".env"), ENV_FILE);
+          writeFileSync(join(dir, ".env.backup"), withoutValue(name, mode));
+          chmodSync(join(dir, ".env"), 0o600);
+          chmodSync(join(dir, ".env.backup"), 0o600);
+          const result = spawnSync("bash", [script("install.sh")], {
+            encoding: "utf8",
+            env: { ...process.env, DEPLOY_DIR: dir, CA_BUNDLE: join(dir, ".env") },
+          });
+          expect(result.status).not.toBe(0);
+          expect(result.stderr).toContain("В .env.backup не заданы");
+          expect(result.stderr).toContain(name);
+        } finally {
+          rmSync(dir, { recursive: true, force: true });
+        }
+      });
+    }
+  }
 
   it("[SH-012 AC-1] install.sh отказывается работать без файла корневых сертификатов хоста", () => {
     const result = spawnSync("bash", [script("install.sh")], {
@@ -326,6 +365,21 @@ describe("infra/backup/full-backup.sh", () => {
     expect(result.status).not.toBe(0);
     expect(f.calls().filter((line) => line.startsWith("docker"))).toEqual([]);
   });
+
+  for (const name of REQUIRED_BACKUP_NAMES) {
+    for (const mode of ["removed", "empty"] as const) {
+      it(`[SH-012 AC-1] отказывается работать, если в .env.backup ${mode === "empty" ? "пусто" : "нет"} ${name}, и не вызывает docker`, () => {
+        const body = BACKUP_ENV_FILE.split("\n")
+          .flatMap((line) => (line.startsWith(`${name}=`) ? (mode === "empty" ? [`${name}=`] : []) : [line]))
+          .join("\n");
+        writeFileSync(join(f.dir, ".env.backup"), body);
+        const result = f.run("full-backup.sh");
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain(name);
+        expect(f.calls().filter((line) => line.startsWith("docker"))).toEqual([]);
+      });
+    }
+  }
 });
 
 describe("infra/backup/compare-counts.sh", () => {
