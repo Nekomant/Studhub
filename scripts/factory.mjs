@@ -558,6 +558,55 @@ function printList(candidates, waiting, statuses) {
   }
 }
 
+// git fetch origin и чтение задач из TARGET. null — сбой, причина напечатана, код 1.
+function loadOriginTasks() {
+  const fetched = tryGit(["fetch", "origin", "--quiet"]);
+  if (!fetched.ok) {
+    process.stdout.write(`git fetch origin не удался: ${oneLine(fetched.stderr)}\n`);
+    process.exitCode = 1;
+    return null;
+  }
+  if (!tryGit(["rev-parse", "--verify", "--quiet", TARGET]).ok) {
+    process.stdout.write(`Нет ссылки ${TARGET}\n`);
+    process.exitCode = 1;
+    return null;
+  }
+
+  const tasks = readOriginTasks(TASK_DIR);
+  // Статус зависимости определяем и для архивных задач; запись из backlog/tasks перекрывает архивную.
+  const statuses = new Map([...ARCHIVE_DIRS.flatMap(readOriginTasks), ...tasks].map((task) => [task.id, task.status]));
+  return { tasks, statuses, context: readContext() };
+}
+
+// Кандидаты (Ready без причин отказа) и ждущие зависимость, по возрастанию номера.
+function pickCandidates({ tasks, statuses, context }) {
+  const candidates = [];
+  const waiting = [];
+  for (const task of tasks.filter((item) => item.status === "Ready")) {
+    const { reasons, waiting: waits } = blockers(task, statuses, context);
+    if (reasons.length === 0) candidates.push(task);
+    else if (waits) waiting.push(task);
+  }
+  const byNumber = (a, b) => Number(a.id.slice(3)) - Number(b.id.slice(3));
+  candidates.sort(byNumber);
+  waiting.sort(byNumber);
+  return { candidates, waiting };
+}
+
+// pnpm factory list: строки SH-NNN<TAB>приоритет<TAB>название, без вопросов и побочных действий.
+function printCandidateRows() {
+  const loaded = loadOriginTasks();
+  if (!loaded) return;
+  const found = pickCandidates(loaded);
+  const row = (task) => `${task.id}\t${task.priority || "не указан"}\t${task.title}\n`;
+  if (found.candidates.length === 0) process.stdout.write("Задач в Ready нет\n");
+  for (const task of found.candidates) process.stdout.write(row(task));
+  if (found.waiting.length > 0) {
+    process.stdout.write("Ждут зависимость:\n");
+    for (const task of found.waiting) process.stdout.write(row(task));
+  }
+}
+
 // Читает одну строку со стандартного ввода. Закрытый ввод даёт пустую строку.
 function ask(question) {
   return new Promise((done) => {
@@ -839,7 +888,7 @@ function printSummary() {
 }
 
 const USAGE =
-  'Использование: pnpm factory [run [SH-NNN] | answer SH-NNN "текст" | continue SH-NNN | drop SH-NNN] [--foreground]\n';
+  'Использование: pnpm factory run [SH-NNN] [--foreground] | list | answer SH-NNN "текст" | continue SH-NNN | drop SH-NNN; без аргументов: сводка\n';
 
 async function main() {
   const args = process.argv.slice(2).filter((arg) => arg !== "--");
@@ -851,6 +900,7 @@ async function main() {
     undefined: rest.length === 0,
     run: rest.length === 0 || (rest.length === 1 && Boolean(idMatch)),
     answer: rest.length === 2 && Boolean(idMatch) && rest[1].trim() !== "",
+    list: rest.length === 0 && !foreground,
     continue: rest.length === 1 && Boolean(idMatch),
     drop: rest.length === 1 && Boolean(idMatch),
     _worker: rest.length === 1 && Boolean(idMatch),
@@ -881,6 +931,8 @@ async function main() {
   if (command === "_answer") return void runWorker(target, primaryFolder, { kind: "answer", text: rest[1] });
   if (command === "_continue") return void runWorker(target, primaryFolder, { kind: "continue" });
 
+  if (command === "list") return printCandidateRows();
+
   // Сводка, run, answer и continue сначала ставят «ошибка» задачам, у которых процесс умер без ответа.
   markDeadWorkers();
   if (command === undefined) return printSummary();
@@ -895,22 +947,9 @@ async function main() {
   const prepared = wanted ? readState().tasks[`SH-${wanted[1]}`] : undefined;
   if (prepared?.stage === "подготовлена") return launchWorker(prepared, primaryFolder, foreground);
 
-  const fetched = tryGit(["fetch", "origin", "--quiet"]);
-  if (!fetched.ok) {
-    process.stdout.write(`git fetch origin не удался: ${oneLine(fetched.stderr)}\n`);
-    process.exitCode = 1;
-    return;
-  }
-  if (!tryGit(["rev-parse", "--verify", "--quiet", TARGET]).ok) {
-    process.stdout.write(`Нет ссылки ${TARGET}\n`);
-    process.exitCode = 1;
-    return;
-  }
-
-  const tasks = readOriginTasks(TASK_DIR);
-  // Статус зависимости определяем и для архивных задач; запись из backlog/tasks перекрывает архивную.
-  const statuses = new Map([...ARCHIVE_DIRS.flatMap(readOriginTasks), ...tasks].map((task) => [task.id, task.status]));
-  const context = readContext();
+  const found = loadOriginTasks();
+  if (!found) return;
+  const { tasks, statuses, context } = found;
 
   const launch = (record) => (record ? launchWorker(record, primaryFolder, foreground) : undefined);
 
@@ -931,17 +970,7 @@ async function main() {
     return launch(prepare(task, primaryFolder));
   }
 
-  const candidates = [];
-  const waiting = [];
-  for (const task of tasks.filter((item) => item.status === "Ready")) {
-    const { reasons, waiting: waits } = blockers(task, statuses, context);
-    if (reasons.length === 0) candidates.push(task);
-    else if (waits) waiting.push(task);
-  }
-  const byNumber = (a, b) => Number(a.id.slice(3)) - Number(b.id.slice(3));
-  candidates.sort(byNumber);
-  waiting.sort(byNumber);
-
+  const { candidates, waiting } = pickCandidates(found);
   printList(candidates, waiting, statuses);
   if (candidates.length === 0) {
     process.stdout.write("Задач в Ready нет\n");
