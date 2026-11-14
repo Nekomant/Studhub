@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 const repoRoot = resolve(import.meta.dirname, "../..");
 const read = (path: string) => readFileSync(join(repoRoot, path), "utf8");
 
-const skill = read(".claude/skills/ready/SKILL.md");
+const skillText = () => read(".claude/skills/ready/SKILL.md");
 
 function frontmatter(text: string): Record<string, string> {
   const match = /^---\n([\s\S]*?)\n---\n/.exec(text);
@@ -50,7 +50,7 @@ const DIRECT = "/ready — прямая команда владельца";
 
 describe("[SH-104] скилл ready", () => {
   it("[SH-104 AC-10] во frontmatter name: ready, description и disable-model-invocation: true, нет hooks и model", () => {
-    const fields = frontmatter(skill);
+    const fields = frontmatter(skillText());
 
     expect(fields.name).toBe("ready");
     expect(fields.description?.length).toBeGreaterThan(0);
@@ -80,7 +80,7 @@ describe("[SH-104] скилл ready", () => {
   });
 
   it("[SH-104 AC-18] в SKILL.md нет --foreground", () => {
-    expect(skill).not.toContain("--foreground");
+    expect(skillText()).not.toContain("--foreground");
   });
 });
 
