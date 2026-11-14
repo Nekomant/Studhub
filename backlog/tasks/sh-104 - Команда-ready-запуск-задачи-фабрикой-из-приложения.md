@@ -1,10 +1,11 @@
 ---
 id: SH-104
 title: 'Команда /ready: запуск задачи фабрикой из приложения'
-status: Ready
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-14T09:23:00Z'
-updated_date: '2026-11-14T09:25:00Z'
+updated_date: '2026-11-14T19:44:00Z'
 labels:
   - infra
   - docs
@@ -126,3 +127,19 @@ API и БД не меняются. Новая подкоманда `pnpm factory
 - [ ] #6 PR слит в main через squash, изменения выложены в prod (после появления деплоя)
 - [ ] #7 В заметках задачи записаны оценка и фактическое время, решения по ходу работы и итоговое резюме
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Красные тесты: factory.test.ts (блок list), ready-skill.test.ts, docs-dedup.test.ts.
+2. factory.mjs: функция отбора кандидатов для run и list, подкоманда list, новое сообщение об использовании.
+3. Скилл .claude/skills/ready/SKILL.md.
+4. Документы: README, process.md §7 и §7.1, ADR-0010, CLAUDE.md.
+5. pnpm verify.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Оценка: 2 ч
+<!-- SECTION:NOTES:END -->
