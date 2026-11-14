@@ -23,6 +23,10 @@ const ENV_FILE = [
   "POSTGRES_USER=studhub",
   "POSTGRES_DB=studhub",
   "POSTGRES_PASSWORD=SECRET-PASS",
+  "",
+].join("\n");
+// Ключи бэкапа лежат в отдельном файле .env.backup: контейнер app его не читает.
+const BACKUP_ENV_FILE = [
   "WALG_S3_PREFIX=s3://bucket-test/prod",
   "AWS_ENDPOINT=https://s3.example.test",
   "AWS_REGION=ru-msk",
@@ -52,47 +56,45 @@ describe("compose и шаблон .env", () => {
     expect(postgres().ports).toBeUndefined();
   });
 
+  const BACKUP_NAMES = [
+    "WALG_S3_PREFIX",
+    "AWS_ENDPOINT",
+    "AWS_REGION",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "WALG_LIBSODIUM_KEY",
+  ];
+  const envFiles = (service: string) => [compose().services[service]?.env_file ?? []].flat() as string[];
+
   it("[SH-012 AC-1] wal-g шифрует libsodium и берёт данные бакета из WALG_* и AWS_*, а не из S3_*", () => {
     const env = environment();
-    expect(env.WALG_LIBSODIUM_KEY).toContain("WALG_LIBSODIUM_KEY");
     expect(env.WALG_LIBSODIUM_KEY_TRANSFORM).toBe("hex");
-    expect(env.WALG_S3_PREFIX).toContain("WALG_S3_PREFIX");
-    expect(env.AWS_ENDPOINT).toContain("AWS_ENDPOINT");
-    expect(env.AWS_REGION).toContain("AWS_REGION");
-    expect(env.AWS_ACCESS_KEY_ID).toContain("AWS_ACCESS_KEY_ID");
-    expect(env.AWS_SECRET_ACCESS_KEY).toContain("AWS_SECRET_ACCESS_KEY");
     expect(String(env.AWS_S3_FORCE_PATH_STYLE)).toBe("true");
+    const example = read("infra/.env.backup.example");
+    for (const name of BACKUP_NAMES) expect(example, name).toMatch(new RegExp(`^${name}=$`, "m"));
+    expect(example).not.toMatch(/^S3_/m);
     expect(JSON.stringify(env)).not.toMatch(/\$\{S3_/);
   });
 
-  it("[SH-012 AC-1] compose не стартует без ключа шифрования и данных бакета", () => {
-    const env = environment();
-    for (const name of [
-      "WALG_LIBSODIUM_KEY",
-      "WALG_S3_PREFIX",
-      "AWS_ENDPOINT",
-      "AWS_REGION",
-      "AWS_ACCESS_KEY_ID",
-      "AWS_SECRET_ACCESS_KEY",
-    ]) {
-      expect(env[name], name).toContain(":?");
-    }
+  it("[SH-012 AC-1] compose не стартует без ключа шифрования и данных бакета: они обязательны в .env.backup", () => {
+    expect(envFiles("postgres")).toContain(".env.backup");
+    // Секреты не вписаны в compose: ни значений, ни подстановок из .env.
+    for (const name of BACKUP_NAMES) expect(environment()[name], name).toBeUndefined();
   });
 
-  it("[SH-012 AC-1, AC-3] шаблон .env.prod.example содержит пустые WALG_*, AWS_* и TELEGRAM_*", () => {
-    const text = read("infra/.env.prod.example");
-    for (const name of [
-      "WALG_S3_PREFIX",
-      "AWS_ENDPOINT",
-      "AWS_REGION",
-      "AWS_ACCESS_KEY_ID",
-      "AWS_SECRET_ACCESS_KEY",
-      "WALG_LIBSODIUM_KEY",
-      "TELEGRAM_BOT_TOKEN",
-      "TELEGRAM_CHAT_ID",
-    ]) {
-      expect(text, name).toMatch(new RegExp(`^${name}=$`, "m"));
+  it("[SH-012 AC-1] контейнер app не получает ключи бэкапа: он не читает .env.backup и не подставляет WALG_*, AWS_*, TELEGRAM_*", () => {
+    const app = compose().services.app ?? {};
+    expect(envFiles("app")).not.toContain(".env.backup");
+    expect(JSON.stringify(app)).not.toMatch(/WALG_|AWS_|TELEGRAM_/);
+    expect(envFiles("caddy")).not.toContain(".env.backup");
+  });
+
+  it("[SH-012 AC-1, AC-3] шаблон .env.backup.example содержит пустые WALG_*, AWS_* и TELEGRAM_*, а .env.prod.example их не содержит", () => {
+    const example = read("infra/.env.backup.example");
+    for (const name of [...BACKUP_NAMES, "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"]) {
+      expect(example, name).toMatch(new RegExp(`^${name}=$`, "m"));
     }
+    expect(read("infra/.env.prod.example")).not.toMatch(/^(WALG_|AWS_|TELEGRAM_)\w*=/m);
   });
 });
 
@@ -128,6 +130,26 @@ describe("cron, установка и выкладка", () => {
     expect(text).toContain("sha256sum");
   });
 
+  it("[SH-012 AC-1] install.sh отказывается работать, если ключи бэкапа остались в .env (его читает app)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "install-"));
+    try {
+      writeFileSync(join(dir, ".env"), `${ENV_FILE}AWS_ACCESS_KEY_ID=SECRET-KEY-ID\n`);
+      writeFileSync(join(dir, ".env.backup"), BACKUP_ENV_FILE.replace("SECRET-ENC-KEY", "a".repeat(64)));
+      chmodSync(join(dir, ".env"), 0o600);
+      chmodSync(join(dir, ".env.backup"), 0o600);
+      const result = spawnSync("bash", [script("install.sh")], {
+        encoding: "utf8",
+        env: { ...process.env, DEPLOY_DIR: dir },
+      });
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain(".env.backup");
+      expect(result.stderr).toContain("AWS_ACCESS_KEY_ID");
+      expect(result.stderr).not.toContain("SECRET-KEY-ID");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("[SH-012 AC-1] CI копирует infra/backup на сервер вместе с compose", () => {
     const workflow = read(".github/workflows/ci.yml");
     expect(workflow).toMatch(/scp[^\n]*-r[\s\S]*?infra\/backup/);
@@ -155,6 +177,8 @@ function fixture(): Fixture {
   writeFileSync(join(dir, "docker-compose.prod.yml"), "name: studhub\n");
   writeFileSync(join(dir, ".env"), ENV_FILE);
   chmodSync(join(dir, ".env"), 0o600);
+  writeFileSync(join(dir, ".env.backup"), BACKUP_ENV_FILE);
+  chmodSync(join(dir, ".env.backup"), 0o600);
 
   const fake = (name: string, body: string) => {
     writeFileSync(join(bin, name), `#!/usr/bin/env bash\n${body}\n`);
@@ -268,8 +292,8 @@ describe("infra/backup/full-backup.sh", () => {
   });
 
   it("[SH-012 AC-1] отказывается работать без данных бакета и не вызывает docker", () => {
-    writeFileSync(join(f.dir, ".env"), "POSTGRES_USER=studhub\n");
-    chmodSync(join(f.dir, ".env"), 0o600);
+    writeFileSync(join(f.dir, ".env.backup"), "TELEGRAM_CHAT_ID=42\n");
+    chmodSync(join(f.dir, ".env.backup"), 0o600);
     const result = f.run("full-backup.sh");
     expect(result.status).not.toBe(0);
     expect(f.calls().filter((line) => line.startsWith("docker"))).toEqual([]);
