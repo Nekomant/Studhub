@@ -2552,6 +2552,16 @@ describe("factory: сводка", () => {
     expect(out.trimEnd().split("\n")).toEqual(["Фабрика пуста"]);
   });
 
+  // Не по критерию: ревью SH-094. Слово «undefined» не должно считаться пустым вызовом.
+  it("команда «undefined» даёт код 2 и использование, как любая неизвестная", () => {
+    const s = happy();
+
+    const { code, out } = runFactory(s, s.work, ["undefined"]);
+
+    expect(code).toBe(2);
+    expect(out).toContain("Использование:");
+  });
+
   it("[SH-094 AC-13] «стоп» с ответом ЗАМЕЧАНИЯ: пронумерованные замечания и «Вопрос владельцу:», без вариантов", () => {
     const s = happy();
     putRecord(s, "SH-901", { stage: "стоп", reason: "ЗАМЕЧАНИЯ SH-901" });

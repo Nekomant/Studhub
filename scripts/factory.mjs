@@ -374,7 +374,12 @@ function notify(id, stage, reason) {
     .slice(0, NOTIFY_MAX)
     .join("");
   const result = spawnSync("osascript", [...NOTIFY_SCRIPT, text], { stdio: "ignore", timeout: 10_000 });
-  if (result.error || result.status !== 0) logLine(id, `уведомление: ${text}`);
+  if (!result.error && result.status === 0) return;
+  try {
+    logLine(id, `уведомление: ${text}`);
+  } catch {
+    // Журнал недоступен: уведомление не должно менять этап, который уже записан.
+  }
 }
 
 // Ставит этап и шлёт уведомление, если этап ждёт владельца. Уведомление шлёт процесс, который сменил этап.
@@ -780,7 +785,9 @@ function denialText(denial) {
 }
 
 function ageText(record) {
-  const minutes = Math.max(0, Math.floor((Date.now() - Date.parse(record.stage_changed_at)) / 60_000));
+  const since = Date.parse(record.stage_changed_at);
+  if (Number.isNaN(since)) return "—";
+  const minutes = Math.max(0, Math.floor((Date.now() - since) / 60_000));
   return minutes < 60 ? `${minutes} мин` : `${Math.floor(minutes / 60)} ч`;
 }
 
@@ -850,7 +857,12 @@ async function main() {
     _answer: rest.length === 2 && Boolean(idMatch),
     _continue: rest.length === 1 && Boolean(idMatch),
   };
-  if (!Object.hasOwn(valid, String(command)) || !valid[String(command)]) {
+  // Слово «undefined» как команда не равно отсутствию команды: ключ `undefined` в valid относится только к пустому вызову.
+  const known =
+    command === undefined
+      ? valid.undefined
+      : typeof command === "string" && command !== "undefined" && Object.hasOwn(valid, command) && valid[command];
+  if (!known) {
     process.stderr.write(USAGE);
     process.exitCode = 2;
     return;
