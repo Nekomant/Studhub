@@ -70,7 +70,18 @@ describe("Dockerfile", () => {
       .filter((line) => /^(COPY|RUN)\s/.test(line) && !line.includes("--from="));
     const installAt = lines.findIndex((line) => /^RUN\s.*pnpm\s+install/.test(line));
     expect(installAt).toBeGreaterThan(-1);
-    const before = lines.slice(0, installAt).filter((line) => line.startsWith("COPY"));
+    const copyAll = /^COPY\s+(--\S+\s+)*\.\s+\.(\s|$)/;
+    // COPY разбираем на источники и назначение: флаги `--…` отбрасываем, последний аргумент это назначение.
+    const copiesBefore = lines
+      .slice(0, installAt)
+      .filter((line) => line.startsWith("COPY"))
+      .map((line) =>
+        line
+          .split(/\s+/)
+          .slice(1)
+          .filter((arg) => !arg.startsWith("--")),
+      )
+      .map((args) => ({ sources: args.slice(0, -1), dest: args.at(-1) ?? "" }));
     const after = lines.slice(installAt + 1);
 
     const workspace = YAML.parse(read("pnpm-workspace.yaml")) as { packages: string[] };
@@ -83,20 +94,27 @@ describe("Dockerfile", () => {
           .map((entry) => `${parent}/${entry.name}`);
       });
     expect(dirs.length).toBeGreaterThan(0);
+    // Файл и каталог, куда COPY должен его положить: корневые файлы в WORKDIR, манифест пакета в его каталог.
     const required = [
-      "package.json",
-      "pnpm-lock.yaml",
-      "pnpm-workspace.yaml",
-      ...dirs.map((dir) => `${dir}/package.json`),
+      ...["package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml"].map((file) => ({ file, dir: "." })),
+      ...dirs.map((dir) => ({ file: `${dir}/package.json`, dir })),
     ];
-    for (const file of required) {
+    // Настройки pnpm влияют на install: если они есть в репозитории, их копируют до install.
+    for (const optional of [".npmrc", "patches"]) {
+      if (existsSync(join(repoRoot, optional))) required.push({ file: optional, dir: "." });
+    }
+    for (const { file, dir } of required) {
+      const target = dir === "." ? ["./", "."] : [`${dir}/`, dir, `${file}`];
       expect(
-        before.some((line) => line.split(/\s+/).includes(file)),
-        `COPY ${file} должен стоять выше pnpm install`,
+        copiesBefore.some(
+          (copy) =>
+            copy.sources.some((source) => source === file || source === `${file}*`) && target.includes(copy.dest),
+        ),
+        `COPY ${file} в ${dir} должен стоять выше pnpm install`,
       ).toBe(true);
     }
-    expect(before.some((line) => /^COPY\s+(--\S+\s+)*\.\s+\.(\s|$)/.test(line))).toBe(false);
-    expect(after.some((line) => /^COPY\s+(--\S+\s+)*\.\s+\.(\s|$)/.test(line))).toBe(true);
+    expect(lines.slice(0, installAt).some((line) => copyAll.test(line))).toBe(false);
+    expect(after.some((line) => copyAll.test(line))).toBe(true);
   });
 
   it("[SH-011 AC-1] в образе есть HEALTHCHECK на /healthz", () => {

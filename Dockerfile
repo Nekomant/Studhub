@@ -11,7 +11,8 @@ RUN corepack enable
 WORKDIR /repo
 # Сначала только манифесты: слой с зависимостями не пересобирается при правке кода.
 # Пакеты tests/* в контекст не попадают (.dockerignore), pnpm install работает без них.
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+# `.npmrc*` копируется, если файл появится: настройки pnpm должны быть известны до install.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc* ./
 COPY apps/admin/package.json apps/admin/
 COPY apps/api/package.json apps/api/
 COPY apps/landing/package.json apps/landing/
