@@ -1,11 +1,11 @@
 ---
 id: SH-104
 title: 'Команда /ready: запуск задачи фабрикой из приложения'
-status: In Progress
+status: Review
 assignee:
   - '@claude'
 created_date: '2026-11-14T09:23:00Z'
-updated_date: '2026-11-14T20:28:00Z'
+updated_date: '2026-11-14T20:52:00Z'
 labels:
   - infra
   - docs
