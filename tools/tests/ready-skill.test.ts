@@ -11,7 +11,7 @@ const skillText = () => read(".claude/skills/ready/SKILL.md");
 
 function frontmatter(text: string): Record<string, string> {
   const match = /^---\n([\s\S]*?)\n---\n/.exec(text);
-  if (!match) throw new Error("нет frontmatter");
+  if (!match?.[1]) throw new Error("нет frontmatter");
   return Object.fromEntries(
     match[1].split("\n").map((line) => {
       const at = line.indexOf(":");
