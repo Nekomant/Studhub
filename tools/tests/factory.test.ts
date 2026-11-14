@@ -2638,3 +2638,133 @@ describe("factory: процесс завершился без ответа", () 
     expectMarked(s);
   }, 20_000);
 });
+
+describe("factory: list", () => {
+  const listed = (s: Scenario) => runFactory(s, s.work, ["list"]);
+  const rowsOf = (out: string) => out.split("\n").filter((line) => /^SH-\d+\t/.test(line));
+
+  it("[SH-104 AC-1] кандидат: строка SH-NNN, приоритет, название через табуляцию", () => {
+    const s = makeRepo([{ id: "SH-901", title: "Первая", priority: "high" }]);
+
+    const { code, out } = listed(s);
+
+    expect(code).toBe(0);
+    expect(out.split("\n")).toContain("SH-901\thigh\tПервая");
+  });
+
+  it("[SH-104 AC-1] без приоритета вместо него «не указан»", () => {
+    const s = makeRepo([{ id: "SH-901", title: "Первая" }]);
+    const file = join(s.seed, taskPath("SH-901"));
+    writeFileSync(file, readFileSync(file, "utf8").replace(/^priority: .*\n/m, ""));
+    git(s.seed, "add", ".");
+    git(s.seed, "commit", "-q", "-m", "без приоритета");
+    git(s.seed, "push", "-q", "origin", "main");
+
+    const { out } = listed(s);
+
+    expect(out.split("\n")).toContain("SH-901\tне указан\tПервая");
+  });
+
+  it("[SH-104 AC-2] три кандидата: строки по возрастанию номера", () => {
+    const s = makeRepo([
+      { id: "SH-903", title: "Третья" },
+      { id: "SH-901", title: "Первая" },
+      { id: "SH-902", title: "Вторая" },
+    ]);
+
+    const { out } = listed(s);
+
+    expect(rowsOf(out).map((line) => line.split("\t")[0])).toEqual(["SH-901", "SH-902", "SH-903"]);
+  });
+
+  it("[SH-104 AC-3] задача с зависимостью не в Done стоит в блоке «Ждут зависимость:» такой же строкой", () => {
+    const s = makeRepo([
+      { id: "SH-901", title: "Первая" },
+      { id: "SH-903", title: "Ждущая", deps: ["SH-911"], priority: "low" },
+      { id: "SH-911", title: "Идущая", status: "In Progress" },
+    ]);
+
+    const { out } = listed(s);
+
+    const lines = out.split("\n");
+    const at = lines.indexOf("Ждут зависимость:");
+    expect(at).toBeGreaterThan(lines.indexOf("SH-901\tmedium\tПервая"));
+    expect(lines.slice(at + 1)).toContain("SH-903\tlow\tЖдущая");
+    expect(lines.slice(0, at)).not.toContain("SH-903\tlow\tЖдущая");
+  });
+
+  it("[SH-104 AC-4] ничего не создано: ни ветки, ни worktree, ни записи, ни процесса; код 0", () => {
+    const s = makeRepo([{ id: "SH-901", title: "Первая" }]);
+    const before = snapshot(s);
+
+    const { code } = listed(s);
+
+    expect(code).toBe(0);
+    expect(snapshot(s)).toEqual(before);
+    expect(pidRecords(s)).toEqual([]);
+    expect(claudeCalls(s)).toHaveLength(0);
+  });
+
+  it("[SH-104 AC-5] кандидатов нет: первая строка «Задач в Ready нет», блок ожидающих после неё, код 0", () => {
+    const s = makeRepo([
+      { id: "SH-903", title: "Ждущая", deps: ["SH-911"] },
+      { id: "SH-911", title: "Идущая", status: "In Progress" },
+    ]);
+
+    const { code, out } = listed(s);
+
+    expect(code).toBe(0);
+    const lines = out.split("\n").filter(Boolean);
+    expect(lines[0]).toBe("Задач в Ready нет");
+    expect(lines[1]).toBe("Ждут зависимость:");
+    expect(lines[2]).toBe("SH-903\tmedium\tЖдущая");
+  });
+
+  it("[SH-104 AC-5] кандидатов и ожидающих нет: одна строка «Задач в Ready нет», код 0", () => {
+    const s = makeRepo([{ id: "SH-909", status: "In Progress" }]);
+
+    const { code, out } = listed(s);
+
+    expect(code).toBe(0);
+    expect(out.trim()).toBe("Задач в Ready нет");
+  });
+
+  it("[SH-104 AC-6] задача, добавленная в origin/main после клонирования, видна", () => {
+    const s = makeRepo([{ id: "SH-901", title: "Первая" }]);
+    writeFileSync(join(s.seed, taskPath("SH-902")), taskFile({ id: "SH-902", title: "Новая" }));
+    git(s.seed, "add", ".");
+    git(s.seed, "commit", "-q", "-m", "новая задача");
+    git(s.seed, "push", "-q", "origin", "main");
+
+    const { out } = listed(s);
+
+    expect(out.split("\n")).toContain("SH-902\tmedium\tНовая");
+  });
+
+  it("[SH-104 AC-7] сбой git fetch origin: тот же вывод и код, что у run", () => {
+    const s = makeRepo([{ id: "SH-901", title: "Первая" }]);
+    git(s.work, "remote", "set-url", "origin", join(s.base, "нет-такого.git"));
+
+    const run = runFactory(s, s.work, ["run"]);
+    const list = listed(s);
+
+    expect(run.code).toBe(1);
+    expect(list.code).toBe(run.code);
+    expect(list.out).toContain("git fetch origin не удался");
+    expect(list.out).toBe(run.out);
+  });
+
+  it.each([["x"], ["--foreground"], ["SH-901"]])("[SH-104 AC-8] list %s: в stderr использование, код 2", (arg) => {
+    const s = makeRepo([{ id: "SH-901", title: "Первая" }]);
+
+    const result = spawnSync(process.execPath, [script, "list", arg], {
+      cwd: s.work,
+      encoding: "utf8",
+      env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH}`, FAKE_LOG: s.log },
+    });
+
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain("pnpm factory run [SH-NNN] [--foreground] | list");
+    expect(result.stdout).toBe("");
+  });
+});

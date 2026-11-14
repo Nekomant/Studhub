@@ -60,6 +60,10 @@ describe("[SH-081 AC-1] описание команд лежит в README", () 
     for (const flag of flagsOf("scripts/factory.mjs")) expect(readme).toContain(`pnpm factory run ${flag}`);
   });
 
+  it("[SH-104 AC-23] README описывает pnpm factory list; флаги run к list не относятся", () => {
+    expect(read("README.md")).toContain("pnpm factory list");
+  });
+
   it("[SH-093 AC-14] docs/process.md и CLAUDE.md упоминают pnpm factory со ссылкой на README и без флагов", () => {
     for (const file of ["docs/process.md", "CLAUDE.md"]) {
       const lines = mentions(read(file), "pnpm factory");
