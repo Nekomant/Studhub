@@ -55,19 +55,16 @@ services:
       - archive_command=/opt/walg/wal-g wal-push %p
       - -c
       - archive_timeout=300
+    # .env.backup: WALG_*, AWS_*, TELEGRAM_* (шаблон .env.backup.example, права 600). Контейнер app этот файл не читает.
+    # Без файла compose не запускает ни один сервис, поэтому выкладка без настройки бэкапов падает до изменений.
+    # Ключ шифрования: 64 шестнадцатеричных символа (`openssl rand -hex 32`). Потеряешь ключ, бэкапы не прочитать.
+    env_file: .env.backup
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-studhub}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?задайте POSTGRES_PASSWORD в .env}
       POSTGRES_DB: ${POSTGRES_DB:-studhub}
-      # Данные бакета и ключ шифрования wal-g. Они отделены от S3_* (файлы приложения).
-      # Ключ шифрования: 64 шестнадцатеричных символа (`openssl rand -hex 32`). Потеряешь ключ — бэкапы не прочитать.
-      WALG_S3_PREFIX: ${WALG_S3_PREFIX:?задайте WALG_S3_PREFIX в .env (бэкапы, infra/README.md)}
-      AWS_ENDPOINT: ${AWS_ENDPOINT:?задайте AWS_ENDPOINT в .env}
-      AWS_REGION: ${AWS_REGION:?задайте AWS_REGION в .env}
-      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:?задайте AWS_ACCESS_KEY_ID в .env}
-      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:?задайте AWS_SECRET_ACCESS_KEY в .env}
+      # Постоянные настройки wal-g. Адрес бакета, ключи доступа и ключ шифрования лежат в .env.backup (env_file выше).
       AWS_S3_FORCE_PATH_STYLE: "true"
-      WALG_LIBSODIUM_KEY: ${WALG_LIBSODIUM_KEY:?задайте WALG_LIBSODIUM_KEY в .env}
       WALG_LIBSODIUM_KEY_TRANSFORM: hex
       WALG_COMPRESSION_METHOD: zstd
       PGUSER: ${POSTGRES_USER:-studhub}

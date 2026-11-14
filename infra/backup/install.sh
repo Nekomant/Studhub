@@ -3,7 +3,7 @@
 #   bash backup/install.sh
 # Скрипт можно запускать повторно. Что делает:
 #   - скачивает wal-g зафиксированной версии, сверяет контрольную сумму и кладёт в /srv/studhub/bin/wal-g;
-#   - проверяет, что в .env заданы все значения для бэкапов и права файла равны 600 (значения не печатает);
+#   - проверяет, что в .env.backup заданы все значения для бэкапов, а права .env и .env.backup равны 600 (значения не печатает);
 #   - создаёт каталог состояния, файл журнала и ротацию журнала;
 #   - ставит расписание в /etc/cron.d/studhub-backup.
 # Postgres начнёт архивировать WAL после следующей выкладки (deploy.sh пересоздаёт контейнер с новой конфигурацией).
@@ -18,17 +18,22 @@ deploy_dir="${DEPLOY_DIR:-$(dirname "$here")}"
 cd "$deploy_dir"
 
 command -v python3 >/dev/null || { echo "Нужен python3 (разбор списка бэкапов в alerts.sh): sudo apt-get install -y python3" >&2; exit 1; }
-[ -f .env ] || { echo "Нет файла $deploy_dir/.env." >&2; exit 1; }
-mode="$(stat -c %a .env 2>/dev/null || stat -f %Lp .env)"
-[ "$mode" = "600" ] || { echo "Права .env: ${mode}, нужны 600. Выполни: chmod 600 .env" >&2; exit 1; }
+for file in .env .env.backup; do
+  [ -f "$file" ] || { echo "Нет файла $deploy_dir/$file." >&2; exit 1; }
+  mode="$(stat -c %a "$file" 2>/dev/null || stat -f %Lp "$file")"
+  [ "$mode" = "600" ] || { echo "Права $file: ${mode}, нужны 600. Выполни: chmod 600 $file" >&2; exit 1; }
+done
 
 missing=""
 for name in WALG_S3_PREFIX AWS_ENDPOINT AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY WALG_LIBSODIUM_KEY TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID; do
-  value="$(grep -E "^${name}=" .env | tail -n 1 | cut -d= -f2- || true)"
+  value="$(grep -E "^${name}=" .env.backup | tail -n 1 | cut -d= -f2- || true)"
   [ -n "$value" ] || missing="$missing $name"
 done
-[ -z "$missing" ] || { echo "В .env не заданы:$missing" >&2; exit 1; }
-key="$(grep -E '^WALG_LIBSODIUM_KEY=' .env | tail -n 1 | cut -d= -f2-)"
+[ -z "$missing" ] || { echo "В .env.backup не заданы:$missing" >&2; exit 1; }
+# Ключи бэкапа не должны лежать в .env: этот файл читает контейнер app.
+leaked="$(grep -E '^(WALG_|AWS_|TELEGRAM_)[A-Z0-9_]*=' .env | cut -d= -f1 | tr '\n' ' ' || true)"
+[ -z "$leaked" ] || { echo "В .env остались ключи бэкапа: $leaked. Перенеси их в .env.backup и удали из .env." >&2; exit 1; }
+key="$(grep -E '^WALG_LIBSODIUM_KEY=' .env.backup | tail -n 1 | cut -d= -f2-)"
 [[ "$key" =~ ^[0-9a-fA-F]{64}$ ]] || { echo "WALG_LIBSODIUM_KEY должен состоять из 64 шестнадцатеричных символов (openssl rand -hex 32)." >&2; exit 1; }
 
 echo "==> wal-g ${WALG_VERSION}"

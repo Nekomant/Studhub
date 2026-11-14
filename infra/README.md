@@ -13,6 +13,7 @@
 | `deploy.sh` | Выкладывает образ приложения с указанным тегом: миграции, обновление, проверка `/healthz`. Тот же скрипт откатывает на предыдущий тег |
 | `Caddyfile` | Настройки Caddy для `studshub.ru` и `app.studshub.ru` |
 | `.env.prod.example` | Шаблон файла с секретами `.env` |
+| `.env.backup.example` | Шаблон файла `.env.backup` с ключами бэкапа и Telegram (шаг 12) |
 | `smoke-prod.sh` | Проверяет сервер снаружи: HTTPS, открытые порты, вход по SSH |
 | `backup/` | Бэкапы Postgres через wal-g, проверка восстановления и алерты в Telegram (шаг 12) |
 
@@ -118,7 +119,7 @@ nano .env
 - `POSTGRES_PASSWORD`: случайный пароль. Получить его можно командой `openssl rand -hex 24`;
 - `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`: приложение не запускается, пока все пять заданы. Хранилища файлов ещё нет, поэтому до задачи про материалы впиши заглушки: `https://s3.invalid`, `stub`, `stub-bucket`, `stub`, `stub`. Настоящие значения появятся вместе с хранилищем.
 
-Значения для бэкапов и алертов (`WALG_*`, `AWS_*`, `TELEGRAM_*`) заполни по шагу 12.
+Ключи бэкапов и алертов (`WALG_*`, `AWS_*`, `TELEGRAM_*`) в `.env` не клади. Они лежат в отдельном файле `.env.backup` (шаг 12): `.env` читает контейнер `app`, а этим ключам там не место.
 
 Сохрани файл в `nano`: Ctrl+O, Enter, Ctrl+X. Пароль не отправляй в чат и почту, храни в менеджере паролей.
 
@@ -207,11 +208,12 @@ nmap -Pn -p- <адрес>
 - Каждую ночь в 03:30 по времени сервера `backup/full-backup.sh` делает полный бэкап и оставляет 30 последних полных бэкапов вместе с нужным им WAL.
 - Каждое воскресенье в 05:00 `backup/restore-check.sh` поднимает копию из бэкапа во временном контейнере и сверяет число строк с prod.
 - Каждые 10 минут `backup/alerts.sh` проверяет условия и пишет в Telegram.
+- Ключи бэкапа лежат в отдельном файле `/srv/studhub/.env.backup` (права 600). Его читают контейнер `postgres` и скрипты `backup/`. Контейнер `app` его не получает.
 - Данные в бакете шифруются libsodium ключом `WALG_LIBSODIUM_KEY`. Бакет принадлежит другому провайдеру, чем VPS (у нас VK Cloud, ключи отделены от `S3_*` приложения).
 
-### Значения в `.env`
+### Значения в `.env.backup`
 
-Шаблон лежит в `.env.prod.example`. Значения владелец вносит сам, в чат их не пишет.
+Шаблон лежит в `.env.backup.example`. Файл создаётся только на сервере: `cd /srv/studhub && cp .env.backup.example .env.backup && chmod 600 .env.backup`. Значения владелец вносит сам, в чат их не пишет. Все переменные из таблицы лежат в `.env.backup`, в `.env` их быть не должно: `install.sh` на это проверяет. Переменные `POSTGRES_*`, `S3_*` и остальные остаются в `.env`.
 
 | Переменная | Что это |
 |---|---|
@@ -228,12 +230,12 @@ wal-g принимает путь к бакету в стиле `AWS_S3_FORCE_PA
 
 ### Установка на сервер
 
-Выполняет владелец один раз по SSH под `deploy`. Порядок важен: compose требует, чтобы значения в `.env` и файл `bin/wal-g` уже существовали.
+Выполняет владелец один раз по SSH под `deploy`. Порядок важен: compose не запускает ни один сервис без файла `.env.backup`, а Postgres не стартует без файла `bin/wal-g`.
 
-1. Заполни в `.env` значения из таблицы выше. Права файла: `chmod 600 .env`.
-2. Скопируй папку `backup` и compose на сервер: `scp -r -i ~/.ssh/studhub_deploy infra/backup infra/docker-compose.prod.yml deploy@<адрес>:/srv/studhub/`. После слияния в `main` job `deploy` копирует их сам.
-3. На сервере выполни `cd /srv/studhub && bash backup/install.sh`. Скрипт скачивает wal-g, сверяет контрольную сумму, ставит расписание в `/etc/cron.d/studhub-backup` и ничего не печатает из `.env`.
-4. Проверь Telegram: `bash backup/alerts.sh --test`. Сообщение должно прийти в чат. Если команда напечатала «Telegram недоступен», с этого сервера нет доступа к `api.telegram.org`: сообщи разработчику, тогда нужен прокси (`TELEGRAM_API_URL` в `.env`).
+1. Создай `.env.backup` из шаблона и заполни значения из таблицы выше. Права файла: `chmod 600 .env.backup`. Если эти ключи уже лежат в `.env`, перенеси их в `.env.backup` и удали из `.env`.
+2. Скопируй папку `backup`, шаблон и compose на сервер: `scp -r -i ~/.ssh/studhub_deploy infra/backup infra/docker-compose.prod.yml infra/.env.backup.example deploy@<адрес>:/srv/studhub/`. После слияния в `main` job `deploy` копирует их сам.
+3. На сервере выполни `cd /srv/studhub && bash backup/install.sh`. Скрипт скачивает wal-g, сверяет контрольную сумму, ставит расписание в `/etc/cron.d/studhub-backup` и ничего не печатает из `.env` и `.env.backup`. Скрипт отказывается работать, если права файлов шире 600, значение пусто или ключи бэкапа остались в `.env`.
+4. Проверь Telegram: `bash backup/alerts.sh --test`. Сообщение должно прийти в чат. Если команда напечатала «Telegram недоступен», с этого сервера нет доступа к `api.telegram.org`: сообщи разработчику, тогда нужен прокси (`TELEGRAM_API_URL` в `.env.backup`).
 5. Включи архивацию WAL: `docker compose -f docker-compose.prod.yml --env-file .env up -d postgres`. Контейнер Postgres перезапускается за несколько секунд.
 6. Проверь архивацию:
 
@@ -298,7 +300,7 @@ bash backup/restore-check.sh   # вернёт статус ok
 
 Это делает владелец в личном кабинете uptimerobot.com.
 
-1. Создай монитор типа HTTP(s): URL `https://app.studshub.ru/healthz`, интервал 1 минута. На бесплатном тарифе минимальный интервал, насколько известно, 5 минут; для 1 минуты нужен платный тариф. Проверь это в кабинете.
+1. Создай монитор типа HTTP(s): URL `https://app.studshub.ru/healthz`, интервал 5 минут (минимум бесплатного тарифа; владелец согласовал 5 минут вместо 1).
 2. Добавь канал уведомлений (почта или Telegram) и привяжи его к монитору.
 3. Проверка: останови приложение (`docker compose -f docker-compose.prod.yml --env-file .env stop app`) и дождись уведомления. Запусти его снова: `docker compose -f docker-compose.prod.yml --env-file .env up -d app`.
 
@@ -318,7 +320,7 @@ bash backup/restore-check.sh   # вернёт статус ok
 
 Используй, когда данных на сервере нет или они испорчены. Время простоя: десятки минут.
 
-1. Подготовь сервер по шагам 1–8 этого файла (для существующего сервера пропусти). Положи в `.env` прежние `WALG_*` и `AWS_*`, включая тот же `WALG_LIBSODIUM_KEY`.
+1. Подготовь сервер по шагам 1–8 этого файла (для существующего сервера пропусти). Положи в `.env.backup` прежние `WALG_*`, `AWS_*` и `TELEGRAM_*`, включая тот же `WALG_LIBSODIUM_KEY`.
 2. ❗ Остановка и удаление тома стирают текущие данные Postgres. Убедись, что восстанавливаешь из бэкапа, а не тратишь рабочие данные. Выполни в `/srv/studhub`:
 
 ```bash
@@ -331,7 +333,7 @@ docker volume create studhub_postgres-data
 3. Скачай бэкап в том. Для восстановления на момент времени задай `RESTORE_TARGET_TIME` (UTC); без него берётся последний бэкап и весь WAL:
 
 ```bash
-set -a; . ./.env; set +a
+set -a; . ./.env.backup; set +a
 docker run --rm --user root --entrypoint bash \
   -v studhub_postgres-data:/var/lib/postgresql -v "$PWD/bin":/opt/walg:ro -v "$PWD/backup/restore-fetch.sh":/restore-fetch.sh:ro \
   -e WALG_S3_PREFIX -e AWS_ENDPOINT -e AWS_REGION -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e WALG_LIBSODIUM_KEY \
