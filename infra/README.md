@@ -205,7 +205,7 @@ nmap -Pn -p- <адрес>
 Что работает после настройки:
 
 - Postgres непрерывно отправляет WAL в бакет (`archive_command` вызывает `wal-g wal-push`, сегмент уходит не реже чем раз в 5 минут).
-- Каждую ночь в 03:30 по времени сервера `backup/full-backup.sh` делает полный бэкап и оставляет 30 последних полных бэкапов вместе с нужным им WAL.
+- Каждую ночь в 03:30 по времени сервера `backup/full-backup.sh` делает полный бэкап и оставляет 30 последних полных бэкапов вместе с нужным им WAL. `wal-g backup-push` ограничен по времени: `BACKUP_TIMEOUT_HOURS` часов (по умолчанию 2).
 - Каждое воскресенье в 05:00 `backup/restore-check.sh` поднимает копию из бэкапа во временном контейнере и сверяет число строк с prod.
 - Каждые 10 минут `backup/alerts.sh` проверяет условия и пишет в Telegram.
 - Ключи бэкапа лежат в отдельном файле `/srv/studhub/.env.backup` (права 600). Его читают контейнер `postgres` и скрипты `backup/`. Контейнер `app` его не получает.
@@ -222,8 +222,9 @@ nmap -Pn -p- <адрес>
 | `AWS_REGION` | Регион, например `ru-msk` |
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | Ключ доступа к бакету |
 | `WALG_LIBSODIUM_KEY` | Ключ шифрования: 64 шестнадцатеричных символа, получить: `openssl rand -hex 32` |
-| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Токен бота и число chat id, куда писать алерты |
-| `TELEGRAM_API_URL`, `TELEGRAM_PROXY_SECRET` | Адрес прокси и общий секрет, если Telegram закрыт с сервера. Без прокси оставь пустыми (см. «Прокси для Telegram») |
+| `TELEGRAM_API_URL`, `TELEGRAM_PROXY_SECRET` | Адрес Worker и общий секрет, если Telegram закрыт с сервера (наш случай). Токен бота тогда в `.env.backup` не нужен: он хранится только в Cloudflare (см. «Прокси для Telegram») |
+| `TELEGRAM_CHAT_ID` | Число chat id. С прокси необязателен: Worker может хранить его сам |
+| `TELEGRAM_BOT_TOKEN` | Токен бота. Нужен только без прокси, при пустом `TELEGRAM_API_URL`. Тогда `TELEGRAM_CHAT_ID` тоже обязателен |
 
 ❗ Сохрани копию `WALG_LIBSODIUM_KEY` в менеджере паролей вне сервера. Без ключа бэкапы не прочитать, и сменить ключ на уже записанных данных нельзя: после смены ключа старые бэкапы остаются на старом ключе.
 
@@ -305,29 +306,36 @@ docker compose -f docker-compose.prod.yml --env-file .env exec -T -u postgres po
 
 ### Прокси для Telegram
 
-С нашего VPS `api.telegram.org` не открывается. Алерты идут через Cloudflare Worker: сервер шлёт запрос на адрес Worker, а Worker пересылает его в Telegram. Код лежит в `infra/telegram-proxy/worker.js`.
+С нашего VPS `api.telegram.org` не открывается. Алерты идут через Cloudflare Worker: сервер шлёт `POST <адрес Worker>/send`, а Worker пересылает сообщение в Telegram. Код лежит в `infra/telegram-proxy/worker.js`.
+
+Токен бота хранится только в Cloudflare, в секрете Worker `TELEGRAM_BOT_TOKEN`. На сервере токена нет: в `.env.backup` лежат только адрес Worker и общий секрет `TELEGRAM_PROXY_SECRET`. Если секрет с сервера утечёт, им можно только слать сообщения в наш чат, а токен останется у Cloudflare.
 
 Worker не работает как открытый прокси:
 
-- он пересылает только `POST /bot<токен>/sendMessage` на `api.telegram.org`, остальные запросы получают 404;
-- каждый запрос должен нести заголовок `X-Proxy-Secret` с общим секретом, иначе ответ 403;
+- он принимает только `POST /send` с телом из `chat_id` и `text` (форма или JSON) и пересылает его на `https://api.telegram.org/bot<токен>/sendMessage`; другие поля тела он отбрасывает, остальные пути и методы получают 404;
+- каждый запрос должен нести заголовок `X-Proxy-Secret` с общим секретом (сравнение за постоянное время), иначе ответ 403;
+- тело больше 8 КБ получает 413, запрос без `text` получает 400;
+- если в Worker не задан `PROXY_SECRET` или `TELEGRAM_BOT_TOKEN`, ответ 500;
 - он не пишет в лог токен бота и тексты сообщений.
 
-Токен бота виден Cloudflare, потому что он входит в адрес запроса. Тексты алертов не содержат ПДн.
+Чат можно зафиксировать в Worker: задай переменную `TELEGRAM_CHAT_ID`. Тогда запрос может не передавать `chat_id`, а запрос с другим `chat_id` получает 403. Это защита на случай, если общий секрет утечёт: через Worker нельзя писать в чужие чаты. Тексты алертов не содержат ПДн.
 
 Создание Worker (владелец, один раз, в личном кабинете Cloudflare, бесплатного тарифа достаточно):
 
 1. Открой `dash.cloudflare.com`, раздел Workers & Pages, кнопка Create, затем Create Worker. Назови его `studhub-telegram-proxy` и нажми Deploy.
 2. Нажми Edit code. Удали пример кода, вставь целиком содержимое файла `infra/telegram-proxy/worker.js` и нажми Deploy.
 3. Сгенерируй общий секрет на своём компьютере: `openssl rand -hex 32`. Сохрани его в менеджере паролей.
-4. В Worker открой Settings, Variables and Secrets, Add. Тип Secret, имя `PROXY_SECRET`, значение из шага 3. Нажми Deploy.
+4. В Worker открой Settings, Variables and Secrets, Add. Добавь три значения и нажми Deploy:
+   - тип Secret, имя `PROXY_SECRET`, значение из шага 3;
+   - тип Secret, имя `TELEGRAM_BOT_TOKEN`, значение: токен бота от BotFather;
+   - тип Text, имя `TELEGRAM_CHAT_ID`, значение: число chat id (необязательно, но рекомендуется).
 5. Скопируй адрес Worker вида `https://studhub-telegram-proxy.<аккаунт>.workers.dev` (в Settings, Domains & Routes).
-6. Внеси в `/srv/studhub/.env.backup`: `TELEGRAM_API_URL=<адрес из шага 5 без слэша в конце>` и `TELEGRAM_PROXY_SECRET=<секрет из шага 3>`. Права файла остаются 600.
+6. Внеси в `/srv/studhub/.env.backup`: `TELEGRAM_API_URL=<адрес из шага 5 без слэша в конце>` и `TELEGRAM_PROXY_SECRET=<секрет из шага 3>`. Права файла остаются 600. Если там остались `TELEGRAM_BOT_TOKEN` и `TELEGRAM_CHAT_ID` от прежней схемы, удали токен: в режиме прокси скрипты его не читают.
 7. Проверь: `bash backup/alerts.sh --test`. Сообщение приходит в чат.
 
-Если адрес `workers.dev` с сервера не открывается, привяжи к Worker свой домен (Settings, Domains & Routes, Add, Custom domain) и подставь его в `TELEGRAM_API_URL`. Проверка доступности с сервера: `curl -sS -m 10 -o /dev/null -w '%{http_code}\n' <адрес>`: ответ 403 значит, что Worker отвечает.
+Если адрес `workers.dev` с сервера не открывается, привяжи к Worker свой домен (Settings, Domains & Routes, Add, Custom domain) и подставь его в `TELEGRAM_API_URL`. Проверка доступности с сервера: `curl -sS -m 10 -o /dev/null -w '%{http_code}\n' <адрес>/send`: ответ 403 значит, что Worker отвечает.
 
-Если сообщения перестали приходить, проверь по очереди: адрес Worker, совпадение секретов в Cloudflare и `.env.backup`, токен и chat id.
+Если сообщения перестали приходить, проверь по очереди: адрес Worker, совпадение `PROXY_SECRET` в Cloudflare и `TELEGRAM_PROXY_SECRET` в `.env.backup`, секрет `TELEGRAM_BOT_TOKEN` в Cloudflare, chat id. Ответ 500 значит, что в Worker не хватает секрета, 403 значит, что секреты не совпали или chat id чужой.
 
 ### Алерты
 
@@ -352,7 +360,7 @@ ALERT_REPEAT_HOURS=0 bash backup/alerts.sh
 bash backup/restore-check.sh   # вернёт статус ok
 ```
 
-Если бэкап упал, `full-backup.sh` шлёт алерт сразу, не дожидаясь 26 часов.
+Если бэкап упал, `full-backup.sh` шлёт алерт сразу, не дожидаясь 26 часов. То же происходит, если `wal-g backup-push` не уложился в `BACKUP_TIMEOUT_HOURS` (по умолчанию 2 часа): `timeout` внутри контейнера останавливает wal-g, скрипт завершается с кодом 1, старые бэкапы не удаляются. Чтобы изменить значение, поставь его перед командой в `/etc/cron.d/studhub-backup`, например `BACKUP_TIMEOUT_HOURS=4 bash …`; повторный запуск `install.sh` вернёт расписание из репозитория. Значение должно быть целым числом часов, не меньше 1.
 
 ### UptimeRobot
 

@@ -27,10 +27,17 @@ for file in .env .env.backup; do
   [ "$mode" = "600" ] || { echo "Права $file: ${mode}, нужны 600. Выполни: chmod 600 $file" >&2; exit 1; }
 done
 
+env_backup_value() { grep -E "^$1=" .env.backup | tail -n 1 | cut -d= -f2- || true; }
+# Telegram: с TELEGRAM_API_URL алерты идут через прокси (токен бота хранится только в Cloudflare), иначе нужен токен бота.
+required="WALG_S3_PREFIX AWS_ENDPOINT AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY WALG_LIBSODIUM_KEY"
+if [ -n "$(env_backup_value TELEGRAM_API_URL)" ]; then
+  required="$required TELEGRAM_PROXY_SECRET"
+else
+  required="$required TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID"
+fi
 missing=""
-for name in WALG_S3_PREFIX AWS_ENDPOINT AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY WALG_LIBSODIUM_KEY TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID; do
-  value="$(grep -E "^${name}=" .env.backup | tail -n 1 | cut -d= -f2- || true)"
-  [ -n "$value" ] || missing="$missing $name"
+for name in $required; do
+  [ -n "$(env_backup_value "$name")" ] || missing="$missing $name"
 done
 [ -z "$missing" ] || { echo "В .env.backup не заданы:$missing" >&2; exit 1; }
 # Ключи бэкапа не должны лежать в .env: этот файл читает контейнер app.

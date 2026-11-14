@@ -47,29 +47,43 @@ export_walg_env() {
   done
 }
 
-# Отправляет текст в Telegram. Токен и адрес передаём curl через stdin, чтобы токен не попал в список процессов.
+# Отправляет текст в Telegram. Секреты и адрес передаём curl через stdin, чтобы они не попали в список процессов.
 # Текст пишем без ПДн: только фиксированные фразы и числа. Код возврата 1, если Telegram не принял сообщение.
+# Два режима. С TELEGRAM_API_URL запрос идёт на прокси `$TELEGRAM_API_URL/send` (infra/telegram-proxy): токен бота хранится только
+# в Cloudflare, здесь он не нужен и не читается, а общий секрет TELEGRAM_PROXY_SECRET уходит заголовком X-Proxy-Secret.
+# Без TELEGRAM_API_URL запрос идёт прямо на api.telegram.org с TELEGRAM_BOT_TOKEN.
 notify() {
-  local token chat base text proxy_secret header
-  token="$(backup_value TELEGRAM_BOT_TOKEN)"
+  local token chat base text proxy_secret url
   chat="$(backup_value TELEGRAM_CHAT_ID)"
   base="$(backup_value TELEGRAM_API_URL)"
-  base="${base:-https://api.telegram.org}"
-  if [ -z "$token" ] || [ -z "$chat" ]; then
-    log "Telegram не настроен: задай TELEGRAM_BOT_TOKEN и TELEGRAM_CHAT_ID в .env.backup." >&2
-    return 1
-  fi
   text="[studhub prod] $1"
   text="${text//\\/\\\\}"
   text="${text//\"/\\\"}"
-  # Если Telegram закрыт с сервера, TELEGRAM_API_URL указывает на прокси (infra/telegram-proxy), а общий секрет уходит заголовком.
-  proxy_secret="$(backup_value TELEGRAM_PROXY_SECRET)"
-  proxy_secret="${proxy_secret//\\/\\\\}"
-  proxy_secret="${proxy_secret//\"/\\\"}"
-  header=""
-  [ -z "$proxy_secret" ] || header="$(printf 'header = "X-Proxy-Secret: %s"\n' "$proxy_secret")"
-  if ! { printf 'url = "%s/bot%s/sendMessage"\ndata-urlencode = "chat_id=%s"\ndata-urlencode = "text=%s"\n' \
-    "$base" "$token" "$chat" "$text"; [ -z "$header" ] || printf '%s\n' "$header"; } | curl -sS -f --max-time 15 -K - -o /dev/null; then
+  if [ -n "$base" ]; then
+    proxy_secret="$(backup_value TELEGRAM_PROXY_SECRET)"
+    if [ -z "$proxy_secret" ]; then
+      log "Telegram не настроен: при TELEGRAM_API_URL задай TELEGRAM_PROXY_SECRET в .env.backup." >&2
+      return 1
+    fi
+    proxy_secret="${proxy_secret//\\/\\\\}"
+    proxy_secret="${proxy_secret//\"/\\\"}"
+    # chat_id необязателен: Worker может хранить его сам.
+    if ! { printf 'url = "%s/send"\nheader = "X-Proxy-Secret: %s"\n' "${base%/}" "$proxy_secret"
+      [ -z "$chat" ] || printf 'data-urlencode = "chat_id=%s"\n' "$chat"
+      printf 'data-urlencode = "text=%s"\n' "$text"; } | curl -sS -f --max-time 15 -K - -o /dev/null; then
+      log "Telegram не принял сообщение." >&2
+      return 1
+    fi
+    return 0
+  fi
+  token="$(backup_value TELEGRAM_BOT_TOKEN)"
+  if [ -z "$token" ] || [ -z "$chat" ]; then
+    log "Telegram не настроен: задай TELEGRAM_BOT_TOKEN и TELEGRAM_CHAT_ID в .env.backup или TELEGRAM_API_URL с TELEGRAM_PROXY_SECRET." >&2
+    return 1
+  fi
+  url="https://api.telegram.org/bot${token}/sendMessage"
+  if ! printf 'url = "%s"\ndata-urlencode = "chat_id=%s"\ndata-urlencode = "text=%s"\n' "$url" "$chat" "$text" \
+    | curl -sS -f --max-time 15 -K - -o /dev/null; then
     log "Telegram не принял сообщение." >&2
     return 1
   fi
