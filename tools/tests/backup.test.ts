@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import YAML from "yaml";
 
@@ -564,6 +565,143 @@ describe("infra/backup/alerts.sh", () => {
     const failed = f.run("alerts.sh", ["--test"], { FAKE_CURL_EXIT: "28" });
     expect(failed.status).toBe(1);
     expect(f.text(failed)).toMatch(/Telegram/);
+  });
+});
+
+describe("прокси Telegram: notify и Cloudflare Worker", () => {
+  const PROXY = "https://proxy.example.test";
+  let f: Fixture;
+  beforeEach(() => {
+    f = fixture();
+  });
+  afterEach(() => rmSync(f.dir, { recursive: true, force: true }));
+
+  const setBackupEnv = (extra: string[]) => {
+    writeFileSync(
+      join(f.dir, ".env.backup"),
+      `${BACKUP_ENV_FILE.replace("TELEGRAM_API_URL=https://telegram.example.test\n", "")}${extra.join("\n")}\n`,
+    );
+  };
+  const stdin = () => f.calls().find((line) => line.startsWith("curl-stdin")) ?? "";
+
+  it("[SH-012 AC-3] с TELEGRAM_API_URL и TELEGRAM_PROXY_SECRET запрос идёт на прокси, секрет уходит заголовком через stdin", () => {
+    setBackupEnv([`TELEGRAM_API_URL=${PROXY}`, "TELEGRAM_PROXY_SECRET=PROXY-SHARED-SECRET"]);
+    const result = f.run("alerts.sh", ["--test"]);
+    expect(result.status, f.text(result)).toBe(0);
+    expect(stdin()).toContain(`url = "${PROXY}/bot${TOKEN}/sendMessage"`);
+    expect(stdin()).toContain('header = "X-Proxy-Secret: PROXY-SHARED-SECRET"');
+    for (const line of f.calls().filter((entry) => entry.startsWith("curl-args"))) {
+      expect(line).not.toContain("PROXY-SHARED-SECRET");
+      expect(line).not.toContain(TOKEN);
+    }
+  });
+
+  it("[SH-012 AC-3] без прокси запрос идёт на api.telegram.org и заголовка с секретом нет", () => {
+    setBackupEnv(["TELEGRAM_API_URL=", "TELEGRAM_PROXY_SECRET="]);
+    const result = f.run("alerts.sh", ["--test"]);
+    expect(result.status, f.text(result)).toBe(0);
+    expect(stdin()).toContain(`url = "https://api.telegram.org/bot${TOKEN}/sendMessage"`);
+    expect(stdin()).not.toContain("X-Proxy-Secret");
+  });
+
+  it("[SH-012 AC-3] шаблон .env.backup.example содержит пустые TELEGRAM_API_URL и TELEGRAM_PROXY_SECRET", () => {
+    const example = read("infra/.env.backup.example");
+    expect(example).toMatch(/^TELEGRAM_API_URL=$/m);
+    expect(example).toMatch(/^TELEGRAM_PROXY_SECRET=$/m);
+  });
+
+  describe("infra/telegram-proxy/worker.js", () => {
+    type Worker = { fetch: (request: Request, env: Record<string, string | undefined>) => Promise<Response> };
+    const SECRET = "PROXY-SHARED-SECRET";
+    const SEND = "https://proxy.example.test/bot123456:ABC-def_1/sendMessage";
+    const realFetch = globalThis.fetch;
+    let upstream: { url: string; init: RequestInit | undefined }[];
+    let worker: Worker;
+
+    beforeEach(async () => {
+      upstream = [];
+      globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+        upstream.push({ url: String(url), init });
+        return new Response('{"ok":true}', { status: 200, headers: { "content-type": "application/json" } });
+      }) as typeof fetch;
+      const module = await import(pathToFileURL(join(repoRoot, "infra/telegram-proxy/worker.js")).href);
+      worker = module.default as Worker;
+    });
+    afterEach(() => {
+      globalThis.fetch = realFetch;
+    });
+
+    const send = (url: string, init: RequestInit & { secret?: string | null } = {}) => {
+      const { secret = SECRET, ...rest } = init;
+      const headers = new Headers(rest.headers);
+      if (secret !== null) headers.set("x-proxy-secret", secret);
+      return worker.fetch(new Request(url, { method: "POST", body: "chat_id=42&text=hi", ...rest, headers }), {
+        PROXY_SECRET: SECRET,
+      });
+    };
+
+    it("[SH-012 AC-3] sendMessage с верным секретом пересылается на api.telegram.org, ответ Telegram возвращается", async () => {
+      const response = await send(SEND, { headers: { "content-type": "application/x-www-form-urlencoded" } });
+      expect(response.status).toBe(200);
+      expect(await response.text()).toBe('{"ok":true}');
+      expect(upstream).toHaveLength(1);
+      expect(upstream[0]?.url).toBe("https://api.telegram.org/bot123456:ABC-def_1/sendMessage");
+      expect(upstream[0]?.init?.method).toBe("POST");
+      expect(new TextDecoder().decode(upstream[0]?.init?.body as ArrayBuffer)).toBe("chat_id=42&text=hi");
+      expect(new Headers(upstream[0]?.init?.headers).has("x-proxy-secret")).toBe(false);
+    });
+
+    it("[SH-012 AC-3] без секрета или с неверным секретом ответ 403 и запрос в Telegram не уходит", async () => {
+      expect((await send(SEND, { secret: null })).status).toBe(403);
+      expect((await send(SEND, { secret: "wrong" })).status).toBe(403);
+      expect((await send(SEND, { secret: "" })).status).toBe(403);
+      expect(upstream).toEqual([]);
+    });
+
+    it("[SH-012 AC-3] если секрет Worker не задан, ответ 500 и запрос в Telegram не уходит", async () => {
+      const response = await worker.fetch(new Request(SEND, { method: "POST", headers: { "x-proxy-secret": "" } }), {});
+      expect(response.status).toBe(500);
+      expect(upstream).toEqual([]);
+    });
+
+    it("[SH-012 AC-3] Worker не открытое реле: другие методы Telegram, пути и методы HTTP получают 404", async () => {
+      for (const url of [
+        "https://proxy.example.test/bot123456:ABC/getUpdates",
+        "https://proxy.example.test/bot123456:ABC/sendMessage/extra",
+        "https://proxy.example.test/bot123456:ABC/sendDocument",
+        "https://proxy.example.test/file/bot123456:ABC/x",
+        "https://proxy.example.test/",
+        "https://proxy.example.test/botabc/sendMessage",
+      ]) {
+        expect((await send(url)).status, url).toBe(404);
+      }
+      const get = await worker.fetch(new Request(SEND, { headers: { "x-proxy-secret": SECRET } }), {
+        PROXY_SECRET: SECRET,
+      });
+      expect(get.status).toBe(404);
+      expect(upstream).toEqual([]);
+    });
+
+    it("[SH-012 AC-3] слишком большое тело отклоняется ответом 413", async () => {
+      const response = await send(SEND, { body: "x".repeat(10_000) });
+      expect(response.status).toBe(413);
+      expect(upstream).toEqual([]);
+    });
+
+    it("[SH-012 AC-3] Worker не пишет в лог токен и текст сообщений", async () => {
+      const logged: unknown[][] = [];
+      const originals = { log: console.log, info: console.info, warn: console.warn, error: console.error };
+      for (const name of ["log", "info", "warn", "error"] as const)
+        console[name] = (...args: unknown[]) => logged.push(args);
+      try {
+        await send(SEND);
+        await send(SEND, { secret: "wrong" });
+      } finally {
+        Object.assign(console, originals);
+      }
+      expect(logged).toEqual([]);
+      expect(read("infra/telegram-proxy/worker.js")).not.toMatch(/console\./);
+    });
   });
 });
 
