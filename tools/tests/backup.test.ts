@@ -43,9 +43,10 @@ const BACKUP_ENV_FILE = [
   "AWS_ACCESS_KEY_ID=SECRET-KEY-ID",
   "AWS_SECRET_ACCESS_KEY=SECRET-ACCESS",
   "WALG_LIBSODIUM_KEY=SECRET-ENC-KEY",
-  `TELEGRAM_BOT_TOKEN=${TOKEN}`,
+  // Алерты идут через прокси: токен бота хранится только в Cloudflare, в .env.backup его нет.
   "TELEGRAM_CHAT_ID=42",
   "TELEGRAM_API_URL=https://telegram.example.test",
+  "TELEGRAM_PROXY_SECRET=PROXY-SHARED-SECRET",
   "",
 ].join("\n");
 
@@ -248,6 +249,7 @@ function fixture(): Fixture {
     "docker",
     `echo "docker $*" >> "${log}"
 if [ -n "\${FAKE_FAIL_ON:-}" ] && [[ "$*" == *"$FAKE_FAIL_ON"* ]]; then exit 1; fi
+if [ -n "\${FAKE_TIMEOUT_ON:-}" ] && [[ "$*" == *"$FAKE_TIMEOUT_ON"* ]]; then exit 124; fi
 if [[ "$*" == *"backup-list"* ]]; then
   [ -n "\${FAKE_LIST_EXIT:-}" ] && exit "$FAKE_LIST_EXIT"
   cat "\${FAKE_BACKUP_LIST:-/dev/null}"
@@ -354,7 +356,7 @@ describe("infra/backup/full-backup.sh", () => {
     const calls = f.calls();
     expect(calls.some((line) => line.includes("delete retain"))).toBe(false);
     const stdin = calls.find((line) => line.startsWith("curl-stdin"));
-    expect(stdin).toContain("https://telegram.example.test/bot");
+    expect(stdin).toContain('url = "https://telegram.example.test/send"');
     expect(stdin).toMatch(/бэкап/iu);
   });
 
@@ -364,6 +366,39 @@ describe("infra/backup/full-backup.sh", () => {
     const result = f.run("full-backup.sh");
     expect(result.status).not.toBe(0);
     expect(f.calls().filter((line) => line.startsWith("docker"))).toEqual([]);
+  });
+
+  const pushLine = () => f.calls().find((line) => /^docker .*backup-push/.test(line)) ?? "";
+
+  it("[SH-012 AC-1] backup-push идёт под timeout: по умолчанию 2 часа, BACKUP_TIMEOUT_HOURS меняет значение", () => {
+    expect(f.run("full-backup.sh").status).toBe(0);
+    expect(pushLine()).toMatch(/timeout .*backup-push.* 7200$/);
+    rmSync(f.log);
+    expect(f.run("full-backup.sh", [], { BACKUP_TIMEOUT_HOURS: "5" }).status).toBe(0);
+    expect(pushLine()).toMatch(/timeout .*backup-push.* 18000$/);
+  });
+
+  it("[SH-012 AC-1] если backup-push не уложился во время (код 124), старые бэкапы не удаляются, код 1, алерт сразу", () => {
+    const result = f.run("full-backup.sh", [], { FAKE_TIMEOUT_ON: "backup-push", BACKUP_TIMEOUT_HOURS: "3" });
+    expect(result.status).toBe(1);
+    const calls = f.calls();
+    expect(calls.some((line) => line.includes("delete retain"))).toBe(false);
+    const stdin = calls.find((line) => line.startsWith("curl-stdin"));
+    expect(stdin).toMatch(/бэкап/iu);
+    expect(stdin).toMatch(/3 ч/u);
+    expect(f.text(result)).toMatch(/не уложился/u);
+  });
+
+  it("[SH-012 AC-1] BACKUP_TIMEOUT_HOURS не число: отказ до вызова docker", () => {
+    for (const bad of ["abc", "0", "-1", "1.5"]) {
+      rmSync(f.log, { force: true });
+      const result = f.run("full-backup.sh", [], { BACKUP_TIMEOUT_HOURS: bad });
+      expect(result.status, bad).toBe(2);
+      expect(
+        f.calls().filter((line) => line.startsWith("docker")),
+        bad,
+      ).toEqual([]);
+    }
   });
 
   for (const name of REQUIRED_BACKUP_NAMES) {
@@ -768,44 +803,125 @@ describe("прокси Telegram: notify и Cloudflare Worker", () => {
   });
   afterEach(() => rmSync(f.dir, { recursive: true, force: true }));
 
+  // Переписывает строки Telegram в .env.backup: остальные значения остаются из шаблона теста.
   const setBackupEnv = (extra: string[]) => {
-    writeFileSync(
-      join(f.dir, ".env.backup"),
-      `${BACKUP_ENV_FILE.replace("TELEGRAM_API_URL=https://telegram.example.test\n", "")}${extra.join("\n")}\n`,
-    );
+    const kept = BACKUP_ENV_FILE.split("\n").filter((line) => !/^TELEGRAM_/.test(line));
+    writeFileSync(join(f.dir, ".env.backup"), `${kept.join("\n")}${extra.join("\n")}\n`);
   };
   const stdin = () => f.calls().find((line) => line.startsWith("curl-stdin")) ?? "";
 
-  it("[SH-012 AC-3] с TELEGRAM_API_URL и TELEGRAM_PROXY_SECRET запрос идёт на прокси, секрет уходит заголовком через stdin", () => {
-    setBackupEnv([`TELEGRAM_API_URL=${PROXY}`, "TELEGRAM_PROXY_SECRET=PROXY-SHARED-SECRET"]);
+  it("[SH-012 AC-3] с TELEGRAM_API_URL запрос идёт на $TELEGRAM_API_URL/send, секрет прокси уходит заголовком через stdin", () => {
+    setBackupEnv([`TELEGRAM_API_URL=${PROXY}`, "TELEGRAM_PROXY_SECRET=PROXY-SHARED-SECRET", "TELEGRAM_CHAT_ID=42"]);
     const result = f.run("alerts.sh", ["--test"]);
     expect(result.status, f.text(result)).toBe(0);
-    expect(stdin()).toContain(`url = "${PROXY}/bot${TOKEN}/sendMessage"`);
+    expect(stdin()).toContain(`url = "${PROXY}/send"`);
     expect(stdin()).toContain('header = "X-Proxy-Secret: PROXY-SHARED-SECRET"');
+    expect(stdin()).toContain("chat_id=42");
     for (const line of f.calls().filter((entry) => entry.startsWith("curl-args"))) {
       expect(line).not.toContain("PROXY-SHARED-SECRET");
-      expect(line).not.toContain(TOKEN);
     }
   });
 
-  it("[SH-012 AC-3] без прокси запрос идёт на api.telegram.org и заголовка с секретом нет", () => {
-    setBackupEnv(["TELEGRAM_API_URL=", "TELEGRAM_PROXY_SECRET="]);
+  it("[SH-012 AC-3] в режиме прокси токен бота не нужен и не используется, даже если он есть в .env.backup", () => {
+    setBackupEnv([
+      `TELEGRAM_API_URL=${PROXY}`,
+      "TELEGRAM_PROXY_SECRET=PROXY-SHARED-SECRET",
+      "TELEGRAM_CHAT_ID=42",
+      `TELEGRAM_BOT_TOKEN=${TOKEN}`,
+    ]);
+    const result = f.run("alerts.sh", ["--test"]);
+    expect(result.status, f.text(result)).toBe(0);
+    expect(f.calls().join("\n")).not.toContain(TOKEN);
+    expect(stdin()).not.toContain("/bot");
+  });
+
+  it("[SH-012 AC-3] в режиме прокси chat id можно не задавать: его фиксирует Worker", () => {
+    setBackupEnv([`TELEGRAM_API_URL=${PROXY}`, "TELEGRAM_PROXY_SECRET=PROXY-SHARED-SECRET"]);
+    const result = f.run("alerts.sh", ["--test"]);
+    expect(result.status, f.text(result)).toBe(0);
+    expect(stdin()).not.toContain("chat_id");
+    expect(stdin()).toContain("text=");
+  });
+
+  it("[SH-012 AC-3] TELEGRAM_API_URL без TELEGRAM_PROXY_SECRET: отказ без запроса", () => {
+    setBackupEnv([`TELEGRAM_API_URL=${PROXY}`, "TELEGRAM_PROXY_SECRET="]);
+    const result = f.run("alerts.sh", ["--test"]);
+    expect(result.status).toBe(1);
+    expect(f.calls().some((line) => line.startsWith("curl"))).toBe(false);
+    expect(f.text(result)).toContain("TELEGRAM_PROXY_SECRET");
+  });
+
+  it("[SH-012 AC-3] без прокси запрос идёт на api.telegram.org с токеном через stdin и без заголовка с секретом", () => {
+    setBackupEnv(["TELEGRAM_API_URL=", "TELEGRAM_PROXY_SECRET=", "TELEGRAM_CHAT_ID=42", `TELEGRAM_BOT_TOKEN=${TOKEN}`]);
     const result = f.run("alerts.sh", ["--test"]);
     expect(result.status, f.text(result)).toBe(0);
     expect(stdin()).toContain(`url = "https://api.telegram.org/bot${TOKEN}/sendMessage"`);
     expect(stdin()).not.toContain("X-Proxy-Secret");
+    for (const line of f.calls().filter((entry) => entry.startsWith("curl-args"))) {
+      expect(line).not.toContain(TOKEN);
+    }
   });
 
-  it("[SH-012 AC-3] шаблон .env.backup.example содержит пустые TELEGRAM_API_URL и TELEGRAM_PROXY_SECRET", () => {
-    const example = read("infra/.env.backup.example");
-    expect(example).toMatch(/^TELEGRAM_API_URL=$/m);
-    expect(example).toMatch(/^TELEGRAM_PROXY_SECRET=$/m);
+  it("[SH-012 AC-3] без прокси и без токена бота: отказ без запроса", () => {
+    setBackupEnv(["TELEGRAM_API_URL=", "TELEGRAM_CHAT_ID=42"]);
+    const result = f.run("alerts.sh", ["--test"]);
+    expect(result.status).toBe(1);
+    expect(f.calls().some((line) => line.startsWith("curl"))).toBe(false);
+  });
+
+  describe("install.sh и шаблон", () => {
+    const install = (extra: string[], drop: string[] = []) => {
+      const dir = mkdtempSync(join(tmpdir(), "install-"));
+      try {
+        const kept = BACKUP_ENV_FILE.replace("SECRET-ENC-KEY", "a".repeat(64))
+          .split("\n")
+          .filter((line) => !/^TELEGRAM_/.test(line) && !drop.some((name) => line.startsWith(`${name}=`)));
+        writeFileSync(join(dir, ".env"), ENV_FILE);
+        writeFileSync(join(dir, ".env.backup"), `${kept.join("\n")}${extra.join("\n")}\n`);
+        chmodSync(join(dir, ".env"), 0o600);
+        chmodSync(join(dir, ".env.backup"), 0o600);
+        return spawnSync("bash", [script("install.sh")], {
+          encoding: "utf8",
+          env: { ...process.env, DEPLOY_DIR: dir, CA_BUNDLE: join(dir, ".env") },
+        });
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    };
+
+    // Чтобы скрипт не пошёл скачивать wal-g, в каждом сценарии убрана AWS_REGION: проверяется список недостающих значений.
+    it("[SH-012 AC-3] в режиме прокси install.sh не требует TELEGRAM_BOT_TOKEN", () => {
+      const result = install([`TELEGRAM_API_URL=${PROXY}`, "TELEGRAM_PROXY_SECRET=s"], ["AWS_REGION"]);
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain("AWS_REGION");
+      expect(result.stderr).not.toContain("TELEGRAM_BOT_TOKEN");
+      expect(result.stderr).not.toContain("TELEGRAM_CHAT_ID");
+    });
+
+    it("[SH-012 AC-3] в режиме прокси install.sh требует TELEGRAM_PROXY_SECRET", () => {
+      const result = install([`TELEGRAM_API_URL=${PROXY}`, "TELEGRAM_PROXY_SECRET="], ["AWS_REGION"]);
+      expect(result.stderr).toContain("TELEGRAM_PROXY_SECRET");
+    });
+
+    it("[SH-012 AC-3] без прокси install.sh требует TELEGRAM_BOT_TOKEN и TELEGRAM_CHAT_ID", () => {
+      const result = install(["TELEGRAM_API_URL="], ["AWS_REGION"]);
+      expect(result.stderr).toContain("TELEGRAM_BOT_TOKEN");
+      expect(result.stderr).toContain("TELEGRAM_CHAT_ID");
+    });
+
+    it("[SH-012 AC-3] шаблон .env.backup.example содержит пустые TELEGRAM_API_URL и TELEGRAM_PROXY_SECRET", () => {
+      const example = read("infra/.env.backup.example");
+      expect(example).toMatch(/^TELEGRAM_API_URL=$/m);
+      expect(example).toMatch(/^TELEGRAM_PROXY_SECRET=$/m);
+    });
   });
 
   describe("infra/telegram-proxy/worker.js", () => {
     type Worker = { fetch: (request: Request, env: Record<string, string | undefined>) => Promise<Response> };
     const SECRET = "PROXY-SHARED-SECRET";
-    const SEND = "https://proxy.example.test/bot123456:ABC-def_1/sendMessage";
+    const BOT_TOKEN = "123456:ABC-def_1";
+    const SEND = "https://proxy.example.test/send";
+    const baseEnv = { PROXY_SECRET: SECRET, TELEGRAM_BOT_TOKEN: BOT_TOKEN };
     const realFetch = globalThis.fetch;
     let upstream: { url: string; init: RequestInit | undefined }[];
     let worker: Worker;
@@ -823,24 +939,46 @@ describe("прокси Telegram: notify и Cloudflare Worker", () => {
       globalThis.fetch = realFetch;
     });
 
-    const send = (url: string, init: RequestInit & { secret?: string | null } = {}) => {
-      const { secret = SECRET, ...rest } = init;
+    const send = (
+      url: string,
+      init: RequestInit & { secret?: string | null; env?: Record<string, string | undefined> } = {},
+    ) => {
+      const { secret = SECRET, env = baseEnv, ...rest } = init;
       const headers = new Headers(rest.headers);
       if (secret !== null) headers.set("x-proxy-secret", secret);
-      return worker.fetch(new Request(url, { method: "POST", body: "chat_id=42&text=hi", ...rest, headers }), {
-        PROXY_SECRET: SECRET,
-      });
+      return worker.fetch(new Request(url, { method: "POST", body: "chat_id=42&text=hi", ...rest, headers }), env);
     };
+    const upstreamBody = () => JSON.parse(String(upstream[0]?.init?.body)) as Record<string, unknown>;
 
-    it("[SH-012 AC-3] sendMessage с верным секретом пересылается на api.telegram.org, ответ Telegram возвращается", async () => {
+    it("[SH-012 AC-3] POST /send с верным секретом пересылается на sendMessage с токеном из окружения, ответ Telegram возвращается как есть", async () => {
       const response = await send(SEND, { headers: { "content-type": "application/x-www-form-urlencoded" } });
       expect(response.status).toBe(200);
       expect(await response.text()).toBe('{"ok":true}');
       expect(upstream).toHaveLength(1);
-      expect(upstream[0]?.url).toBe("https://api.telegram.org/bot123456:ABC-def_1/sendMessage");
+      expect(upstream[0]?.url).toBe(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`);
       expect(upstream[0]?.init?.method).toBe("POST");
-      expect(new TextDecoder().decode(upstream[0]?.init?.body as ArrayBuffer)).toBe("chat_id=42&text=hi");
+      expect(upstreamBody()).toEqual({ chat_id: "42", text: "hi" });
       expect(new Headers(upstream[0]?.init?.headers).has("x-proxy-secret")).toBe(false);
+    });
+
+    it("[SH-012 AC-3] тело в JSON тоже принимается, лишние поля не пересылаются", async () => {
+      const response = await send(SEND, {
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ chat_id: 42, text: "hi", parse_mode: "HTML", disable_notification: true }),
+      });
+      expect(response.status).toBe(200);
+      expect(upstreamBody()).toEqual({ chat_id: "42", text: "hi" });
+    });
+
+    it("[SH-012 AC-3] ответ ошибки Telegram возвращается с тем же кодом и телом", async () => {
+      globalThis.fetch = (async () =>
+        new Response('{"ok":false,"description":"chat not found"}', {
+          status: 400,
+          headers: { "content-type": "application/json" },
+        })) as typeof fetch;
+      const response = await send(SEND);
+      expect(response.status).toBe(400);
+      expect(await response.text()).toBe('{"ok":false,"description":"chat not found"}');
     });
 
     it("[SH-012 AC-3] без секрета или с неверным секретом ответ 403 и запрос в Telegram не уходит", async () => {
@@ -851,32 +989,65 @@ describe("прокси Telegram: notify и Cloudflare Worker", () => {
     });
 
     it("[SH-012 AC-3] если секрет Worker не задан, ответ 500 и запрос в Telegram не уходит", async () => {
-      const response = await worker.fetch(new Request(SEND, { method: "POST", headers: { "x-proxy-secret": "" } }), {});
+      const response = await send(SEND, { secret: "", env: { TELEGRAM_BOT_TOKEN: BOT_TOKEN } });
       expect(response.status).toBe(500);
       expect(upstream).toEqual([]);
     });
 
-    it("[SH-012 AC-3] Worker не открытое реле: другие методы Telegram, пути и методы HTTP получают 404", async () => {
+    it("[SH-012 AC-3] если токен бота не задан в окружении Worker, ответ 500 и запрос в Telegram не уходит", async () => {
+      const response = await send(SEND, { env: { PROXY_SECRET: SECRET } });
+      expect(response.status).toBe(500);
+      expect(upstream).toEqual([]);
+    });
+
+    it("[SH-012 AC-3] токен из пути запроса игнорируется: пути с /bot... получают 404", async () => {
+      const response = await send("https://proxy.example.test/bot999:EVIL/sendMessage");
+      expect(response.status).toBe(404);
+      expect(upstream).toEqual([]);
+    });
+
+    it("[SH-012 AC-3] Worker не открытое реле: другие пути и методы HTTP получают 404", async () => {
       for (const url of [
-        "https://proxy.example.test/bot123456:ABC/getUpdates",
-        "https://proxy.example.test/bot123456:ABC/sendMessage/extra",
-        "https://proxy.example.test/bot123456:ABC/sendDocument",
-        "https://proxy.example.test/file/bot123456:ABC/x",
+        "https://proxy.example.test/send/extra",
+        "https://proxy.example.test/sendMessage",
+        "https://proxy.example.test/getUpdates",
         "https://proxy.example.test/",
-        "https://proxy.example.test/botabc/sendMessage",
       ]) {
         expect((await send(url)).status, url).toBe(404);
       }
-      const get = await worker.fetch(new Request(SEND, { headers: { "x-proxy-secret": SECRET } }), {
-        PROXY_SECRET: SECRET,
-      });
-      expect(get.status).toBe(404);
+      for (const method of ["GET", "PUT", "DELETE"]) {
+        const response = await worker.fetch(
+          new Request(SEND, { method, headers: { "x-proxy-secret": SECRET } }),
+          baseEnv,
+        );
+        expect(response.status, method).toBe(404);
+      }
       expect(upstream).toEqual([]);
     });
 
     it("[SH-012 AC-3] слишком большое тело отклоняется ответом 413", async () => {
-      const response = await send(SEND, { body: "x".repeat(10_000) });
+      const response = await send(SEND, { body: `chat_id=42&text=${"x".repeat(10_000)}` });
       expect(response.status).toBe(413);
+      expect(upstream).toEqual([]);
+    });
+
+    it("[SH-012 AC-3] без text ответ 400 и запрос в Telegram не уходит", async () => {
+      expect((await send(SEND, { body: "chat_id=42" })).status).toBe(400);
+      expect(upstream).toEqual([]);
+    });
+
+    it("[SH-012 AC-3] TELEGRAM_CHAT_ID в окружении Worker: запрос может не передавать chat_id, чужой chat_id отклоняется", async () => {
+      const env = { ...baseEnv, TELEGRAM_CHAT_ID: "777" };
+      expect((await send(SEND, { env, body: "text=hi" })).status).toBe(200);
+      expect(upstreamBody()).toEqual({ chat_id: "777", text: "hi" });
+      upstream.length = 0;
+      expect((await send(SEND, { env, body: "chat_id=777&text=hi" })).status).toBe(200);
+      expect((await send(SEND, { env, body: "chat_id=42&text=hi" })).status).toBe(403);
+      expect(upstream).toHaveLength(1);
+    });
+
+    it("[SH-012 AC-3] без chat_id в запросе и в окружении ответ 400", async () => {
+      expect((await send(SEND, { body: "text=hi" })).status).toBe(400);
       expect(upstream).toEqual([]);
     });
 
@@ -898,6 +1069,15 @@ describe("прокси Telegram: notify и Cloudflare Worker", () => {
 });
 
 describe("infra/README.md", () => {
+  it("[SH-012 AC-3] раздел о прокси Telegram: токен хранится только в Cloudflare, адрес /send", () => {
+    const text = read("infra/README.md");
+    expect(text).toContain("TELEGRAM_BOT_TOKEN");
+    expect(text).toContain("/send");
+    expect(text).toMatch(/токен[^.]*только в Cloudflare/iu);
+    expect(text).not.toContain("Токен бота виден Cloudflare");
+    expect(text).toContain("BACKUP_TIMEOUT_HOURS");
+  });
+
   it("[SH-012 AC-5] описывает восстановление на момент времени командами из infra/backup", () => {
     const text = read("infra/README.md");
     expect(text).toContain("restore-check.sh --target-time");
