@@ -2705,6 +2705,31 @@ describe("factory: list", () => {
     expect(claudeCalls(s)).toHaveLength(0);
   });
 
+  it("[SH-104 AC-9] run после выноса отбора: те же кандидаты, что у list, а run по номеру запускает воркера как раньше", () => {
+    const s = makeRepo([
+      { id: "SH-901", title: "Первая", priority: "high" },
+      { id: "SH-902", title: "Вторая" },
+      { id: "SH-903", title: "Ждущая", deps: ["SH-910"] },
+    ]);
+
+    const picked = runFactory(s, s.work, ["run"], { input: "\n" });
+    const listedOut = listed(s);
+
+    expect(picked.code).toBe(0);
+    for (const id of ["SH-901", "SH-902"]) {
+      expect(picked.out).toMatch(new RegExp(`^\\d+\\. ${id} `, "m"));
+      expect(rowsOf(listedOut.out).some((row) => row.startsWith(`${id}\t`))).toBe(true);
+    }
+    expect(picked.out).not.toMatch(/^\d+\. SH-903 /m);
+    expect(claudeCalls(s)).toHaveLength(0);
+
+    const started = runFactory(s, s.work, ["run", "SH-901"]);
+
+    expect(started.code).toBe(0);
+    expect(started.out).toContain("SH-901: воркер запущен");
+    expect(claudeCalls(s)).toHaveLength(1);
+  }, 30_000);
+
   it("[SH-104 AC-5] кандидатов нет: первая строка «Задач в Ready нет», блок ожидающих после неё, код 0", () => {
     const s = makeRepo([
       { id: "SH-903", title: "Ждущая", deps: ["SH-911"] },
