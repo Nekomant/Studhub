@@ -172,8 +172,8 @@ jobs:
       # Файлы infra лежат в репозитории: сервер всегда выкладывает ту версию compose и Caddyfile, что в этом коммите.
       - name: Файлы infra на сервер
         run: >-
-          scp -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes
-          infra/docker-compose.prod.yml infra/Caddyfile infra/deploy.sh "$DEPLOY_TARGET":/srv/studhub/
+          scp -r -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes
+          infra/docker-compose.prod.yml infra/Caddyfile infra/deploy.sh infra/backup "$DEPLOY_TARGET":/srv/studhub/
 
       - name: Выкладка образа
         run: >-
