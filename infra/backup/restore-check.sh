@@ -82,6 +82,12 @@ attempts="${RESTORE_WAIT_ATTEMPTS:-120}"
 for ((i = 1; i <= attempts; i++)); do
   state="$(docker exec "$container" psql -U "$db_user" -d "$db_name" -Atc "select pg_is_in_recovery()" 2>/dev/null || true)"
   if [ "$state" = "f" ]; then ready=1; break; fi
+  # Контейнер упал (например, неверный параметр восстановления): ждать нечего.
+  running="$(docker inspect -f '{{.State.Running}}' "$container" 2>/dev/null || echo false)"
+  if [ "$running" != "true" ]; then
+    docker logs --tail 20 "$container" >&2 2>&1 || true
+    fail_check "контейнер копии остановился, см. лог выше"
+  fi
   [ "$i" -lt "$attempts" ] && sleep "${RESTORE_WAIT_INTERVAL:-5}"
 done
 [ -n "$ready" ] || fail_check "копия не закончила восстановление вовремя"

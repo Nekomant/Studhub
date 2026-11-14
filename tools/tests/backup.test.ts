@@ -218,7 +218,15 @@ if [[ "$*" == *"query_to_xml"* ]]; then
   if [[ "$*" == compose* ]]; then cat "\${FAKE_PROD_COUNTS}"; else cat "\${FAKE_RESTORED_COUNTS}"; fi
   exit 0
 fi
-if [[ "$*" == *"pg_is_in_recovery"* ]]; then echo f; exit 0; fi
+if [[ "$*" == *"pg_is_in_recovery"* ]]; then
+  [ -n "\${FAKE_NOT_READY:-}" ] && exit 1
+  echo f; exit 0
+fi
+if [[ "$1" == inspect ]]; then
+  [ -n "\${FAKE_CONTAINER_DEAD:-}" ] && echo false || echo true
+  exit 0
+fi
+if [[ "$1" == logs ]]; then echo "FATAL: invalid value for parameter recovery_target_time"; exit 0; fi
 exit 0`,
   );
   // curl: аргументы и stdin (конфиг с адресом и текстом) пишутся в журнал раздельно.
@@ -464,6 +472,107 @@ describe("infra/backup/restore-check.sh", () => {
     expect(f.text(result)).toContain("public.a|1");
     // Проверка на момент времени не меняет статус еженедельной проверки.
     expect(existsSync(join(f.state, "restore-check.status"))).toBe(false);
+  });
+
+  it("[SH-012 AC-2] если контейнер копии остановился, скрипт сразу падает с логом контейнера, а не ждёт все попытки", () => {
+    const result = check({ FAKE_NOT_READY: "1", FAKE_CONTAINER_DEAD: "1", RESTORE_WAIT_ATTEMPTS: "50" });
+    expect(result.status).toBe(1);
+    const calls = f.calls();
+    expect(calls.filter((line) => /^docker inspect /.test(line)).length).toBe(1);
+    expect(calls.some((line) => /^docker logs /.test(line))).toBe(true);
+    expect(f.text(result)).toContain("FATAL: invalid value for parameter recovery_target_time");
+    expect(f.text(result)).toMatch(/остановился/u);
+    expect(status()).toMatch(/^fail \d+/);
+    expect(calls.some((line) => line.startsWith("curl-stdin"))).toBe(true);
+  });
+
+  it("[SH-012 AC-2] если копия жива, но не вышла из восстановления за все попытки, статус fail", () => {
+    const result = check({ FAKE_NOT_READY: "1", RESTORE_WAIT_ATTEMPTS: "3" });
+    expect(result.status).toBe(1);
+    expect(f.calls().filter((line) => /^docker inspect /.test(line)).length).toBe(3);
+    expect(f.text(result)).toMatch(/вовремя/u);
+    expect(status()).toMatch(/^fail \d+/);
+  });
+
+  it("[SH-012 AC-5] провал --target-time не затирает статус еженедельной проверки", () => {
+    writeFileSync(join(f.state, "restore-check.status"), "ok 1\n");
+    const result = check({ FAKE_NOT_READY: "1", FAKE_CONTAINER_DEAD: "1" }, ["--target-time", "2026-11-14T10:00:00Z"]);
+    expect(result.status).toBe(1);
+    expect(status()).toBe("ok 1");
+    expect(f.calls().some((line) => line.startsWith("curl-stdin"))).toBe(false);
+  });
+
+  it("[SH-012 AC-5] --target-time принимает только UTC в формате YYYY-MM-DDTHH:MM:SSZ", () => {
+    for (const bad of ["2026-11-14 12:48:09+00", "2026-11-14", "12:48"]) {
+      const result = check({}, ["--target-time", bad]);
+      expect(result.status, bad).toBe(2);
+    }
+    expect(f.calls()).toEqual([]);
+  });
+});
+
+// restore-fetch.sh работает внутри контейнера postgres; здесь gosu, install и wal-g подменены.
+describe("infra/backup/restore-fetch.sh", () => {
+  let f: Fixture;
+  beforeEach(() => {
+    f = fixture();
+    const fake = (name: string, body: string) => {
+      writeFileSync(join(f.bin, name), `#!/usr/bin/env bash\n${body}\n`);
+      chmodSync(join(f.bin, name), 0o755);
+    };
+    fake("gosu", 'shift\nexec "$@"');
+    fake("install", 'mkdir -p "${@: -1}"');
+    fake(
+      "wal-g",
+      `echo "wal-g $*" >> "${f.log}"
+if [ "$1" = backup-list ]; then
+  echo "name modified wal_segment_backup_start"
+  echo "base_early 2026-11-14T08:00:00Z 000000010000000000000003"
+  echo "base_late 2026-11-14T12:00:00Z 000000010000000000000009"
+fi`,
+    );
+  });
+  afterEach(() => rmSync(f.dir, { recursive: true, force: true }));
+
+  const pgdata = () => join(f.dir, "pgdata");
+  const fetch = (env: Record<string, string> = {}) =>
+    f.run("restore-fetch.sh", [], { WALG_BIN: join(f.bin, "wal-g"), PGDATA: pgdata(), ...env });
+  const conf = () => readFileSync(join(pgdata(), "postgresql.auto.conf"), "utf8");
+
+  it("[SH-012 AC-5] записывает recovery_target_time в формате Postgres: пробел вместо T и +00 вместо Z", () => {
+    const result = fetch({ RESTORE_TARGET_TIME: "2026-11-14T12:48:09Z" });
+    expect(result.status, f.text(result)).toBe(0);
+    expect(conf()).toContain("recovery_target_time = '2026-11-14 12:48:09+00'");
+    expect(conf()).not.toMatch(/recovery_target_time = '[^']*[TZ]/);
+    expect(conf()).toContain("recovery_target_action = 'promote'");
+    expect(existsSync(join(pgdata(), "recovery.signal"))).toBe(true);
+  });
+
+  it("[SH-012 AC-5] берёт последний бэкап не позже выбранного момента", () => {
+    expect(fetch({ RESTORE_TARGET_TIME: "2026-11-14T12:48:09Z" }).status).toBe(0);
+    expect(f.calls().some((line) => line.endsWith("backup-fetch " + pgdata() + " base_late"))).toBe(true);
+    rmSync(f.log);
+    expect(fetch({ RESTORE_TARGET_TIME: "2026-11-14T10:00:00Z" }).status).toBe(0);
+    expect(f.calls().some((line) => line.endsWith("backup-fetch " + pgdata() + " base_early"))).toBe(true);
+  });
+
+  it("[SH-012 AC-5] отказывает, если до выбранного момента бэкапа нет", () => {
+    const result = fetch({ RESTORE_TARGET_TIME: "2026-11-14T07:00:00Z" });
+    expect(result.status).toBe(1);
+    expect(f.calls().some((line) => line.includes("backup-fetch"))).toBe(false);
+  });
+
+  it("[SH-012 AC-5] отказывает на времени не в формате UTC с T и Z", () => {
+    const result = fetch({ RESTORE_TARGET_TIME: "2026-11-14 12:48:09+00" });
+    expect(result.status).toBe(2);
+    expect(f.calls()).toEqual([]);
+  });
+
+  it("[SH-012 AC-2] без времени не пишет recovery_target_time и берёт LATEST", () => {
+    const result = fetch();
+    expect(result.status, f.text(result)).toBe(0);
+    expect(conf()).not.toContain("recovery_target_time");
+    expect(f.calls().some((line) => line.endsWith("backup-fetch " + pgdata() + " LATEST"))).toBe(true);
   });
 });
 

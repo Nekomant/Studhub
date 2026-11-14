@@ -5,7 +5,7 @@
 # RESTORE_TARGET_TIME (UTC, YYYY-MM-DDTHH:MM:SSZ): взять последний бэкап не позже этого момента и остановить восстановление на нём.
 set -euo pipefail
 
-WALG=/opt/walg/wal-g
+WALG="${WALG_BIN:-/opt/walg/wal-g}" # WALG_BIN нужен только тестам
 PGDATA="${PGDATA:-/var/lib/postgresql/18/docker}"
 name="${RESTORE_BACKUP_NAME:-LATEST}"
 target="${RESTORE_TARGET_TIME:-}"
@@ -13,6 +13,12 @@ target="${RESTORE_TARGET_TIME:-}"
 if [ -n "$target" ] && [[ ! "$target" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]; then
   echo "RESTORE_TARGET_TIME должен быть в UTC: YYYY-MM-DDTHH:MM:SSZ" >&2
   exit 2
+fi
+
+pg_target=""
+if [ -n "$target" ]; then
+  pg_target="${target%Z}"
+  pg_target="${pg_target/T/ }+00"
 fi
 
 if [ -n "$target" ] && [ "$name" = "LATEST" ]; then
@@ -32,6 +38,7 @@ gosu postgres touch "$PGDATA/recovery.signal"
 {
   echo "restore_command = '$WALG wal-fetch %f %p'"
   echo "recovery_target_action = 'promote'"
-  [ -z "$target" ] || echo "recovery_target_time = '$target'"
+  # Postgres не принимает «T» и «Z» в recovery_target_time: пишем «YYYY-MM-DD HH:MM:SS+00».
+  [ -z "$target" ] || echo "recovery_target_time = '${pg_target}'"
 } | gosu postgres tee -a "$PGDATA/postgresql.auto.conf" >/dev/null
 echo "Готово: данные в $PGDATA, при первом запуске Postgres доиграет WAL"
