@@ -1,5 +1,14 @@
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -49,6 +58,45 @@ describe("Dockerfile", () => {
     expect(last).not.toMatch(/pnpm\s+install/);
     expect(last).toMatch(/ENV[\s\S]*?WEB_ROOT=/);
     expect(last).toMatch(/ENTRYPOINT\s+\[[^\]]*"node"/);
+  });
+
+  it("[SH-103 AC-1] в этапе build манифесты копируются до pnpm install, а COPY . . идёт после", () => {
+    const build = stages()[0] ?? "";
+    // Склеиваем продолжения строк, чтобы многострочный RUN считался одной инструкцией.
+    const lines = build
+      .replace(/\\\n/g, " ")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => /^(COPY|RUN)\s/.test(line) && !line.includes("--from="));
+    const installAt = lines.findIndex((line) => /^RUN\s.*pnpm\s+install/.test(line));
+    expect(installAt).toBeGreaterThan(-1);
+    const before = lines.slice(0, installAt).filter((line) => line.startsWith("COPY"));
+    const after = lines.slice(installAt + 1);
+
+    const workspace = YAML.parse(read("pnpm-workspace.yaml")) as { packages: string[] };
+    const dirs = workspace.packages
+      .filter((pattern) => /^(apps|packages)\/\*$/.test(pattern))
+      .flatMap((pattern) => {
+        const parent = pattern.replace("/*", "");
+        return readdirSync(join(repoRoot, parent), { withFileTypes: true })
+          .filter((entry) => entry.isDirectory() && existsSync(join(repoRoot, parent, entry.name, "package.json")))
+          .map((entry) => `${parent}/${entry.name}`);
+      });
+    expect(dirs.length).toBeGreaterThan(0);
+    const required = [
+      "package.json",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      ...dirs.map((dir) => `${dir}/package.json`),
+    ];
+    for (const file of required) {
+      expect(
+        before.some((line) => line.split(/\s+/).includes(file)),
+        `COPY ${file} должен стоять выше pnpm install`,
+      ).toBe(true);
+    }
+    expect(before.some((line) => /^COPY\s+(--\S+\s+)*\.\s+\.(\s|$)/.test(line))).toBe(false);
+    expect(after.some((line) => /^COPY\s+(--\S+\s+)*\.\s+\.(\s|$)/.test(line))).toBe(true);
   });
 
   it("[SH-011 AC-1] в образе есть HEALTHCHECK на /healthz", () => {
