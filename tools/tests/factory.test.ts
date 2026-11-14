@@ -7,6 +7,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  symlinkSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
@@ -23,6 +24,7 @@ import { afterAll, describe, expect, it } from "vitest";
 // Настоящая модель и настоящий `pnpm install` не запускаются. ID задач в фикстурах из диапазона SH-9xx.
 // SH-093: AC-15 проверяется в ревью, AC-14 лежит в tools/tests/docs-dedup.test.ts.
 // SH-098: AC-17, AC-18 и AC-19 ручные, AC-22 проверяется в ревью.
+// SH-094: `osascript` подменяется скриптом в PATH (журнал `<FAKE_LOG>.osa`), AC-12 ручной, AC-14 проверяется в ревью.
 
 const repoRoot = resolve(import.meta.dirname, "../..");
 const script = join(repoRoot, "scripts/factory.mjs");
@@ -79,7 +81,7 @@ const reply = {
   subtype: "success",
   is_error: false,
   result: env.FAKE_CLAUDE_RESULT ?? "СТОП " + id + ": заглушка",
-  session_id: env.FAKE_CLAUDE_SESSION === "same" ? after("--session-id") : "other-session",
+  session_id: env.FAKE_CLAUDE_SESSION === "same" ? after("--session-id") || after("--resume") : "other-session",
   total_cost_usd: Number(env.FAKE_CLAUDE_COST ?? 0),
   permission_denials: [],
 };
@@ -88,6 +90,17 @@ process.exitCode = Number(env.FAKE_CLAUDE_EXIT ?? 0);
 `,
 );
 chmodSync(join(fakeBin, "claude"), 0o755);
+
+// Подставной osascript (SH-094): строка JSON со списком аргументов в `<FAKE_LOG>.osa`.
+// С FAKE_OSASCRIPT_FAIL завершается с кодом 1.
+writeFileSync(
+  join(fakeBin, "osascript"),
+  `#!/usr/bin/env node
+require("node:fs").appendFileSync(process.env.FAKE_LOG + ".osa", JSON.stringify(process.argv.slice(2)) + "\\n");
+process.exitCode = process.env.FAKE_OSASCRIPT_FAIL ? 1 : 0;
+`,
+);
+chmodSync(join(fakeBin, "osascript"), 0o755);
 
 type FixtureTask = {
   id: string;
@@ -236,6 +249,7 @@ function runFactory(
 ) {
   writeFileSync(scenario.log, "");
   writeFileSync(`${scenario.log}.claude`, "");
+  writeFileSync(`${scenario.log}.osa`, "");
   const started = Date.now();
   const result = spawnSync(process.execPath, [script, ...args], {
     cwd,
@@ -328,7 +342,8 @@ describe("factory: выбор кандидатов", () => {
         workOnly: [{ id: "SH-908", title: "Только в папке" }],
       },
     );
-    seedRecord(s, "SH-906", "в работе");
+    // Этап не «в работе»: у такой записи без живого процесса SH-094 AC-11 меняет этап на «ошибка».
+    seedRecord(s, "SH-906", "стоп");
     return s;
   };
 
@@ -493,8 +508,8 @@ describe("factory: run SH-NNN", () => {
     {
       name: "есть запись на другом этапе",
       id: "SH-906",
-      reason: /этапе «в работе»/,
-      setup: (s) => seedRecord(s, "SH-906", "в работе"),
+      reason: /этапе «стоп»/,
+      setup: (s) => seedRecord(s, "SH-906", "стоп"),
     },
   ];
 
@@ -1038,7 +1053,8 @@ describe("factory: run SH-NNN после подготовки", () => {
     expect(readTasks(s)["SH-901"]?.stage).toBe("стоп");
   }, 20_000);
 
-  it.each(["в работе", "готово", "стоп", "ошибка"])(
+  // SH-094 AC-11: «в работе» без живого процесса становится «ошибка», поэтому этап «в работе» проверяется отдельно.
+  it.each(["готово", "стоп", "ошибка"])(
     "[SH-098 AC-4] запись на этапе «%s»: причина, код 1, воркер не запущен",
     (stage) => {
       const s = happy();
@@ -1054,6 +1070,28 @@ describe("factory: run SH-NNN после подготовки", () => {
       expect(snapshot(s)).toEqual(before);
     },
   );
+});
+
+describe("factory: run SH-NNN на этапе «в работе»", () => {
+  it("[SH-098 AC-4] запись «в работе» с живым процессом: причина, код 1, воркер не запущен", async () => {
+    const s = happy();
+    const live = await liveProcess();
+    prepared(
+      s,
+      "SH-901",
+      TITLE_FABRIKA,
+      BRANCH_901,
+      `, stage: "в работе", pid: ${live.pid}, pid_started_at: ${JSON.stringify(live.startedAt)}`,
+    );
+    const before = snapshot(s);
+
+    const { code, out } = runFactory(s, s.work, ["run", "SH-901"], { settle: false });
+
+    expect(code).toBe(1);
+    expect(out).toContain("этапе «в работе»");
+    expect(claudeCalls(s)).toHaveLength(0);
+    expect(snapshot(s)).toEqual(before);
+  }, 20_000);
 });
 
 describe("factory: команда claude и окружение", () => {
@@ -1888,4 +1926,715 @@ describe("factory: инструкция sh-worker.md и права воркер�
     expect(WORKER_ALLOWED.some((rule) => matchesRule(rule, "echo x"))).toBe(false);
     expect(WORKER_DISALLOWED.some((rule) => matchesRule(rule, "cat .env"))).toBe(true);
   });
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// SH-094: остановки, ответ владельца и сводка. AC-12 ручной, AC-14 проверяется в ревью.
+
+const OSA_HEAD = [
+  "-e",
+  "on run argv",
+  "-e",
+  'display notification (item 1 of argv) with title "Фабрика"',
+  "-e",
+  "end run",
+];
+const DEAD_PID = 4_000_000;
+
+// Вызовы подставного osascript с начала последнего runFactory: список аргументов каждого вызова.
+const osaCalls = (s: Scenario): string[][] =>
+  readFileSync(`${s.log}.osa`, "utf8")
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+
+// Папка с подставными pnpm, gh и claude и с обычными git, ps, sh, env и node, но без osascript.
+function binWithoutOsascript(): string {
+  const dir = join(workDir, "bin-no-osa");
+  if (existsSync(dir)) return dir;
+  mkdirSync(dir);
+  for (const name of ["pnpm", "gh", "claude"]) symlinkSync(join(fakeBin, name), join(dir, name));
+  for (const name of ["git", "ps", "sh", "env", "sleep"]) {
+    const found = spawnSync("sh", ["-c", `command -v ${name}`], { encoding: "utf8" }).stdout.trim();
+    if (found) symlinkSync(found, join(dir, name));
+  }
+  symlinkSync(process.execPath, join(dir, "node"));
+  return dir;
+}
+
+// Подготовленная задача SH-901 на нужном этапе с записанной сессией. extra — дополнительные поля записи.
+function onStage(s: Scenario, stage: string, extra = "") {
+  return prepared(
+    s,
+    "SH-901",
+    TITLE_FABRIKA,
+    BRANCH_901,
+    `, stage: ${JSON.stringify(stage)}, session_id: "sess-1", session_ready: true${extra}`,
+  );
+}
+
+// Запись без worktree: для сводки. fields — объект полей.
+function putRecord(s: Scenario, id: string, fields: Record<string, unknown>) {
+  const result = nodeEval(
+    s.work,
+    `m.createTask(${JSON.stringify(id)}, { title: "Запись", branch: "sh-x", worktree: "/x", ...${JSON.stringify(fields)} });`,
+  );
+  if (result.code !== 0) throw new Error(result.err);
+}
+
+// JSON-ответ воркера в папке задачи. Номер файла — number.
+function putReply(s: Scenario, id: string, number: number, result: string) {
+  mkdirSync(join(s.stateDir, id), { recursive: true });
+  writeFileSync(
+    join(s.stateDir, id, `${String(number).padStart(3, "0")}-worker.json`),
+    JSON.stringify({ type: "result", subtype: "success", is_error: false, result }),
+  );
+}
+
+const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
+
+const STOP_TEXT = [
+  "СТОП SH-901: нужно решение",
+  "Вопрос владельцу: Что выбрать и почему?",
+  "- А (рекомендую): первый вариант",
+  "- Б: второй вариант",
+  "Сделано: ничего не менял",
+  "Продолжить: вызвать sh-worker.",
+].join("\n");
+
+const REMARKS_TEXT = [
+  "ЗАМЕЧАНИЯ SH-901",
+  "1. Дублирование в a.ts — предлагаю: поправить здесь",
+  "2. Хрупкий тест в b.ts — предлагаю: оставить",
+  "Вопрос владельцу: какие поправить сейчас? Остальные пойдут в отчёт.",
+].join("\n");
+
+const lineOf = (out: string, start: string) => out.split("\n").find((line) => line.startsWith(start));
+
+describe("factory: уведомления", () => {
+  it("[SH-094 AC-1] переход на «стоп»: osascript с заголовком «Фабрика» и текстом отдельным аргументом", () => {
+    const s = happy();
+    prepared(s);
+
+    const { code } = runFactory(s, s.work, ["run", "SH-901", "--foreground"]);
+
+    expect(code).toBe(0);
+    expect(osaCalls(s)).toEqual([[...OSA_HEAD, "SH-901 · стоп · СТОП SH-901: заглушка"]]);
+  }, 20_000);
+
+  it("[SH-094 AC-1] переход на «ошибка»: уведомление с причиной; переход на «в работе» уведомления не даёт", () => {
+    const s = happy();
+    prepared(s);
+
+    runFactory(s, s.work, ["run", "SH-901", "--foreground"], { env: { FAKE_CLAUDE_RAW: "не json" } });
+
+    const calls = osaCalls(s);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.slice(0, OSA_HEAD.length)).toEqual(OSA_HEAD);
+    expect(calls[0]?.[OSA_HEAD.length]).toBe("SH-901 · ошибка · невалидный JSON");
+  }, 20_000);
+
+  it("[SH-094 AC-1] текст длиннее 100 символов отрезается до 100 без многоточия", () => {
+    const s = happy();
+    prepared(s);
+    const result = `СТОП SH-901: ${"я".repeat(200)}`;
+
+    runFactory(s, s.work, ["run", "SH-901", "--foreground"], { env: { FAKE_CLAUDE_RESULT: result } });
+
+    const text = osaCalls(s)[0]?.[OSA_HEAD.length] ?? "";
+    expect(Array.from(text)).toHaveLength(100);
+    expect(text).toBe(`SH-901 · стоп · ${result}`.slice(0, 100));
+    expect(text.endsWith("…")).toBe(false);
+  }, 20_000);
+
+  it("[SH-094 AC-2] кавычки, обратная косая черта и апостроф в первой строке доходят до osascript без изменений", () => {
+    const s = happy();
+    prepared(s);
+    const first = `СТОП SH-901: он сказал "да" \\ и 'нет'`;
+
+    const { code } = runFactory(s, s.work, ["run", "SH-901", "--foreground"], {
+      env: { FAKE_CLAUDE_RESULT: `${first}\nвторая строка` },
+    });
+
+    expect(code).toBe(0);
+    expect(osaCalls(s)).toEqual([[...OSA_HEAD, `SH-901 · стоп · ${first}`]]);
+    expect(readTasks(s)["SH-901"]?.stage).toBe("стоп");
+  }, 20_000);
+
+  it.each([
+    ["нет osascript в PATH", () => ({ PATH: binWithoutOsascript() })],
+    ["osascript завершился с ошибкой", () => ({ FAKE_OSASCRIPT_FAIL: "1" })],
+  ])(
+    "[SH-094 AC-3] %s: текст в журнале задачи, этап сохранён, код 0",
+    (_name, makeEnv) => {
+      const s = happy();
+      prepared(s);
+
+      const { code } = runFactory(s, s.work, ["run", "SH-901", "--foreground"], { env: makeEnv() });
+
+      expect(code).toBe(0);
+      expect(readTasks(s)["SH-901"]?.stage).toBe("стоп");
+      expect(logOf(s, "SH-901")).toContain("SH-901 · стоп · СТОП SH-901: заглушка");
+    },
+    20_000,
+  );
+});
+
+describe("factory: answer", () => {
+  const ANSWER = `Да, "кавычки", $HOME и $(date) и \`x\`\nвторая 'строка' \\ конец`;
+
+  it("[SH-094 AC-4] answer на «стоп»: claude получает --resume, промпт с текстом без изменений, флаги SH-098, cwd — worktree", async () => {
+    const s = happy();
+    const { worktree } = onStage(s, "стоп");
+    const { workerAllowed, WORKER_DISALLOWED, WORKER_BUDGET_USD } = await factoryTools();
+
+    const { code } = runFactory(s, s.work, ["answer", "SH-901", ANSWER]);
+
+    expect(code).toBe(0);
+    const calls = claudeCalls(s);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.args).toEqual([
+      "-p",
+      `Продолжение SH-901. Ответ владельца: ${ANSWER}`,
+      "--resume",
+      "sess-1",
+      "--agent",
+      "sh-worker",
+      "--output-format",
+      "json",
+      "--permission-mode",
+      "dontAsk",
+      "--allowedTools",
+      workerAllowed(worktree).join(","),
+      "--disallowedTools",
+      WORKER_DISALLOWED.join(","),
+      "--max-budget-usd",
+      String(WORKER_BUDGET_USD),
+    ]);
+    expect(calls[0]?.cwd).toBe(worktree);
+  }, 20_000);
+
+  it("[SH-094 AC-5] answer без --foreground: «в работе» с новым pid и временем старта, текст ответа в журнале", async () => {
+    const s = happy();
+    onStage(s, "стоп");
+
+    const { code } = runFactory(s, s.work, ["answer", "SH-901", ANSWER], { env: SLOW, settle: false });
+
+    try {
+      expect(code).toBe(0);
+      const task = readTasks(s)["SH-901"];
+      expect(task?.stage).toBe("в работе");
+      expect(task?.pid).toEqual(expect.any(Number));
+      const { processStartedAt } = await factoryModule();
+      expect(task?.pid_started_at).toBe(processStartedAt(task?.pid as number));
+      expect(logOf(s, "SH-901")).toContain(ANSWER);
+    } finally {
+      expect(settle(s)).toBe(true);
+    }
+    expect(readTasks(s)["SH-901"]).toMatchObject({ stage: "стоп", pid: null });
+  }, 20_000);
+
+  it("[SH-094 AC-5] answer --foreground: после ответа claude этап по SH-098, cost_usd 0.40 + 0.25 = 0.65", () => {
+    const s = happy();
+    onStage(s, "стоп", ", cost_usd: 0.4");
+
+    const { code } = runFactory(s, s.work, ["answer", "SH-901", "ответ", "--foreground"], {
+      env: { FAKE_CLAUDE_COST: "0.25", FAKE_CLAUDE_RESULT: "ГОТОВО SH-901" },
+    });
+
+    expect(code).toBe(0);
+    const task = readTasks(s)["SH-901"];
+    expect(task).toMatchObject({ stage: "готово", pid: null, pid_started_at: "" });
+    expect(task?.cost_usd).toBeCloseTo(0.65);
+  }, 20_000);
+
+  it.each(["подготовлена", "готово", "ошибка"])(
+    "[SH-094 AC-6] answer на этапе «%s»: причина, код 1, claude не вызван",
+    (stage) => {
+      const s = happy();
+      onStage(s, stage);
+      const before = snapshot(s);
+
+      const { code, out } = runFactory(s, s.work, ["answer", "SH-901", "ответ"]);
+
+      expect(code).toBe(1);
+      expect(out).toContain(`этапе «${stage}»`);
+      expect(claudeCalls(s)).toHaveLength(0);
+      expect(snapshot(s)).toEqual(before);
+    },
+  );
+
+  it("[SH-094 AC-6] answer без записи в state.json: причина, код 1, claude не вызван", () => {
+    const s = happy();
+
+    const { code, out } = runFactory(s, s.work, ["answer", "SH-901", "ответ"]);
+
+    expect(code).toBe(1);
+    expect(out).toContain("нет записи");
+    expect(claudeCalls(s)).toHaveLength(0);
+  });
+
+  it("[SH-094 AC-6] answer при двух живых процессах: ID живых задач, код 1, claude не вызван, этап «стоп»", async () => {
+    const s = happy();
+    onStage(s, "стоп");
+    const a = await liveProcess();
+    const b = await liveProcess();
+    putRecord(s, "SH-902", { stage: "в работе", pid: a.pid, pid_started_at: a.startedAt });
+    putRecord(s, "SH-903", { stage: "в работе", pid: b.pid, pid_started_at: b.startedAt });
+
+    const { code, out } = runFactory(s, s.work, ["answer", "SH-901", "ответ"], { settle: false });
+
+    expect(code).toBe(1);
+    expect(out).toContain("SH-902");
+    expect(out).toContain("SH-903");
+    expect(claudeCalls(s)).toHaveLength(0);
+    expect(readTasks(s)["SH-901"]?.stage).toBe("стоп");
+  }, 20_000);
+
+  it("[SH-094 AC-13] answer на «стоп» с блоком ЗАМЕЧАНИЯ передаёт ответ так же, как на СТОП", () => {
+    const s = happy();
+    onStage(s, "стоп", ', reason: "ЗАМЕЧАНИЯ SH-901"');
+    putReply(s, "SH-901", 1, REMARKS_TEXT);
+
+    const { code } = runFactory(s, s.work, ["answer", "SH-901", "поправь 1"]);
+
+    expect(code).toBe(0);
+    const call = claudeCalls(s)[0] as ClaudeCall;
+    expect(flagValue(call, "-p")).toBe("Продолжение SH-901. Ответ владельца: поправь 1");
+    expect(flagValue(call, "--resume")).toBe("sess-1");
+  }, 20_000);
+});
+
+describe("factory: continue", () => {
+  it("[SH-094 AC-7] continue на «ошибка» с session_ready true: --resume и текст «Продолжение SH-901.»", async () => {
+    const s = happy();
+    const { worktree } = onStage(s, "ошибка");
+    const { workerAllowed, WORKER_DISALLOWED, WORKER_BUDGET_USD } = await factoryTools();
+
+    const { code } = runFactory(s, s.work, ["continue", "SH-901"]);
+
+    expect(code).toBe(0);
+    const calls = claudeCalls(s);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.args).toEqual([
+      "-p",
+      "Продолжение SH-901.",
+      "--resume",
+      "sess-1",
+      "--agent",
+      "sh-worker",
+      "--output-format",
+      "json",
+      "--permission-mode",
+      "dontAsk",
+      "--allowedTools",
+      workerAllowed(worktree).join(","),
+      "--disallowedTools",
+      WORKER_DISALLOWED.join(","),
+      "--max-budget-usd",
+      String(WORKER_BUDGET_USD),
+    ]);
+    expect(calls[0]?.cwd).toBe(worktree);
+  }, 20_000);
+
+  it("[SH-094 AC-7] continue на «ошибка» с session_ready false: новый старт в том же worktree без check-spec", async () => {
+    const s = happy();
+    const { worktree } = prepared(
+      s,
+      "SH-901",
+      TITLE_FABRIKA,
+      BRANCH_901,
+      ', stage: "ошибка", session_id: "old-sess", session_ready: false',
+    );
+    const { workerAllowed, WORKER_DISALLOWED, WORKER_BUDGET_USD } = await factoryTools();
+
+    const { code, calls: shell } = runFactory(s, s.work, ["continue", "SH-901"]);
+
+    expect(code).toBe(0);
+    const calls = claudeCalls(s);
+    expect(calls).toHaveLength(1);
+    const sessionId = readTasks(s)["SH-901"]?.session_id;
+    expect(sessionId).toMatch(UUID);
+    expect(sessionId).not.toBe("old-sess");
+    expect(calls[0]?.args).toEqual([
+      "-p",
+      `Новый старт SH-901. Ветка: ${BRANCH_901}.`,
+      "--agent",
+      "sh-worker",
+      "--session-id",
+      sessionId,
+      "--name",
+      "Фабрика SH-901",
+      "--output-format",
+      "json",
+      "--permission-mode",
+      "dontAsk",
+      "--allowedTools",
+      workerAllowed(worktree).join(","),
+      "--disallowedTools",
+      WORKER_DISALLOWED.join(","),
+      "--max-budget-usd",
+      String(WORKER_BUDGET_USD),
+    ]);
+    expect(calls[0]?.cwd).toBe(worktree);
+    expect(shell).not.toContain("pnpm");
+    expect(logOf(s, "SH-901")).not.toContain("check-spec");
+  }, 20_000);
+
+  it.each(["стоп", "подготовлена", "готово"])("[SH-094 AC-7] continue на этапе «%s»: причина, код 1", (stage) => {
+    const s = happy();
+    onStage(s, stage);
+    const before = snapshot(s);
+
+    const { code, out } = runFactory(s, s.work, ["continue", "SH-901"]);
+
+    expect(code).toBe(1);
+    expect(out).toContain(`этапе «${stage}»`);
+    expect(claudeCalls(s)).toHaveLength(0);
+    expect(snapshot(s)).toEqual(before);
+  });
+
+  it("[SH-094 AC-7] continue на «в работе» с живым процессом: причина, код 1; без записи: код 1", async () => {
+    const s = happy();
+    const live = await liveProcess();
+    onStage(s, "в работе", `, pid: ${live.pid}, pid_started_at: ${JSON.stringify(live.startedAt)}`);
+
+    const running = runFactory(s, s.work, ["continue", "SH-901"], { settle: false });
+
+    expect(running.code).toBe(1);
+    expect(running.out).toContain("этапе «в работе»");
+    expect(claudeCalls(s)).toHaveLength(0);
+
+    const empty = happy();
+    const missing = runFactory(empty, empty.work, ["continue", "SH-901"]);
+    expect(missing.code).toBe(1);
+    expect(missing.out).toContain("нет записи");
+    expect(claudeCalls(empty)).toHaveLength(0);
+  }, 20_000);
+
+  it("[SH-094 AC-7] continue при двух живых процессах: код 1, claude не вызван", async () => {
+    const s = happy();
+    onStage(s, "ошибка");
+    const a = await liveProcess();
+    const b = await liveProcess();
+    putRecord(s, "SH-902", { stage: "в работе", pid: a.pid, pid_started_at: a.startedAt });
+    putRecord(s, "SH-903", { stage: "в работе", pid: b.pid, pid_started_at: b.startedAt });
+
+    const { code, out } = runFactory(s, s.work, ["continue", "SH-901"], { settle: false });
+
+    expect(code).toBe(1);
+    expect(out).toContain("SH-902");
+    expect(claudeCalls(s)).toHaveLength(0);
+    expect(readTasks(s)["SH-901"]?.stage).toBe("ошибка");
+  }, 20_000);
+});
+
+describe("factory: drop", () => {
+  const sha = (s: Scenario) => git(s.work, "rev-parse", BRANCH_901);
+
+  it("[SH-094 AC-8] drop, ответ y: запись снята, чистый worktree и локальная ветка удалены, SHA напечатан, журнал остался", () => {
+    const s = happy();
+    const { worktree } = onStage(s, "ошибка");
+    const head = sha(s);
+
+    const { code, out } = runFactory(s, s.work, ["drop", "SH-901"], { input: "y\n" });
+
+    expect(code).toBe(0);
+    expect(readTasks(s)["SH-901"]).toBeUndefined();
+    expect(existsSync(worktree)).toBe(false);
+    expect(branchesOf(s.work)).not.toContain(BRANCH_901);
+    expect(out).toContain(head);
+    expect(existsSync(join(s.stateDir, "SH-901/log.txt"))).toBe(true);
+  }, 20_000);
+
+  it("[SH-094 AC-8] drop, ответ n: ничего не меняется", () => {
+    const s = happy();
+    onStage(s, "ошибка");
+    const before = snapshot(s);
+
+    const { code } = runFactory(s, s.work, ["drop", "SH-901"], { input: "n\n" });
+
+    expect(code).toBe(0);
+    expect(snapshot(s)).toEqual(before);
+  }, 20_000);
+
+  it("[SH-094 AC-8] drop, грязный worktree: запись снята, worktree и ветка остаются и названы", () => {
+    const s = happy();
+    const { worktree } = onStage(s, "ошибка");
+    writeFileSync(join(worktree, "new.txt"), "не закоммичено\n");
+
+    const { code, out } = runFactory(s, s.work, ["drop", "SH-901"], { input: "y\n" });
+
+    expect(code).toBe(0);
+    expect(readTasks(s)["SH-901"]).toBeUndefined();
+    expect(existsSync(worktree)).toBe(true);
+    expect(branchesOf(s.work)).toContain(BRANCH_901);
+    expect(out).toContain(worktree);
+    expect(out).toContain(BRANCH_901);
+  }, 20_000);
+
+  it("[SH-094 AC-8] drop, ветка есть на origin: worktree удалён, ветка остаётся и названа", () => {
+    const s = happy();
+    const { worktree } = onStage(s, "ошибка");
+    git(s.work, "push", "-q", "origin", BRANCH_901);
+
+    const { code, out } = runFactory(s, s.work, ["drop", "SH-901"], { input: "y\n" });
+
+    expect(code).toBe(0);
+    expect(readTasks(s)["SH-901"]).toBeUndefined();
+    expect(existsSync(worktree)).toBe(false);
+    expect(branchesOf(s.work)).toContain(BRANCH_901);
+    expect(out).toContain(BRANCH_901);
+  }, 20_000);
+
+  it("[SH-094 AC-8] drop при живом процессе задачи: код 1 без вопроса, ничего не меняется", async () => {
+    const s = happy();
+    const live = await liveProcess();
+    onStage(s, "в работе", `, pid: ${live.pid}, pid_started_at: ${JSON.stringify(live.startedAt)}`);
+    const before = snapshot(s);
+
+    const { code, out } = runFactory(s, s.work, ["drop", "SH-901"], { input: "y\n", settle: false });
+
+    expect(code).toBe(1);
+    expect(out).not.toContain("[y/n]");
+    expect(snapshot(s)).toEqual(before);
+  }, 20_000);
+
+  it("[SH-094 AC-8] drop без записи: причина, код 1", () => {
+    const s = happy();
+
+    const { code, out } = runFactory(s, s.work, ["drop", "SH-901"], { input: "y\n" });
+
+    expect(code).toBe(1);
+    expect(out).toContain("нет записи");
+  });
+});
+
+describe("factory: сводка", () => {
+  const seedSummary = () => {
+    const s = happy();
+    putRecord(s, "SH-901", { stage: "стоп", stage_changed_at: minutesAgo(59), cost_usd: 0.4 });
+    putRecord(s, "SH-902", { stage: "подготовлена", stage_changed_at: minutesAgo(200) });
+    putRecord(s, "SH-903", {
+      stage: "ошибка",
+      reason: "таймаут 180 мин, claude остановлен",
+      stage_changed_at: minutesAgo(119),
+      cost_usd: 1.5,
+    });
+    putRecord(s, "SH-904", { stage: "стоп", stage_changed_at: minutesAgo(130) });
+    putReply(s, "SH-901", 1, "СТОП SH-901: старый\nВопрос владельцу: Старый вопрос?\n- А: старый");
+    putReply(s, "SH-901", 2, STOP_TEXT);
+    return s;
+  };
+
+  it("[SH-094 AC-9] строка задачи: ID, этап, время (59 мин, 1 ч при 119 мин), стоимость с двумя знаками", () => {
+    const s = seedSummary();
+
+    const { code, out } = runFactory(s, s.work, []);
+
+    expect(code).toBe(0);
+    const lines = out.split("\n");
+    expect(lines).toContain("SH-901  стоп  59 мин  $0.40");
+    expect(lines).toContain("SH-903  ошибка  1 ч  $1.50");
+    expect(lines).toContain("SH-904  стоп  2 ч  $0.00");
+    expect(lines).toContain("SH-902  подготовлена  3 ч  $0.00");
+  });
+
+  it("[SH-094 AC-9] сначала задачи, которые ждут владельца, внутри групп от старых к новым; в конце «Ждут тебя: N»", () => {
+    const s = seedSummary();
+
+    const { out } = runFactory(s, s.work, []);
+
+    const order = ["SH-904  ", "SH-903  ", "SH-901  ", "SH-902  "].map((start) =>
+      out.split("\n").findIndex((line) => line.startsWith(start)),
+    );
+    expect(order.every((index) => index >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    const lines = out.trimEnd().split("\n");
+    expect(lines[lines.length - 1]).toBe("Ждут тебя: 3");
+  });
+
+  it("[SH-094 AC-9] «стоп»: вопрос и варианты из последнего по номеру ответа; для «ошибка» — reason и путь журнала", () => {
+    const s = seedSummary();
+
+    const { out } = runFactory(s, s.work, []);
+
+    const lines = out.split("\n").map((line) => line.trim());
+    expect(lines).toContain("Вопрос владельцу: Что выбрать и почему?");
+    expect(lines).toContain("- А (рекомендую): первый вариант");
+    expect(lines).toContain("- Б: второй вариант");
+    expect(out).not.toContain("Старый вопрос");
+    expect(out).not.toContain("Сделано");
+    expect(out).toContain("таймаут 180 мин, claude остановлен");
+    expect(out).toContain(join(s.stateDir, "SH-903/log.txt"));
+  });
+
+  it("[SH-094 AC-9] отказы: не больше трёх, каждый до 40 символов, при большем числе « …» в конце", () => {
+    const s = happy();
+    const command = "curl https://example.com/очень/длинный/путь/который/не/влезает";
+    putRecord(s, "SH-901", {
+      stage: "ошибка",
+      reason: "отказы",
+      denials: [
+        { tool_name: "Bash", tool_input: { command } },
+        { tool_name: "Read", tool_input: { file_path: "/etc/passwd" } },
+        { tool_name: "Grep", tool_input: { path: "/x/y" } },
+        { tool_name: "Write", tool_input: { file_path: "/z" } },
+      ],
+    });
+
+    const { out } = runFactory(s, s.work, []);
+
+    expect(lineOf(out.replace(/^ +/gm, ""), "Отказы:")).toBe(
+      `Отказы: ${command.slice(0, 40)}; Read /etc/passwd; Grep /x/y …`,
+    );
+  });
+
+  it("[SH-094 AC-9] отказы: три отказа печатаются без « …»", () => {
+    const s = happy();
+    putRecord(s, "SH-901", {
+      stage: "ошибка",
+      denials: [
+        { tool_name: "Bash", tool_input: { command: "curl x" } },
+        { tool_name: "Read", tool_input: { file_path: "/a" } },
+        { tool_name: "Write", tool_input: { file_path: "/b" } },
+      ],
+    });
+
+    const { out } = runFactory(s, s.work, []);
+
+    expect(lineOf(out.replace(/^ +/gm, ""), "Отказы:")).toBe("Отказы: curl x; Read /a; Write /b");
+  });
+
+  it("[SH-094 AC-9] другой ждущий этап: строка с reason", () => {
+    const s = happy();
+    putRecord(s, "SH-901", { stage: "нужен владелец", reason: "проверки не прошли дважды" });
+
+    const { out } = runFactory(s, s.work, []);
+
+    expect(out).toContain("проверки не прошли дважды");
+    expect(out).toContain("Ждут тебя: 1");
+  });
+
+  it("[SH-094 AC-10] 12 задач на «стоп»: не больше 30 строк, задачи целиком, «…ещё K задач», N считает все", () => {
+    const s = happy();
+    for (let i = 1; i <= 12; i += 1) {
+      const id = `SH-9${String(i).padStart(2, "0")}`;
+      putRecord(s, id, { stage: "стоп", stage_changed_at: minutesAgo(200 - i) });
+      putReply(s, id, 1, STOP_TEXT.replaceAll("SH-901", id));
+    }
+
+    const { out } = runFactory(s, s.work, []);
+
+    const lines = out.trimEnd().split("\n");
+    expect(lines).toHaveLength(30);
+    expect(lines).toContain("…ещё 5 задач");
+    expect(lines[lines.length - 1]).toBe("Ждут тебя: 12");
+    for (let i = 1; i <= 7; i += 1) {
+      const id = `SH-9${String(i).padStart(2, "0")}`;
+      const at = lines.findIndex((line) => line.startsWith(`${id}  стоп`));
+      expect(at, id).toBeGreaterThanOrEqual(0);
+      expect(lines.slice(at + 1, at + 4).map((line) => line.trim())).toEqual([
+        "Вопрос владельцу: Что выбрать и почему?",
+        "- А (рекомендую): первый вариант",
+        "- Б: второй вариант",
+      ]);
+    }
+    expect(out).not.toContain("SH-908  ");
+  });
+
+  it("[SH-094 AC-10] пустое состояние: одна строка «Фабрика пуста»", () => {
+    const s = happy();
+
+    const { code, out } = runFactory(s, s.work, []);
+
+    expect(code).toBe(0);
+    expect(out.trimEnd().split("\n")).toEqual(["Фабрика пуста"]);
+  });
+
+  // Не по критерию: ревью SH-094. Слово «undefined» не должно считаться пустым вызовом.
+  it("команда «undefined» даёт код 2 и использование, как любая неизвестная", () => {
+    const s = happy();
+
+    const { code, out } = runFactory(s, s.work, ["undefined"]);
+
+    expect(code).toBe(2);
+    expect(out).toContain("Использование:");
+  });
+
+  it("[SH-094 AC-13] «стоп» с ответом ЗАМЕЧАНИЯ: пронумерованные замечания и «Вопрос владельцу:», без вариантов", () => {
+    const s = happy();
+    putRecord(s, "SH-901", { stage: "стоп", reason: "ЗАМЕЧАНИЯ SH-901" });
+    putReply(s, "SH-901", 1, REMARKS_TEXT);
+
+    const { out } = runFactory(s, s.work, []);
+
+    const lines = out.split("\n").map((line) => line.trim());
+    expect(lines).toContain("1. Дублирование в a.ts — предлагаю: поправить здесь");
+    expect(lines).toContain("2. Хрупкий тест в b.ts — предлагаю: оставить");
+    expect(lines).toContain("Вопрос владельцу: какие поправить сейчас? Остальные пойдут в отчёт.");
+  });
+});
+
+describe("factory: процесс завершился без ответа", () => {
+  const DEAD_REASON = "процесс завершился без ответа";
+
+  const seedDead = (s: Scenario, pid: number | null) =>
+    onStage(s, "в работе", `, pid: ${pid}, pid_started_at: ${pid === null ? '""' : '"2001-01-01T00:00:00.000Z"'}`);
+
+  const expectMarked = (s: Scenario) => {
+    expect(logOf(s, "SH-901")).toContain(`этап: в работе → ошибка; ${DEAD_REASON}`);
+    expect(osaCalls(s).map((call) => call[OSA_HEAD.length])).toContain(`SH-901 · ошибка · ${DEAD_REASON}`);
+  };
+
+  it.each([null, DEAD_PID])(
+    "[SH-094 AC-11] сводка: «в работе» с pid %s не жив — «ошибка», reason, уведомление",
+    (pid) => {
+      const s = happy();
+      seedDead(s, pid);
+
+      const { code, out } = runFactory(s, s.work, []);
+
+      expect(code).toBe(0);
+      expect(readTasks(s)["SH-901"]).toMatchObject({ stage: "ошибка", reason: DEAD_REASON });
+      expect(out).toContain("SH-901  ошибка");
+      expect(out).toContain(DEAD_REASON);
+      expectMarked(s);
+    },
+  );
+
+  it("[SH-094 AC-11] run SH-NNN: «в работе» без живого процесса — «ошибка», уведомление, воркер не запущен", () => {
+    const s = happy();
+    seedDead(s, DEAD_PID);
+
+    const { code } = runFactory(s, s.work, ["run", "SH-901"]);
+
+    expect(code).toBe(1);
+    expect(readTasks(s)["SH-901"]).toMatchObject({ stage: "ошибка", reason: DEAD_REASON });
+    expect(claudeCalls(s)).toHaveLength(0);
+    expectMarked(s);
+  });
+
+  it("[SH-094 AC-11] answer: «в работе» без живого процесса — «ошибка», уведомление, код 1", () => {
+    const s = happy();
+    seedDead(s, DEAD_PID);
+
+    const { code, out } = runFactory(s, s.work, ["answer", "SH-901", "ответ"]);
+
+    expect(code).toBe(1);
+    expect(out).toContain("этапе «ошибка»");
+    expect(claudeCalls(s)).toHaveLength(0);
+    expectMarked(s);
+  });
+
+  it("[SH-094 AC-11] continue: «в работе» без живого процесса — «ошибка», уведомление, затем перезапуск воркера", () => {
+    const s = happy();
+    seedDead(s, DEAD_PID);
+
+    const { code } = runFactory(s, s.work, ["continue", "SH-901"]);
+
+    expect(code).toBe(0);
+    expect(claudeCalls(s)).toHaveLength(1);
+    expectMarked(s);
+  }, 20_000);
 });
