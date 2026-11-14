@@ -21,7 +21,7 @@ case "${1:-}" in
   *) echo "Использование: $0 [--target-time <UTC>]" >&2; exit 2 ;;
 esac
 
-require_env WALG_S3_PREFIX AWS_ENDPOINT AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY WALG_LIBSODIUM_KEY
+require_env "${WALG_VARS[@]}"
 export_walg_env
 db_user="$(env_value POSTGRES_USER)"; db_user="${db_user:-studhub}"
 db_name="$(env_value POSTGRES_DB)"; db_name="${db_name:-studhub}"
@@ -30,8 +30,10 @@ suffix="$$"
 volume="studhub-restore-check-$suffix"
 container="studhub-restore-check-$suffix"
 work="$(mktemp -d)"
-wal_env=(-e WALG_S3_PREFIX -e AWS_ENDPOINT -e AWS_REGION -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e WALG_LIBSODIUM_KEY
-  -e WALG_LIBSODIUM_KEY_TRANSFORM=hex -e AWS_S3_FORCE_PATH_STYLE=true -e WALG_COMPRESSION_METHOD=zstd -e WALG_S3_MAX_RETRIES=5)
+# Значения wal-g передаются контейнерам по имени (-e ИМЯ), их читает export_walg_env из .env.backup.
+wal_env=()
+for name in "${WALG_VARS[@]}"; do wal_env+=(-e "$name"); done
+wal_env+=(-e WALG_LIBSODIUM_KEY_TRANSFORM=hex -e AWS_S3_FORCE_PATH_STYLE=true -e WALG_COMPRESSION_METHOD=zstd -e WALG_S3_MAX_RETRIES=5)
 
 # Только эти таблицы: public (данные приложения) и drizzle (журнал миграций). Очередь pg-boss меняется каждую минуту.
 count_sql="select table_schema||'.'||table_name||'|'||(xpath('/row/c/text()', query_to_xml(format('select count(*) as c from %I.%I', table_schema, table_name), false, true, '')))[1]::text from information_schema.tables where table_type='BASE TABLE' and table_schema in ('public','drizzle') order by 1"

@@ -1,9 +1,9 @@
 // Прокси для алертов Telegram на Cloudflare Workers (SH-012). Нужен, потому что Telegram закрыт с VPS в РФ.
 // Токен бота хранится только здесь, в секрете Worker TELEGRAM_BOT_TOKEN. Сервер токена не знает.
-// Принимает только POST /send с заголовком X-Proxy-Secret и телом с chat_id и text (форма или JSON),
+// Принимает только POST /send с заголовком X-Proxy-Secret и телом с text (форма или JSON),
 // пересылает на api.telegram.org/bot<токен>/sendMessage и возвращает ответ Telegram как есть.
-// Переменные Worker: PROXY_SECRET (секрет), TELEGRAM_BOT_TOKEN (секрет), TELEGRAM_CHAT_ID (необязательно:
-// фиксирует чат; запрос с другим chat_id получает 403). Токен и тексты сообщений не пишутся в лог.
+// Переменные Worker: PROXY_SECRET (секрет), TELEGRAM_BOT_TOKEN (секрет), TELEGRAM_CHAT_ID (обязательна: чат задан здесь,
+// сервер его не передаёт; запрос с другим chat_id получает 403). Токен и тексты сообщений не пишутся в лог.
 const TELEGRAM_ORIGIN = "https://api.telegram.org";
 const MAX_BODY_BYTES = 8192;
 
@@ -45,16 +45,15 @@ export default {
     const { pathname } = new URL(request.url);
     if (request.method !== "POST" || pathname !== "/send") return text("not found", 404);
     if (!env.TELEGRAM_BOT_TOKEN) return text("bot token is not configured", 500);
+    if (!env.TELEGRAM_CHAT_ID) return text("chat id is not configured", 500);
 
     const body = await request.arrayBuffer();
     if (body.byteLength > MAX_BODY_BYTES) return text("payload too large", 413);
 
     const { chatId, message } = parseMessage(new TextDecoder().decode(body), request.headers.get("content-type") ?? "");
     if (!message) return text("text is required", 400);
-    const fixedChat = env.TELEGRAM_CHAT_ID ? String(env.TELEGRAM_CHAT_ID) : "";
-    if (fixedChat && chatId && chatId !== fixedChat) return text("forbidden chat", 403);
-    const target = fixedChat || chatId;
-    if (!target) return text("chat_id is required", 400);
+    const target = String(env.TELEGRAM_CHAT_ID);
+    if (chatId && chatId !== target) return text("forbidden chat", 403);
 
     const upstream = await fetch(`${TELEGRAM_ORIGIN}/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
       method: "POST",

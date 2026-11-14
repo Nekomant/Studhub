@@ -56,7 +56,8 @@ services:
       - archive_command=timeout 180 /opt/walg/wal-g wal-push %p
       - -c
       - archive_timeout=300
-    # .env.backup: WALG_*, AWS_*, TELEGRAM_* (шаблон .env.backup.example, права 600). Контейнер app этот файл не читает.
+    # .env.backup: только WALG_* и AWS_* (шаблон .env.backup.example, права 600). Настройки Telegram лежат в .env.telegram,
+    # его читают только скрипты на хосте: ни один контейнер его не получает. Контейнер app .env.backup не читает.
     # Без файла compose не запускает ни один сервис, поэтому выкладка без настройки бэкапов падает до изменений.
     # Ключ шифрования: 64 шестнадцатеричных символа (`openssl rand -hex 32`). Потеряешь ключ, бэкапы не прочитать.
     env_file: .env.backup

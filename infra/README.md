@@ -13,7 +13,8 @@
 | `deploy.sh` | Выкладывает образ приложения с указанным тегом: миграции, обновление, проверка `/healthz`. Тот же скрипт откатывает на предыдущий тег |
 | `Caddyfile` | Настройки Caddy для `studshub.ru` и `app.studshub.ru` |
 | `.env.prod.example` | Шаблон файла с секретами `.env` |
-| `.env.backup.example` | Шаблон файла `.env.backup` с ключами бэкапа и Telegram (шаг 12) |
+| `.env.backup.example` | Шаблон файла `.env.backup` с ключами wal-g (шаг 12) |
+| `.env.telegram.example` | Шаблон файла `.env.telegram` с настройками алертов Telegram (шаг 12) |
 | `smoke-prod.sh` | Проверяет сервер снаружи: HTTPS, открытые порты, вход по SSH |
 | `backup/` | Бэкапы Postgres через wal-g, проверка восстановления и алерты в Telegram (шаг 12) |
 
@@ -119,7 +120,7 @@ nano .env
 - `POSTGRES_PASSWORD`: случайный пароль. Получить его можно командой `openssl rand -hex 24`;
 - `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`: приложение не запускается, пока все пять заданы. Хранилища файлов ещё нет, поэтому до задачи про материалы впиши заглушки: `https://s3.invalid`, `stub`, `stub-bucket`, `stub`, `stub`. Настоящие значения появятся вместе с хранилищем.
 
-Ключи бэкапов и алертов (`WALG_*`, `AWS_*`, `TELEGRAM_*`) в `.env` не клади. Они лежат в отдельном файле `.env.backup` (шаг 12): `.env` читает контейнер `app`, а этим ключам там не место.
+Ключи бэкапов и алертов (`WALG_*`, `AWS_*`, `TELEGRAM_*`) в `.env` не клади. Ключи wal-g лежат в `.env.backup`, настройки Telegram в `.env.telegram` (шаг 12): `.env` читает контейнер `app`, а этим ключам там не место.
 
 Сохрани файл в `nano`: Ctrl+O, Enter, Ctrl+X. Пароль не отправляй в чат и почту, храни в менеджере паролей.
 
@@ -207,13 +208,14 @@ nmap -Pn -p- <адрес>
 - Postgres непрерывно отправляет WAL в бакет (`archive_command` вызывает `wal-g wal-push`, сегмент уходит не реже чем раз в 5 минут).
 - Каждую ночь в 03:30 по времени сервера `backup/full-backup.sh` делает полный бэкап и оставляет 30 последних полных бэкапов вместе с нужным им WAL. `wal-g backup-push` ограничен по времени: `BACKUP_TIMEOUT_HOURS` часов (по умолчанию 2).
 - Каждое воскресенье в 05:00 `backup/restore-check.sh` поднимает копию из бэкапа во временном контейнере и сверяет число строк с prod.
-- Каждые 10 минут `backup/alerts.sh` проверяет условия и пишет в Telegram.
-- Ключи бэкапа лежат в отдельном файле `/srv/studhub/.env.backup` (права 600). Его читают контейнер `postgres` и скрипты `backup/`. Контейнер `app` его не получает.
+- Каждые 10 минут `backup/alerts.sh` проверяет условия и пишет в Telegram. Хранилище бэкапов он при этом не опрашивает: возраст бэкапа берётся из файла `/var/lib/studhub-backup/last-backup.status`.
+- Ключи wal-g лежат в отдельном файле `/srv/studhub/.env.backup` (права 600). Его читают контейнер `postgres` и скрипты `backup/`. Контейнер `app` его не получает.
+- Настройки Telegram лежат в `/srv/studhub/.env.telegram` (права 600). Его читают только скрипты `backup/` на хосте. Ни один контейнер его не получает, поэтому `postgres` не видит ни секрет прокси, ни токен бота.
 - Данные в бакете шифруются libsodium ключом `WALG_LIBSODIUM_KEY`. Бакет принадлежит другому провайдеру, чем VPS (у нас VK Cloud, ключи отделены от `S3_*` приложения).
 
 ### Значения в `.env.backup`
 
-Шаблон лежит в `.env.backup.example`. Файл создаётся только на сервере: `cd /srv/studhub && cp .env.backup.example .env.backup && chmod 600 .env.backup`. Значения владелец вносит сам, в чат их не пишет. Все переменные из таблицы лежат в `.env.backup`, в `.env` их быть не должно: `install.sh` на это проверяет. Переменные `POSTGRES_*`, `S3_*` и остальные остаются в `.env`.
+Шаблон лежит в `.env.backup.example`. Файл создаётся только на сервере: `cd /srv/studhub && cp .env.backup.example .env.backup && chmod 600 .env.backup`. Значения владелец вносит сам, в чат их не пишет. Переменные из таблицы лежат в `.env.backup`, в `.env` их быть не должно: `install.sh` на это проверяет. В `.env.backup` нет ничего, кроме этих шести переменных: файл целиком получает контейнер `postgres`, и `install.sh` отказывается работать с лишними переменными. Переменные `POSTGRES_*`, `S3_*` и остальные остаются в `.env`. Единый список шести имён лежит в `backup/walg-vars.sh` (массив `WALG_VARS`): по нему скрипты проверяют значения и передают их wal-g.
 
 | Переменная | Что это |
 |---|---|
@@ -222,36 +224,42 @@ nmap -Pn -p- <адрес>
 | `AWS_REGION` | Регион, например `ru-msk` |
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | Ключ доступа к бакету |
 | `WALG_LIBSODIUM_KEY` | Ключ шифрования: 64 шестнадцатеричных символа, получить: `openssl rand -hex 32` |
-| `TELEGRAM_API_URL`, `TELEGRAM_PROXY_SECRET` | Адрес Worker и общий секрет, если Telegram закрыт с сервера (наш случай). Токен бота тогда в `.env.backup` не нужен: он хранится только в Cloudflare (см. «Прокси для Telegram») |
-| `TELEGRAM_CHAT_ID` | Число chat id. С прокси необязателен: Worker может хранить его сам |
-| `TELEGRAM_BOT_TOKEN` | Токен бота. Нужен только без прокси, при пустом `TELEGRAM_API_URL`. Тогда `TELEGRAM_CHAT_ID` тоже обязателен |
+
+### Значения в `.env.telegram`
+
+Шаблон лежит в `.env.telegram.example`. Файл создаётся только на сервере: `cd /srv/studhub && cp .env.telegram.example .env.telegram && chmod 600 .env.telegram`. Файл обязателен для `install.sh`. Если его нет при запуске `full-backup.sh` или `alerts.sh`, бэкап проходит, а алерт не уходит.
+
+| Переменная | Что это |
+|---|---|
+| `TELEGRAM_API_URL`, `TELEGRAM_PROXY_SECRET` | Адрес Worker и общий секрет, если Telegram закрыт с сервера (наш случай). Токен бота и chat id тогда на сервере не нужны: они хранятся только в Cloudflare (см. «Прокси для Telegram») |
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Токен бота и число chat id. Нужны только без прокси, при пустом `TELEGRAM_API_URL`. В режиме прокси сервер их не читает и в запросе не передаёт |
 
 ❗ Сохрани копию `WALG_LIBSODIUM_KEY` в менеджере паролей вне сервера. Без ключа бэкапы не прочитать, и сменить ключ на уже записанных данных нельзя: после смены ключа старые бэкапы остаются на старом ключе.
 
 wal-g принимает путь к бакету в стиле `AWS_S3_FORCE_PATH_STYLE=true`: compose задаёт его сам. Тип хранилища «Icebox» у VK Cloud рассчитан на редкое чтение. Если запись WAL или бэкапа в него не проходит, смени тип бакета на «Hotbox» и повтори.
 
-### Как менять `.env.backup` на работающем сервере
+### Как менять `.env.backup` и `.env.telegram` на работающем сервере
 
 Файл `.env.backup` входит в конфигурацию контейнера `postgres` (`env_file` в compose). Правка файла меняет эту конфигурацию. Поэтому следующий `docker compose up -d` пересоздаёт `postgres`: контейнер останавливается и стартует заново. Простой длится несколько секунд. За это время приложение теряет соединение с базой, запросы получают ошибку, а `/healthz` отвечает не 200. Данные в томе `postgres-data` остаются.
 
-Скрипты `backup/*.sh` читают `.env.backup` при каждом запуске. Для них перезапуск не нужен.
+Скрипты `backup/*.sh` читают `.env.backup` и `.env.telegram` при каждом запуске. Для них перезапуск не нужен. Правка `.env.telegram` вообще не трогает контейнеры: её можно делать в любое время, перезапуск `postgres` не нужен.
 
 1. Выбери время без уроков, лучше ночью по зоне преподавателя. Проверь, что полный бэкап и проверка восстановления не идут: `pgrep -f backup/`.
 2. Правь файл на сервере: `nano /srv/studhub/.env.backup`. Права остаются 600.
-3. Если изменились только `TELEGRAM_*`, перезапуск `postgres` не обязателен: ему эти значения не нужны. Но `up -d` при следующей выкладке всё равно пересоздаст контейнер. Можно пересоздать сразу, в тихое время.
-4. Если изменились `WALG_*` или `AWS_*`, пересоздай `postgres` сразу: `docker compose -f docker-compose.prod.yml --env-file .env up -d postgres`. Пока контейнер работает со старыми значениями, архивация WAL идёт по старому ключу и бакету.
+3. Если ты правишь `.env.telegram`, пропусти шаг 4: контейнеры от этого файла не зависят.
+4. Если изменился `.env.backup` (`WALG_*` или `AWS_*`), пересоздай `postgres` сразу: `docker compose -f docker-compose.prod.yml --env-file .env up -d postgres`. Пока контейнер работает со старыми значениями, архивация WAL идёт по старому ключу и бакету.
 5. Проверь: `curl -sS -o /dev/null -w '%{http_code}' https://<домен>/healthz` печатает 200. Затем выполни `pg_switch_wal` и проверку `pg_stat_archiver` из шагов 5–6 раздела «Установка на сервер»: `failed_count` не растёт.
 6. Смена `WALG_LIBSODIUM_KEY` на работающих данных не поддерживается (см. предупреждение выше).
 
-Команда `up -d app` тоже пересоздаёт `postgres`, если `.env.backup` изменился с прошлого запуска. Это ожидаемо: так было при проверке UptimeRobot.
+Команда `up -d app` тоже пересоздаёт `postgres`, если `.env.backup` изменился с прошлого запуска. Для `.env.telegram` этого не происходит. Это ожидаемо: так было при проверке UptimeRobot.
 
 ### Установка на сервер
 
 Выполняет владелец один раз по SSH под `deploy`. Порядок важен: compose не запускает ни один сервис без файла `.env.backup`, а Postgres не стартует без файла `bin/wal-g`.
 
-1. Создай `.env.backup` из шаблона и заполни значения из таблицы выше. Права файла: `chmod 600 .env.backup`. Если эти ключи уже лежат в `.env`, перенеси их в `.env.backup` и удали из `.env`.
-2. Скопируй папку `backup`, шаблон и compose на сервер: `scp -r -i ~/.ssh/studhub_deploy infra/backup infra/docker-compose.prod.yml infra/.env.backup.example deploy@<адрес>:/srv/studhub/`. После слияния в `main` job `deploy` копирует их сам.
-3. На сервере выполни `cd /srv/studhub && bash backup/install.sh`. Скрипт скачивает wal-g, сверяет контрольную сумму, ставит расписание в `/etc/cron.d/studhub-backup` и ничего не печатает из `.env` и `.env.backup`. Скрипт отказывается работать, если права файлов шире 600, значение пусто или ключи бэкапа остались в `.env`.
+1. Создай `.env.backup` из шаблона и заполни значения из таблицы выше. Права файла: `chmod 600 .env.backup`. Если эти ключи уже лежат в `.env`, перенеси их в `.env.backup` и удали из `.env`. Затем создай `.env.telegram` из шаблона (таблица выше, права 600).
+2. Скопируй папку `backup` (вместе с `walg-vars.sh`), шаблоны и compose на сервер: `scp -r -i ~/.ssh/studhub_deploy infra/backup infra/docker-compose.prod.yml infra/.env.backup.example infra/.env.telegram.example deploy@<адрес>:/srv/studhub/`. После слияния в `main` job `deploy` копирует сам только `backup/` и compose, шаблоны `.env.*.example` копируй вручную.
+3. На сервере выполни `cd /srv/studhub && bash backup/install.sh`. Скрипт скачивает wal-g, сверяет контрольную сумму, ставит расписание в `/etc/cron.d/studhub-backup` и ничего не печатает из `.env`, `.env.backup` и `.env.telegram`. Скрипт отказывается работать, если права файлов шире 600, значение пусто, в `.env.backup` есть лишние переменные (например, `TELEGRAM_*`) или ключи бэкапа остались в `.env`. Существующий журнал `/var/log/studhub-backup.log` скрипт не стирает.
 4. Проверь Telegram: `bash backup/alerts.sh --test`. Сообщение должно прийти в чат. Если команда напечатала «Telegram недоступен» и `curl -sS -m 10 -o /dev/null -w '%{http_code}' https://api.telegram.org` зависает, сервер не достаёт до `api.telegram.org`. Тогда настрой прокси по разделу «Прокси для Telegram» и повтори шаг.
 5. Включи архивацию WAL: `docker compose -f docker-compose.prod.yml --env-file .env up -d postgres`. Контейнер Postgres перезапускается за несколько секунд.
 6. Проверь архивацию:
@@ -284,6 +292,19 @@ $W st ls basebackups_005/
 
 9. Запусти проверку восстановления: `bash backup/restore-check.sh`. Скрипт печатает `OK <таблица>: prod=… копия=…` по каждой таблице и в конце «проверка восстановления прошла». Статус лежит в `/var/lib/studhub-backup/restore-check.status`.
 
+### Перенос настроек Telegram на работающем сервере
+
+Для сервера, где `TELEGRAM_*` уже лежат в `.env.backup` (первая схема SH-012). Выполняет владелец по SSH под `deploy`.
+
+1. В Cloudflare замени код Worker содержимым `infra/telegram-proxy/worker.js` и нажми Deploy. Переменная `TELEGRAM_CHAT_ID` должна быть задана.
+2. Скопируй на сервер `infra/backup/` (вместе с `walg-vars.sh`), `infra/docker-compose.prod.yml` и `infra/.env.telegram.example` в `/srv/studhub/`.
+3. Создай `/srv/studhub/.env.telegram` (`chmod 600`) и перенеси в него из `.env.backup` строки `TELEGRAM_API_URL` и `TELEGRAM_PROXY_SECRET`.
+4. Удали из `.env.backup` все строки `TELEGRAM_*`. Останутся шесть переменных wal-g.
+5. Пересоздай `postgres`: `docker compose -f docker-compose.prod.yml --env-file .env up -d postgres`. Простой несколько секунд, потому что `.env.backup` изменился.
+6. Выполни `bash backup/install.sh`, затем `bash backup/alerts.sh --test` (сообщение приходит в чат).
+7. Выполни `bash backup/full-backup.sh`: он создаст `last-backup.status`. Проверь `cat /var/lib/studhub-backup/last-backup.status` (строка `ok <число>`).
+8. Проверь алерты: `bash backup/alerts.sh` молчит; `ALERT_REPEAT_HOURS=0 ARCHIVE_FAIL_MINUTES=0 bash backup/alerts.sh` не присылает алерта об архивации, пока сбоев нет.
+
 ### Если архивация WAL не идёт
 
 Симптом: после `pg_switch_wal()` в `pg_stat_archiver` остаются `archived_count=0` и `failed_count=0`, а в `/var/lib/postgresql/18/docker/pg_wal/archive_status` копятся файлы `.ready`. Процесс `wal-g wal-push` висит минутами. Проверка:
@@ -298,7 +319,7 @@ docker compose -f docker-compose.prod.yml --env-file .env exec -T -u postgres po
 2. Значения `WALG_*` и `AWS_*` в `.env.backup` (права 600, без кавычек и пробелов вокруг `=`).
 3. Доступ контейнера к бакету: `curl -sS -m 10 -o /dev/null -w '%{http_code}\n' <AWS_ENDPOINT>` на хосте.
 
-Зависший `wal-g` больше не блокирует архивацию бесконечно: `archive_command` обёрнут в `timeout 180`, Postgres сам повторяет неудачную отправку. Ошибки видны в `docker compose … logs postgres` и в `failed_count`.
+Зависший `wal-g` больше не блокирует архивацию бесконечно: `archive_command` обёрнут в `timeout 180`, Postgres сам повторяет неудачную отправку. Ошибки видны в `docker compose … logs postgres` и в `failed_count`. Сбой архивации ловит и `alerts.sh` (см. «Алерты»): он читает `pg_stat_archiver`.
 
 ### Что считается ключевыми таблицами и допуском
 
@@ -308,17 +329,17 @@ docker compose -f docker-compose.prod.yml --env-file .env exec -T -u postgres po
 
 С нашего VPS `api.telegram.org` не открывается. Алерты идут через Cloudflare Worker: сервер шлёт `POST <адрес Worker>/send`, а Worker пересылает сообщение в Telegram. Код лежит в `infra/telegram-proxy/worker.js`.
 
-Токен бота хранится только в Cloudflare, в секрете Worker `TELEGRAM_BOT_TOKEN`. На сервере токена нет: в `.env.backup` лежат только адрес Worker и общий секрет `TELEGRAM_PROXY_SECRET`. Если секрет с сервера утечёт, им можно только слать сообщения в наш чат, а токен останется у Cloudflare.
+Токен бота хранится только в Cloudflare, в секрете Worker `TELEGRAM_BOT_TOKEN`. На сервере токена нет: в `.env.telegram` лежат только адрес Worker и общий секрет `TELEGRAM_PROXY_SECRET`. Chat id сервер тоже не знает: его хранит Worker. Если секрет с сервера утечёт, им можно только слать сообщения в наш чат, а токен останется у Cloudflare.
 
 Worker не работает как открытый прокси:
 
-- он принимает только `POST /send` с телом из `chat_id` и `text` (форма или JSON) и пересылает его на `https://api.telegram.org/bot<токен>/sendMessage`; другие поля тела он отбрасывает, остальные пути и методы получают 404;
+- он принимает только `POST /send` с телом из `text` (форма или JSON; `chat_id` необязателен) и пересылает его на `https://api.telegram.org/bot<токен>/sendMessage`; другие поля тела он отбрасывает, остальные пути и методы получают 404;
 - каждый запрос должен нести заголовок `X-Proxy-Secret` с общим секретом (сравнение за постоянное время), иначе ответ 403;
 - тело больше 8 КБ получает 413, запрос без `text` получает 400;
-- если в Worker не задан `PROXY_SECRET` или `TELEGRAM_BOT_TOKEN`, ответ 500;
+- если в Worker не задан `PROXY_SECRET`, `TELEGRAM_BOT_TOKEN` или `TELEGRAM_CHAT_ID`, ответ 500 (для chat id текст «chat id is not configured»);
 - он не пишет в лог токен бота и тексты сообщений.
 
-Чат можно зафиксировать в Worker: задай переменную `TELEGRAM_CHAT_ID`. Тогда запрос может не передавать `chat_id`, а запрос с другим `chat_id` получает 403. Это защита на случай, если общий секрет утечёт: через Worker нельзя писать в чужие чаты. Тексты алертов не содержат ПДн.
+Переменная Worker `TELEGRAM_CHAT_ID` обязательна: чат всегда берётся из неё. Запрос не должен передавать `chat_id`, а запрос с другим `chat_id` получает 403. Это защита на случай, если общий секрет утечёт: через Worker нельзя писать в чужие чаты. Тексты алертов не содержат ПДн.
 
 Создание Worker (владелец, один раз, в личном кабинете Cloudflare, бесплатного тарифа достаточно):
 
@@ -328,14 +349,14 @@ Worker не работает как открытый прокси:
 4. В Worker открой Settings, Variables and Secrets, Add. Добавь три значения и нажми Deploy:
    - тип Secret, имя `PROXY_SECRET`, значение из шага 3;
    - тип Secret, имя `TELEGRAM_BOT_TOKEN`, значение: токен бота от BotFather;
-   - тип Text, имя `TELEGRAM_CHAT_ID`, значение: число chat id (необязательно, но рекомендуется).
+   - тип Text, имя `TELEGRAM_CHAT_ID`, значение: число chat id из `getUpdates`, например 8037911 (обязательно: без неё Worker отвечает 500).
 5. Скопируй адрес Worker вида `https://studhub-telegram-proxy.<аккаунт>.workers.dev` (в Settings, Domains & Routes).
-6. Внеси в `/srv/studhub/.env.backup`: `TELEGRAM_API_URL=<адрес из шага 5 без слэша в конце>` и `TELEGRAM_PROXY_SECRET=<секрет из шага 3>`. Права файла остаются 600. Если там остались `TELEGRAM_BOT_TOKEN` и `TELEGRAM_CHAT_ID` от прежней схемы, удали токен: в режиме прокси скрипты его не читают.
+6. Внеси в `/srv/studhub/.env.telegram`: `TELEGRAM_API_URL=<адрес из шага 5 без слэша в конце>` и `TELEGRAM_PROXY_SECRET=<секрет из шага 3>`. Права файла 600. `TELEGRAM_BOT_TOKEN` и `TELEGRAM_CHAT_ID` оставь пустыми: в режиме прокси скрипты их не читают. В `.env.backup` строк `TELEGRAM_*` быть не должно.
 7. Проверь: `bash backup/alerts.sh --test`. Сообщение приходит в чат.
 
 Если адрес `workers.dev` с сервера не открывается, привяжи к Worker свой домен (Settings, Domains & Routes, Add, Custom domain) и подставь его в `TELEGRAM_API_URL`. Проверка доступности с сервера: `curl -sS -m 10 -o /dev/null -w '%{http_code}\n' <адрес>/send`: ответ 403 значит, что Worker отвечает.
 
-Если сообщения перестали приходить, проверь по очереди: адрес Worker, совпадение `PROXY_SECRET` в Cloudflare и `TELEGRAM_PROXY_SECRET` в `.env.backup`, секрет `TELEGRAM_BOT_TOKEN` в Cloudflare, chat id. Ответ 500 значит, что в Worker не хватает секрета, 403 значит, что секреты не совпали или chat id чужой.
+Если сообщения перестали приходить, проверь по очереди: адрес Worker, совпадение `PROXY_SECRET` в Cloudflare и `TELEGRAM_PROXY_SECRET` в `.env.telegram`, секрет `TELEGRAM_BOT_TOKEN` и переменную `TELEGRAM_CHAT_ID` в Cloudflare. Ответ 500 значит, что в Worker не хватает секрета или chat id, 403 значит, что секреты не совпали или chat id чужой.
 
 ### Алерты
 
@@ -343,10 +364,11 @@ Worker не работает как открытый прокси:
 
 | Условие | Порог | Настройка |
 |---|---|---|
-| Последнему бэкапу больше | 26 часов | `BACKUP_MAX_AGE_HOURS` |
+| Последнему бэкапу больше (время успеха пишет `full-backup.sh` в `last-backup.status`; без файла `alerts.sh` один раз читает список бэкапов и запоминает результат) | 26 часов | `BACKUP_MAX_AGE_HOURS` |
 | Проверка восстановления упала, не запускалась больше 8 суток или ни разу не завершилась | 8 суток | |
 | Диск заполнен больше чем на | 80% | `DISK_MAX_PERCENT` |
 | Доступной памяти меньше | 10% | `MEM_MIN_PERCENT` |
+| Сбой архивации WAL: по `pg_stat_archiver` последняя отправка упала позже успешной, и успеха нет дольше порога (или успехов не было совсем). Если Postgres не отвечает, тоже алерт | 30 минут | `ARCHIVE_FAIL_MINUTES` |
 
 Проверка условий вручную (каждая команда должна прислать сообщение):
 
@@ -355,6 +377,7 @@ cd /srv/studhub
 ALERT_REPEAT_HOURS=0 BACKUP_MAX_AGE_HOURS=0 bash backup/alerts.sh
 ALERT_REPEAT_HOURS=0 DISK_MAX_PERCENT=1 bash backup/alerts.sh
 ALERT_REPEAT_HOURS=0 MEM_MIN_PERCENT=99 bash backup/alerts.sh
+ALERT_REPEAT_HOURS=0 ARCHIVE_FAIL_MINUTES=0 bash backup/alerts.sh   # алерт придёт только при реальном сбое архивации
 echo "fail $(date +%s)" > /var/lib/studhub-backup/restore-check.status
 ALERT_REPEAT_HOURS=0 bash backup/alerts.sh
 bash backup/restore-check.sh   # вернёт статус ok
@@ -390,7 +413,7 @@ bash backup/restore-check.sh   # вернёт статус ok
 
 Используй, когда данных на сервере нет или они испорчены. Время простоя: десятки минут.
 
-1. Подготовь сервер по шагам 1–8 этого файла (для существующего сервера пропусти). Положи в `.env.backup` прежние `WALG_*`, `AWS_*` и `TELEGRAM_*`, включая тот же `WALG_LIBSODIUM_KEY`.
+1. Подготовь сервер по шагам 1–8 этого файла (для существующего сервера пропусти). Положи в `.env.backup` прежние `WALG_*` и `AWS_*`, включая тот же `WALG_LIBSODIUM_KEY`, а настройки Telegram в `.env.telegram`.
 2. ❗ Остановка и удаление тома стирают текущие данные Postgres. Убедись, что восстанавливаешь из бэкапа, а не тратишь рабочие данные. Выполни в `/srv/studhub`:
 
 ```bash

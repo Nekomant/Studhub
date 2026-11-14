@@ -1350,7 +1350,10 @@ describe("общий список переменных wal-g", () => {
     for (const name of REQUIRED_BACKUP_NAMES) expect(vars, name).toContain(name);
     for (const name of scripts) {
       const text = read(`infra/backup/${name}`);
-      for (const variable of REQUIRED_BACKUP_NAMES) expect(text, `${name}: ${variable}`).not.toContain(variable);
+      // WALG_LIBSODIUM_KEY остаётся в скриптах отдельно: проверка формата ключа и WALG_LIBSODIUM_KEY_TRANSFORM.
+      for (const variable of REQUIRED_BACKUP_NAMES.filter((entry) => entry !== "WALG_LIBSODIUM_KEY")) {
+        expect(text, `${name}: ${variable}`).not.toContain(variable);
+      }
     }
     expect(read("infra/backup/lib.sh")).toContain("walg-vars.sh");
     expect(read("infra/backup/install.sh")).toContain("walg-vars.sh");
