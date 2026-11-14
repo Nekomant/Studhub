@@ -181,7 +181,7 @@ exit 0`,
   fake(
     "curl",
     `echo "curl-args $*" >> "${log}"
-echo "curl-stdin $(cat)" >> "${log}"
+echo "curl-stdin $(cat | tr '\\n' ' ')" >> "${log}"
 exit "\${FAKE_CURL_EXIT:-0}"`,
   );
   fake(
@@ -264,7 +264,7 @@ describe("infra/backup/full-backup.sh", () => {
     expect(calls.some((line) => line.includes("delete retain"))).toBe(false);
     const stdin = calls.find((line) => line.startsWith("curl-stdin"));
     expect(stdin).toContain("https://telegram.example.test/bot");
-    expect(stdin).toMatch(/бэкап/i);
+    expect(stdin).toMatch(/бэкап/iu);
   });
 
   it("[SH-012 AC-1] отказывается работать без данных бакета и не вызывает docker", () => {
@@ -391,7 +391,7 @@ describe("infra/backup/restore-check.sh", () => {
     expect(result.status).toBe(1);
     expect(status()).toMatch(/^fail \d+/);
     const stdin = f.calls().find((line) => line.startsWith("curl-stdin"));
-    expect(stdin).toMatch(/восстановлен/i);
+    expect(stdin).toMatch(/восстановлен/iu);
   });
 
   it("[SH-012 AC-2, AC-3] если восстановление из бэкапа упало, статус fail и алерт", () => {
@@ -442,7 +442,7 @@ describe("infra/backup/alerts.sh", () => {
     const result = f.run("alerts.sh", [], { FAKE_BACKUP_LIST: backupList(f.dir, 27) });
     expect(result.status).toBe(0);
     expect(sent().length).toBe(1);
-    expect(sent()[0]).toMatch(/бэкап/i);
+    expect(sent()[0]).toMatch(/бэкап/iu);
   });
 
   it("[SH-012 AC-3] последнему бэкапу 25 часов: алерта нет", () => {
@@ -465,7 +465,7 @@ describe("infra/backup/alerts.sh", () => {
     writeStatus("fail", 2);
     f.run("alerts.sh", [], healthy());
     expect(sent().length).toBe(1);
-    expect(sent()[0]).toMatch(/восстановлен/i);
+    expect(sent()[0]).toMatch(/восстановлен/iu);
   });
 
   it("[SH-012 AC-3] проверка восстановления не запускалась больше 8 суток или ни разу: алерт", () => {
@@ -485,7 +485,7 @@ describe("infra/backup/alerts.sh", () => {
     expect(sent()).toEqual([]);
     f.run("alerts.sh", [], { ...healthy(), FAKE_DISK_PERCENT: "81" });
     expect(sent().length).toBe(1);
-    expect(sent()[0]).toMatch(/диск/i);
+    expect(sent()[0]).toMatch(/диск/iu);
     expect(sent()[0]).toContain("81");
   });
 
@@ -494,7 +494,7 @@ describe("infra/backup/alerts.sh", () => {
     writeFileSync(join(f.dir, "meminfo"), "MemTotal:        4000000 kB\nMemAvailable:     200000 kB\n");
     f.run("alerts.sh", [], { ...healthy(), MEMINFO_FILE: join(f.dir, "meminfo") });
     expect(sent().length).toBe(1);
-    expect(sent()[0]).toMatch(/памят/i);
+    expect(sent()[0]).toMatch(/памят/iu);
   });
 
   it("[SH-012 AC-3] один и тот же алерт повторяется не чаще, чем раз в ALERT_REPEAT_HOURS", () => {
