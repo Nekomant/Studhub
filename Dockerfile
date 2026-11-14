@@ -9,10 +9,19 @@ FROM node:24-slim AS build
 # Версию pnpm выбирает corepack по полю packageManager в package.json.
 RUN corepack enable
 WORKDIR /repo
-COPY . .
+# Сначала только манифесты: слой с зависимостями не пересобирается при правке кода.
+# Пакеты tests/* в контекст не попадают (.dockerignore), pnpm install работает без них.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/admin/package.json apps/admin/
+COPY apps/api/package.json apps/api/
+COPY apps/landing/package.json apps/landing/
+COPY apps/web/package.json apps/web/
+COPY packages/client-core/package.json packages/client-core/
+COPY packages/ui-tokens/package.json packages/ui-tokens/
 # Скрипты зависимостей не нужны: git-хуки в образе не ставим, а сборочные скрипты проект запрещает.
 RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile --ignore-scripts
+COPY . .
 RUN pnpm --filter @studhub/web build
 # В /out попадает только @studhub/api с зависимостями из dependencies; dev-зависимостей там нет.
 RUN pnpm --filter @studhub/api deploy --prod /out \
