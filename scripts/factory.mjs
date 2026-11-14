@@ -558,7 +558,7 @@ function printList(candidates, waiting, statuses) {
   }
 }
 
-// git fetch origin и отбор кандидатов из TARGET. null — сбой, причина напечатана, код 1.
+// git fetch origin и чтение задач из TARGET. null — сбой, причина напечатана, код 1.
 function loadOriginTasks() {
   const fetched = tryGit(["fetch", "origin", "--quiet"]);
   if (!fetched.ok) {
@@ -575,8 +575,11 @@ function loadOriginTasks() {
   const tasks = readOriginTasks(TASK_DIR);
   // Статус зависимости определяем и для архивных задач; запись из backlog/tasks перекрывает архивную.
   const statuses = new Map([...ARCHIVE_DIRS.flatMap(readOriginTasks), ...tasks].map((task) => [task.id, task.status]));
-  const context = readContext();
+  return { tasks, statuses, context: readContext() };
+}
 
+// Кандидаты (Ready без причин отказа) и ждущие зависимость, по возрастанию номера.
+function pickCandidates({ tasks, statuses, context }) {
   const candidates = [];
   const waiting = [];
   for (const task of tasks.filter((item) => item.status === "Ready")) {
@@ -587,13 +590,14 @@ function loadOriginTasks() {
   const byNumber = (a, b) => Number(a.id.slice(3)) - Number(b.id.slice(3));
   candidates.sort(byNumber);
   waiting.sort(byNumber);
-  return { tasks, statuses, context, candidates, waiting };
+  return { candidates, waiting };
 }
 
 // pnpm factory list: строки SH-NNN<TAB>приоритет<TAB>название, без вопросов и побочных действий.
 function printCandidateRows() {
-  const found = loadOriginTasks();
-  if (!found) return;
+  const loaded = loadOriginTasks();
+  if (!loaded) return;
+  const found = pickCandidates(loaded);
   const row = (task) => `${task.id}\t${task.priority || "не указан"}\t${task.title}\n`;
   if (found.candidates.length === 0) process.stdout.write("Задач в Ready нет\n");
   for (const task of found.candidates) process.stdout.write(row(task));
@@ -884,7 +888,7 @@ function printSummary() {
 }
 
 const USAGE =
-  'Использование: pnpm factory run [SH-NNN] [--foreground] | list | answer SH-NNN "текст" | continue SH-NNN | drop SH-NNN\n';
+  'Использование: pnpm factory run [SH-NNN] [--foreground] | list | answer SH-NNN "текст" | continue SH-NNN | drop SH-NNN; без аргументов: сводка\n';
 
 async function main() {
   const args = process.argv.slice(2).filter((arg) => arg !== "--");
@@ -945,7 +949,7 @@ async function main() {
 
   const found = loadOriginTasks();
   if (!found) return;
-  const { tasks, statuses, context, candidates, waiting } = found;
+  const { tasks, statuses, context } = found;
 
   const launch = (record) => (record ? launchWorker(record, primaryFolder, foreground) : undefined);
 
@@ -966,6 +970,7 @@ async function main() {
     return launch(prepare(task, primaryFolder));
   }
 
+  const { candidates, waiting } = pickCandidates(found);
   printList(candidates, waiting, statuses);
   if (candidates.length === 0) {
     process.stdout.write("Задач в Ready нет\n");

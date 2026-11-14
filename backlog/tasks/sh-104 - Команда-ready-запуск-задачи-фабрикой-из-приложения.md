@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-14T09:23:00Z'
-updated_date: '2026-11-14T19:44:00Z'
+updated_date: '2026-11-14T20:28:00Z'
 labels:
   - infra
   - docs
@@ -91,38 +91,38 @@ API и БД не меняются. Новая подкоманда `pnpm factory
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Дано в origin/main задача в Ready без ветки и записи фабрики. Когда запускается pnpm factory list, тогда выводится строка SH-NNN, приоритет, название через табуляцию; без приоритета вместо него «не указан»
-- [ ] #2 Дано два кандидата. Когда запускается pnpm factory list, тогда строки идут по возрастанию номера
-- [ ] #3 Дано задача в Ready с зависимостью не в Done. Когда запускается pnpm factory list, тогда она выводится в блоке «Ждут зависимость:» такой же строкой
-- [ ] #4 После pnpm factory list ветка, worktree, запись фабрики и фоновый процесс не созданы, код выхода 0
-- [ ] #5 Дано нет кандидатов. Когда запускается pnpm factory list, тогда первая строка «Задач в Ready нет», блок ожидающих (если есть) после неё, код выхода 0
-- [ ] #6 Дано задача добавлена в origin/main после клонирования. Когда запускается pnpm factory list, тогда она в выводе
-- [ ] #7 При сбое git fetch origin вывод и код выхода pnpm factory list те же, что у pnpm factory run
-- [ ] #8 Когда pnpm factory list запускается с лишним аргументом или с --foreground, тогда в stderr печатается «pnpm factory run [SH-NNN] [--foreground] | list» и код выхода 2
-- [ ] #9 Все тесты pnpm factory run из SH-093 и SH-098 проходят без правок
-- [ ] #10 Во frontmatter .claude/skills/ready/SKILL.md есть name: ready, description и disable-model-invocation: true, нет hooks и model
-- [ ] #11 Каталога .claude/commands нет, а pnpm factory run упомянут в .claude/skills только в ready/SKILL.md
-- [ ] #12 .claude/settings.json не содержит /ready и pnpm factory
+- [x] #1 Дано в origin/main задача в Ready без ветки и записи фабрики. Когда запускается pnpm factory list, тогда выводится строка SH-NNN, приоритет, название через табуляцию; без приоритета вместо него «не указан»
+- [x] #2 Дано два кандидата. Когда запускается pnpm factory list, тогда строки идут по возрастанию номера
+- [x] #3 Дано задача в Ready с зависимостью не в Done. Когда запускается pnpm factory list, тогда она выводится в блоке «Ждут зависимость:» такой же строкой
+- [x] #4 После pnpm factory list ветка, worktree, запись фабрики и фоновый процесс не созданы, код выхода 0
+- [x] #5 Дано нет кандидатов. Когда запускается pnpm factory list, тогда первая строка «Задач в Ready нет», блок ожидающих (если есть) после неё, код выхода 0
+- [x] #6 Дано задача добавлена в origin/main после клонирования. Когда запускается pnpm factory list, тогда она в выводе
+- [x] #7 При сбое git fetch origin вывод и код выхода pnpm factory list те же, что у pnpm factory run
+- [x] #8 Когда pnpm factory list запускается с лишним аргументом или с --foreground, тогда в stderr печатается «pnpm factory run [SH-NNN] [--foreground] | list» и код выхода 2
+- [x] #9 Все тесты pnpm factory run из SH-093 и SH-098 проходят без правок
+- [x] #10 Во frontmatter .claude/skills/ready/SKILL.md есть name: ready, description и disable-model-invocation: true, нет hooks и model
+- [x] #11 Каталога .claude/commands нет, а pnpm factory run упомянут в .claude/skills только в ready/SKILL.md
+- [x] #12 .claude/settings.json не содержит /ready и pnpm factory
 - [ ] #13 Дано задача SH-NNN в Ready. Когда владелец вводит /ready SH-NNN, тогда фабрика готовит ветку и worktree, у записи этап «в работе», воркер идёт фоновым процессом, а владелец получает одну строку: ID, ветка, путь к журналу
 - [ ] #14 Когда владелец вводит /ready без номера и кандидатов нет, тогда ответ «Задач в Ready нет»
 - [ ] #15 Когда владелец вводит /ready без номера и кандидат один, тогда запускается pnpm factory run SH-NNN этого кандидата, а не pnpm factory run без номера
 - [ ] #16 Когда владелец вводит /ready без номера и кандидатов несколько, тогда скилл спрашивает номер и запускает выбранную задачу
 - [ ] #17 Если pnpm factory list или pnpm factory run вернул код не 0, либо в выводе run нет строки «воркер запущен», скилл показывает вывод и остановится
-- [ ] #18 В SKILL.md нет --foreground
+- [x] #18 В SKILL.md нет --foreground
 - [ ] #19 В скилле нет цикла по списку кандидатов и вызова pnpm factory run без номера
-- [ ] #20 Предложение «В приложении задачу стартует /ready, из терминала pnpm factory run; штаб с sh-worker остаётся запасным способом.» есть в docs/process.md §7 и §7.1
-- [ ] #21 Фраза «/ready — прямая команда владельца» есть в docs/process.md §7, docs/adr/0010-factory.md п. 4 и CLAUDE.md
-- [ ] #22 В docs/adr/0010-factory.md есть абзац, начинающийся словами «Пункт 2 дополняется:»
-- [ ] #23 README.md описывает /ready и pnpm factory list, tools/tests/docs-dedup.test.ts зелёный с pnpm factory list
+- [x] #20 Предложение «В приложении задачу стартует /ready, из терминала pnpm factory run; штаб с sh-worker остаётся запасным способом.» есть в docs/process.md §7 и §7.1
+- [x] #21 Фраза «/ready — прямая команда владельца» есть в docs/process.md §7, docs/adr/0010-factory.md п. 4 и CLAUDE.md
+- [x] #22 В docs/adr/0010-factory.md есть абзац, начинающийся словами «Пункт 2 дополняется:»
+- [x] #23 README.md описывает /ready и pnpm factory list, tools/tests/docs-dedup.test.ts зелёный с pnpm factory list
 - [ ] #24 Скилл принимает номер только в виде SH-NNN, другой ввод ведёт к вопросу владельцу
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 Каждый критерий приёмки покрыт тестом, в названии теста есть ID критерия (AC-n), все тесты зелёные
+- [x] #1 Каждый критерий приёмки покрыт тестом, в названии теста есть ID критерия (AC-n), все тесты зелёные
 - [ ] #2 CI зелёный: Biome, tsc, Vitest, API-тесты, E2E, миграции и OpenAPI-клиент актуальны (с момента, когда эти проверки появились в CI)
-- [ ] #3 Документы (use-cases, screens, technical-design, ADR) обновлены в этом же PR, если поведение или решения изменились
-- [ ] #4 Новые эндпоинты покрыты тестом изоляции (чужой кабинет → 404); в логах и product_event нет ПДн; деньги только в minor units
+- [x] #3 Документы (use-cases, screens, technical-design, ADR) обновлены в этом же PR, если поведение или решения изменились
+- [x] #4 Новые эндпоинты покрыты тестом изоляции (чужой кабинет → 404); в логах и product_event нет ПДн; деньги только в minor units
 - [ ] #5 Пройдено ревью (/code-review и просмотр диффа владельцем), замечания закрыты
 - [ ] #6 PR слит в main через squash, изменения выложены в prod (после появления деплоя)
 - [ ] #7 В заметках задачи записаны оценка и фактическое время, решения по ходу работы и итоговое резюме
@@ -142,4 +142,16 @@ API и БД не меняются. Новая подкоманда `pnpm factory
 
 <!-- SECTION:NOTES:BEGIN -->
 Оценка: 2 ч
+
+Факт: 2 ч. Решение: SKILL.md создал владелец (Write в .claude/skills запрещён режимом dontAsk). Тест sync.test.ts SH-080 AC-4 один раз упал по нагрузке, отдельно и при повторе verify зелёный. Ручные AC 13-16 и ревью AC 17, 19, 24 ждут владельца.
+
+Проверка sh-verifier: тесты подтверждают критерии 1–12, 18, 20–23; нарушений правила «тест под код» нет. Не проверялись по плану: 13–16 (ручные), 17, 19, 24 (ревью).
+
+Замечание 1: тест AC-2 берёт три трёхзначных номера и не различает числовой и строковый порядок (например SH-99 и SH-100). Критерий этого не требует. Решение владельца: оставить как есть.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Добавлена подкоманда pnpm factory list: общий отбор кандидатов loadOriginTasks для run и list, формат SH-NNN, приоритет, название через табуляцию. Скилл /ready запускает одну задачу через pnpm factory run SH-NNN. Обновлены README, process.md §7 и §7.1, ADR-0010 (решение 5), CLAUDE.md. pnpm verify зелёный: 1243 теста. Ручные критерии 13-16 проверяет владелец после слияния.
+<!-- SECTION:FINAL_SUMMARY:END -->
