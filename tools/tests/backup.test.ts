@@ -47,8 +47,18 @@ describe("compose и шаблон .env", () => {
 
   it("[SH-012 AC-1] Postgres архивирует WAL через wal-g", () => {
     expect(command()).toContain("archive_mode=on");
-    expect(command()).toMatch(/archive_command=\S*wal-g wal-push %p/);
+    expect(command()).toMatch(/archive_command=(timeout \d+ )?\S*wal-g wal-push %p/);
     expect(command()).toMatch(/archive_timeout=\d+/);
+  });
+
+  it("[SH-012 AC-1] зависший wal-push не блокирует архивацию бесконечно: archive_command с timeout", () => {
+    expect(command()).toMatch(/archive_command=timeout \d+ \S*wal-g wal-push %p/);
+  });
+
+  it("[SH-012 AC-1] контейнер postgres доверяет корневым сертификатам хоста: файл смонтирован и задан SSL_CERT_FILE", () => {
+    const volumes = (postgres().volumes ?? []) as string[];
+    expect(volumes).toContain("/etc/ssl/certs/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro");
+    expect(environment().SSL_CERT_FILE).toBe("/etc/ssl/certs/ca-certificates.crt");
   });
 
   it("[SH-012 AC-1] бинарник wal-g монтируется в контейнер только на чтение, порт Postgres наружу не открыт", () => {
@@ -140,7 +150,7 @@ describe("cron, установка и выкладка", () => {
       chmodSync(join(dir, ".env.backup"), 0o600);
       const result = spawnSync("bash", [script("install.sh")], {
         encoding: "utf8",
-        env: { ...process.env, DEPLOY_DIR: dir },
+        env: { ...process.env, DEPLOY_DIR: dir, CA_BUNDLE: join(dir, ".env") },
       });
       expect(result.status).not.toBe(0);
       expect(result.stderr).toContain(".env.backup");
@@ -149,6 +159,15 @@ describe("cron, установка и выкладка", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it("[SH-012 AC-1] install.sh отказывается работать без файла корневых сертификатов хоста", () => {
+    const result = spawnSync("bash", [script("install.sh")], {
+      encoding: "utf8",
+      env: { ...process.env, DEPLOY_DIR: tmpdir(), CA_BUNDLE: "/nonexistent/ca.crt" },
+    });
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("ca-certificates");
   });
 
   it("[SH-012 AC-1] CI копирует infra/backup на сервер вместе с compose", () => {
@@ -387,6 +406,16 @@ describe("infra/backup/restore-check.sh", () => {
     const fetch = calls.findIndex((line) => /^docker run .*restore-fetch\.sh/.test(line));
     expect(switchAt).toBeGreaterThanOrEqual(0);
     expect(fetch).toBeGreaterThan(switchAt);
+  });
+
+  it("[SH-012 AC-2] контейнеры восстановления получают корневые сертификаты хоста, иначе wal-g не проходит TLS", () => {
+    expect(check({ CA_BUNDLE: "/host/ca.crt" }).status).toBe(0);
+    const runs = f.calls().filter((line) => /^docker run /.test(line));
+    expect(runs.length).toBe(2);
+    for (const line of runs) {
+      expect(line).toContain("-v /host/ca.crt:/etc/ssl/certs/ca-certificates.crt:ro");
+      expect(line).toContain("-e SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt");
+    }
   });
 
   it("[SH-012 AC-2] копия не публикует порты и не получает пароль приложения", () => {
