@@ -8,23 +8,53 @@
 // 4. Для выбранной задачи: ветка `sh-NNN-<slug>` и worktree `<основная папка>/.claude/worktrees/<ветка>` от origin/main,
 //    `check-spec.mjs` и `pnpm install --frozen-lockfile` в worktree, запись в состоянии на этапе «подготовлена».
 //    При любой ошибке ветка и worktree, созданные этой командой, удаляются, код 1.
-// Состояние: scripts/lib/factory-state.mjs. Запуск воркера добавляет SH-098.
-// Коды выхода: 0 — задача подготовлена или ничего не запущено по выбору; 1 — задача не запущена; 2 — неверный вызов.
-import { spawnSync } from "node:child_process";
-import { closeSync, mkdtempSync, openSync, readFileSync, rmSync } from "node:fs";
+// 5. После подготовки (или для задачи на этапе «подготовлена») фабрика запускает воркер `claude -p --agent sh-worker`
+//    в worktree задачи и разбирает его JSON-ответ кодом: этап «готово», «стоп» или «ошибка» (SH-098).
+//    Без --foreground воркера ведёт фоновый процесс `node scripts/factory.mjs _worker SH-NNN`, команда сразу завершается.
+//    Не больше двух задач с живым фоновым процессом. Этап, pid и лимит проверяются при записи «в работе» под блокировкой.
+//    Таймаут claude и бюджет задают FACTORY_WORKER_TIMEOUT_MIN и FACTORY_WORKER_BUDGET_USD (scripts/lib/factory-tools.mjs).
+// Состояние: scripts/lib/factory-state.mjs. Права воркера: scripts/lib/factory-tools.mjs. Окружение: scripts/lib/local-env.mjs.
+// Коды выхода: 0 — задача подготовлена и воркер запущен или ничего не запущено по выбору; 1 — задача не запущена; 2 — неверный вызов.
+import { spawn, spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import {
+  closeSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseTask } from "./lib/backlog-task.mjs";
-import { createTask, logLine, readState, StateBusyError } from "./lib/factory-state.mjs";
+import {
+  createTask,
+  logLine,
+  readState,
+  StateBusyError,
+  setStage,
+  stateDir,
+  updateTask,
+} from "./lib/factory-state.mjs";
+import { WORKER_DISALLOWED, workerAllowed, workerBudgetUsd, workerTimeoutMs } from "./lib/factory-tools.mjs";
 import { listWorktrees, tryGit } from "./lib/git.mjs";
+import { readLocalEnv } from "./lib/local-env.mjs";
 
 const TARGET = "origin/main";
 const CHECK_SPEC = fileURLToPath(new URL("./check-spec.mjs", import.meta.url));
 const SLUG_MAX = 30;
 const SLUG_WORDS = 3;
 const INSTALL_TAIL = 20;
+const FACTORY = fileURLToPath(import.meta.url);
+const MAX_LIVE = 2;
+const START_WAIT_SECONDS = 15;
+const REPLY_MAX_BUFFER = 256 * 1024 * 1024;
 
 const TRANSLIT = {
   а: "a",
@@ -141,6 +171,278 @@ function blockers(task, statuses, context) {
   return { reasons, waiting: pending.length > 0 && !alreadyStarted };
 }
 
+// Время старта процесса в ISO (точность до секунды), по `ps -o lstart=`. Нет процесса или нет ps — пустая строка.
+export function processStartedAt(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return "";
+  const result = spawnSync("ps", ["-o", "lstart=", "-p", String(pid)], {
+    encoding: "utf8",
+    env: { ...process.env, LC_ALL: "C" },
+  });
+  if (result.error || result.status !== 0) return "";
+  const time = new Date(result.stdout.trim());
+  return Number.isNaN(time.getTime()) ? "" : time.toISOString();
+}
+
+// Процесс записи жив: pid есть, время старта записано и совпадает с временем старта процесса с этим pid.
+// Совпадение отсекает чужой процесс, который получил тот же pid после перезапуска системы.
+export function isAlive(record) {
+  const pid = record?.pid;
+  if (!Number.isInteger(pid) || pid <= 0 || !record.pid_started_at) return false;
+  return processStartedAt(pid) === record.pid_started_at;
+}
+
+const reasonOf = (error) => (error instanceof Error ? error.message : String(error));
+
+// Первая непустая строка текста после обрезки пробелов.
+const firstLine = (text) =>
+  String(text)
+    .split("\n")
+    .map((line) => line.trim())
+    .find((line) => line !== "") ?? "";
+
+const TAGGED = /^(ГОТОВО|СТОП|ЗАМЕЧАНИЯ) (SH-\d+)/;
+
+// Этап и причина по тексту `result`: первая непустая строка сверяется с ID задачи.
+function classifyResult(result, taskId) {
+  const line = firstLine(result);
+  if (line === `ГОТОВО ${taskId}`) return { stage: "готово", reason: "" };
+  if (line.startsWith(`СТОП ${taskId}:`)) return { stage: "стоп", reason: line };
+  // `ЗАМЕЧАНИЯ SH-NNN` — вопрос владельцу о попутных замечаниях, владелец отвечает на него как на `СТОП`.
+  if (line === `ЗАМЕЧАНИЯ ${taskId}`) return { stage: "стоп", reason: line };
+  const tagged = TAGGED.exec(line);
+  if (tagged && tagged[2] !== taskId) return { stage: "ошибка", reason: "чужой ID" };
+  return { stage: "ошибка", reason: "неизвестный ответ" };
+}
+
+// Разбор ответа воркера без модели. error — ошибка запуска процесса (нет claude в PATH и т. п.).
+// Сначала проверяются причины ошибки по порядку, `result` разбирается, только если ни одна не сработала.
+// Стоимость, отказы и session_id берутся из валидного JSON при любой причине.
+export function parseWorkerReply({ stdout, code = 0, error, taskId, sessionId }) {
+  let json = null;
+  try {
+    const parsed = JSON.parse(String(stdout ?? ""));
+    if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) json = parsed;
+  } catch {
+    // Невалидный JSON: json остаётся null.
+  }
+  const cost = Number(json?.total_cost_usd);
+  const base = {
+    cost: json && Number.isFinite(cost) ? cost : 0,
+    denials: Array.isArray(json?.permission_denials) ? json.permission_denials : [],
+    sessionReady: json !== null && json.session_id === sessionId,
+  };
+  const failed = (reason) => ({ stage: "ошибка", reason, ...base });
+
+  if (error) return failed(`claude не запустился: ${reasonOf(error)}`);
+  if (json === null) return failed("невалидный JSON");
+  if (typeof json.subtype === "string" && json.subtype.startsWith("error"))
+    return failed(`ошибка claude: ${json.subtype}`);
+  if (json.is_error === true) return failed("is_error");
+  if (code !== 0) return failed(`код ${code}`);
+  if (typeof json.result !== "string") return failed("нет result");
+  return { ...classifyResult(json.result, taskId), ...base };
+}
+
+// Пишет результат разбора в запись: этап и reason, стоимость прибавляется, denials заменяются,
+// session_ready только поднимается. pid и pid_started_at не трогает: их очищает фоновый процесс при выходе.
+export function applyWorkerReply(id, reply) {
+  return setStage(id, reply.stage, reply.reason, (task) => ({
+    cost_usd: task.cost_usd + (Number(reply.cost) || 0),
+    denials: Array.isArray(reply.denials) ? reply.denials : [],
+    session_ready: task.session_ready || reply.sessionReady === true,
+  }));
+}
+
+// Пишет ответ в папку задачи как `NNN-<role>.json`, где NNN — максимальный номер файлов ответов плюс один.
+// Невалидный stdout сохраняется как есть. Возвращает путь файла.
+export function saveReply(id, role, stdout) {
+  const dir = join(stateDir(), id);
+  mkdirSync(dir, { recursive: true });
+  for (;;) {
+    const numbers = readdirSync(dir)
+      .map((name) => /^(\d+)-.+\.json$/.exec(name))
+      .filter(Boolean)
+      .map((match) => Number(match[1]));
+    const file = join(dir, `${String(Math.max(0, ...numbers) + 1).padStart(3, "0")}-${role}.json`);
+    try {
+      writeFileSync(file, stdout ?? "", { flag: "wx" });
+      return file;
+    } catch (error) {
+      if (error.code !== "EEXIST") throw error;
+    }
+  }
+}
+
+// Аргументы `claude -p` для воркера задачи (docs/process.md §7.1). Каждый список правил — один аргумент.
+function workerArgs(record) {
+  return [
+    "-p",
+    `Новый старт ${record.id}. Ветка: ${record.branch}.`,
+    "--agent",
+    "sh-worker",
+    "--session-id",
+    record.session_id,
+    "--name",
+    `Фабрика ${record.id}`,
+    "--output-format",
+    "json",
+    "--permission-mode",
+    "dontAsk",
+    "--allowedTools",
+    workerAllowed(record.worktree).join(","),
+    "--disallowedTools",
+    WORKER_DISALLOWED.join(","),
+    "--max-budget-usd",
+    String(workerBudgetUsd()),
+  ];
+}
+
+const quoteArg = (arg) => (/^[\w./:=,()*@%+-]+$/.test(arg) ? arg : JSON.stringify(arg));
+
+// Отказ занять задачу: этап не «подготовлена», живой pid или лимит живых процессов.
+class ClaimError extends Error {}
+
+// Переводит запись в «в работе» с pid и временем старта этого процесса. Проверки этапа, pid и лимита живых
+// процессов идут в той же записи под одной блокировкой состояния: два процесса не пройдут проверку вместе.
+// Новый session_id пишется там же: второй запуск не подменит session_id работающего воркера. Возвращает запись.
+function claimWorker(id) {
+  const startedAt = processStartedAt(process.pid);
+  return setStage(id, "в работе", "воркер запущен", (current) => {
+    if (current.stage !== "подготовлена")
+      throw new ClaimError(`${id} не запущена: этап «${current.stage}», нужен «подготовлена»`);
+    if (isAlive(current)) throw new ClaimError(`${id} не запущена: у записи живой процесс ${current.pid}`);
+    const live = Object.values(readState().tasks)
+      .filter((record) => record.id !== id && isAlive(record))
+      .map((record) => record.id);
+    if (live.length >= MAX_LIVE)
+      throw new ClaimError(
+        `${id} не запущена: живой фоновый процесс у ${live.length} задач (${live.join(", ")}), максимум ${MAX_LIVE}`,
+      );
+    return { pid: process.pid, pid_started_at: startedAt, session_id: randomUUID() };
+  });
+}
+
+// Выполняет воркера в текущем процессе: проверка и этап «в работе» с pid (одна запись под блокировкой, до запуска
+// claude), запуск claude с таймаутом, разбор и запись ответа. В конце pid очищается при любом исходе.
+// Возвращает false, если запуск отклонён: причина напечатана, код выхода 1.
+function runWorker(id, primaryFolder) {
+  if (!readState().tasks[id]) throw new Error(`нет записи фабрики для ${id}`);
+  let record;
+  try {
+    record = claimWorker(id);
+  } catch (error) {
+    if (!(error instanceof ClaimError)) throw error;
+    logLine(id, error.message);
+    process.stdout.write(`${error.message}\n`);
+    process.exitCode = 1;
+    return false;
+  }
+  try {
+    const args = workerArgs(record);
+    logLine(id, `claude ${args.map(quoteArg).join(" ")} (cwd ${record.worktree})`);
+    const env = { ...process.env, ...readLocalEnv(primaryFolder), ...readLocalEnv(record.worktree) };
+    const timeoutMs = workerTimeoutMs();
+    const result = spawnSync("claude", args, {
+      cwd: record.worktree,
+      env,
+      encoding: "utf8",
+      maxBuffer: REPLY_MAX_BUFFER,
+      timeout: timeoutMs,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const stdout = result.stdout ?? "";
+    saveReply(id, "worker", stdout);
+    const stderr = firstLine(result.stderr ?? "");
+    if (stderr) logLine(id, `claude stderr: ${stderr.slice(0, 200)}`);
+    const reply = parseWorkerReply({
+      stdout,
+      code: result.status,
+      error: result.error,
+      taskId: id,
+      sessionId: record.session_id,
+    });
+    const timedOut = result.error?.code === "ETIMEDOUT";
+    applyWorkerReply(
+      id,
+      timedOut ? { ...reply, stage: "ошибка", reason: `таймаут ${timeoutMs / 60_000} мин, claude остановлен` } : reply,
+    );
+  } catch (error) {
+    try {
+      setStage(id, "ошибка", `фабрика: ${reasonOf(error)}`);
+    } catch {
+      // Состояние недоступно: остаётся этап «в работе» и мёртвый pid.
+    }
+  } finally {
+    try {
+      updateTask(id, { pid: null, pid_started_at: "" });
+    } catch {
+      // Запись не обновить: мёртвый pid не считается живым (isAlive сверяет время старта).
+    }
+  }
+  return true;
+}
+
+const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
+
+// Запускает воркера для записи на этапе «подготовлена». Без foreground — фоновый процесс `_worker` и сразу выход.
+async function launchWorker(record, primaryFolder, foreground) {
+  const { id } = record;
+  if (!existsSync(record.worktree)) {
+    process.stdout.write(`${id} не запущена: нет worktree ${record.worktree}\n`);
+    process.exitCode = 1;
+    return;
+  }
+  const logPath = join(stateDir(), id, "log.txt");
+  process.stdout.write(`${id}: воркер запущен\nВетка: ${record.branch}\nЖурнал: ${logPath}\n`);
+
+  if (foreground) {
+    if (!runWorker(id, primaryFolder)) return;
+    const done = readState().tasks[id];
+    process.stdout.write(`${id}: ${done.stage}${done.reason ? `; ${done.reason}` : ""}\n`);
+    return;
+  }
+
+  logLine(id, `фоновый процесс: node scripts/factory.mjs _worker ${id}`);
+  const fd = openSync(logPath, "a");
+  const child = spawn(process.execPath, [FACTORY, "_worker", id], {
+    cwd: primaryFolder,
+    detached: true,
+    stdio: ["ignore", fd, fd],
+  });
+  closeSync(fd);
+  let failure = "";
+  child.once("error", (error) => {
+    failure = reasonOf(error);
+  });
+  child.once("exit", (code) => {
+    failure ||= `процесс вышел с кодом ${code}`;
+  });
+  child.unref();
+  // Выходим, когда процесс _worker записал этап «в работе»: быстрый ответ claude не обгоняет эту запись.
+  const deadline = Date.now() + START_WAIT_SECONDS * 1000;
+  while (Date.now() < deadline) {
+    if (readState().tasks[id]?.stage !== "подготовлена") return;
+    if (failure) break;
+    await sleep(50);
+  }
+  if (readState().tasks[id]?.stage !== "подготовлена") return;
+  process.stdout.write(`${id}: фоновый процесс не начал работу${failure ? ` (${failure})` : ""}. Журнал: ${logPath}\n`);
+  process.exitCode = 1;
+}
+
+// Не больше MAX_LIVE задач с живым фоновым процессом. false — лимит исчерпан, причина напечатана, код 1.
+function checkLimit() {
+  const live = Object.values(readState().tasks)
+    .filter((record) => isAlive(record))
+    .map((record) => record.id);
+  if (live.length < MAX_LIVE) return true;
+  process.stdout.write(
+    `Не запущено: живой фоновый процесс у ${live.length} задач (${live.join(", ")}), максимум ${MAX_LIVE}\n`,
+  );
+  process.exitCode = 1;
+  return false;
+}
+
 const naming = (task) => `${task.id} ${task.title}`;
 
 function printList(candidates, waiting, statuses) {
@@ -223,6 +525,7 @@ function removeCreated(id, branch, worktree, created) {
   tryGit(["worktree", "prune"]);
 }
 
+// Готовит ветку, worktree и запись. Возвращает запись на этапе «подготовлена» или ничего при ошибке (код 1).
 function prepare(task, primaryFolder) {
   const { id, title } = task;
   const branch = `${id.toLowerCase()}-${slugify(title)}`;
@@ -255,14 +558,17 @@ function prepare(task, primaryFolder) {
     );
   }
   process.stdout.write(`${id}: подготовлена\nВетка: ${branch}\nWorktree: ${worktree}\n`);
+  return readState().tasks[id];
 }
 
 async function main() {
   const args = process.argv.slice(2).filter((arg) => arg !== "--");
-  const [command, ...rest] = args;
+  const foreground = args.includes("--foreground");
+  const [command, ...rest] = args.filter((arg) => arg !== "--foreground");
   const wanted = rest.length === 1 ? /^SH-(\d+)$/i.exec(rest[0]) : null;
-  if (command !== "run" || rest.length > 1 || (rest.length === 1 && !wanted)) {
-    process.stderr.write("Использование: pnpm factory run [SH-NNN]\n");
+  const internal = command === "_worker" && wanted;
+  if (!internal && (command !== "run" || rest.length > 1 || (rest.length === 1 && !wanted))) {
+    process.stderr.write("Использование: pnpm factory run [SH-NNN] [--foreground]\n");
     process.exitCode = 2;
     return;
   }
@@ -275,6 +581,16 @@ async function main() {
   // Основная папка: первая запись списка worktree. Все операции идут в ней, откуда бы ни запустили скрипт.
   const primaryFolder = listWorktrees()[0].path;
   process.chdir(primaryFolder);
+
+  if (internal) {
+    runWorker(`SH-${wanted[1]}`, primaryFolder);
+    return;
+  }
+  if (!checkLimit()) return;
+
+  // Задача на этапе «подготовлена»: ветка и worktree готовы, fetch, check-spec и install не нужны.
+  const prepared = wanted ? readState().tasks[`SH-${wanted[1]}`] : undefined;
+  if (prepared?.stage === "подготовлена") return launchWorker(prepared, primaryFolder, foreground);
 
   const fetched = tryGit(["fetch", "origin", "--quiet"]);
   if (!fetched.ok) {
@@ -293,6 +609,8 @@ async function main() {
   const statuses = new Map([...ARCHIVE_DIRS.flatMap(readOriginTasks), ...tasks].map((task) => [task.id, task.status]));
   const context = readContext();
 
+  const launch = (record) => (record ? launchWorker(record, primaryFolder, foreground) : undefined);
+
   if (wanted) {
     const id = `SH-${wanted[1]}`;
     const task = tasks.find((item) => item.id === id);
@@ -307,8 +625,7 @@ async function main() {
       process.exitCode = 1;
       return;
     }
-    prepare(task, primaryFolder);
-    return;
+    return launch(prepare(task, primaryFolder));
   }
 
   const candidates = [];
@@ -332,7 +649,7 @@ async function main() {
     process.stdout.write("Ничего не запущено\n");
     return;
   }
-  prepare(chosen, primaryFolder);
+  return launch(prepare(chosen, primaryFolder));
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await main();
