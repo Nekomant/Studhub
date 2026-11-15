@@ -1,8 +1,10 @@
 # Проверки на каждый PR и push в main (ТД §12, docs/process.md §9).
-# Обязательная проверка для защиты main — задача `checks`.
-# Шаги после установки выполняются, даже если предыдущая проверка упала: в одном прогоне видны все ошибки.
-# Новые проверки добавляют задачи, которые их создают.
-# Job image собирает образ на каждый PR и публикует его в GHCR по слиянию в main. Job deploy выкладывает образ в prod (SH-011).
+# Режим по списку изменённых файлов (scripts/lib/ci-mode.mjs): «light» — только docs/ (кроме
+# docs/process.md) и backlog/; «full» — любой другой файл. Обязательная проверка для защиты main —
+# job checks: в лёгком режиме это зелёная заглушка, в полном — все текущие проверки.
+# Лёгкие проверки (spec:check --changed, формат карточек, разбор scripts/doc.mjs) идут в job light.
+# Job image собирает образ только в полном режиме, deploy выкладывает в prod только в полном режиме
+# по push в main и шагом Done ставит задачам статус Done (scripts/mark-done.mjs).
 name: CI
 
 on:
@@ -18,8 +20,30 @@ permissions:
   contents: read
 
 jobs:
+  # Определение режима по изменённым файлам. Вывод передаётся остальным job через outputs.
+  mode:
+    name: mode
+    runs-on: ubuntu-latest
+    outputs:
+      mode: ${{ steps.mode.outputs.mode }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Определение режима
+        id: mode
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            git fetch --no-tags --depth=1 origin "$GITHUB_BASE_REF"
+            FILES="$(git diff --name-only "origin/$GITHUB_BASE_REF" "HEAD")"
+          else
+            FILES="$(git diff --name-only "HEAD^" "HEAD")"
+          fi
+          MODE="$(printf '%s\n' "$FILES" | node scripts/lib/ci-mode.mjs)"
+          echo "mode=$MODE" >> "$GITHUB_OUTPUT"
+
   checks:
     name: checks
+    needs: mode
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
@@ -54,30 +78,37 @@ jobs:
         id: install
         run: pnpm install --frozen-lockfile
 
+      # Лёгкий режим: тяжёлые проверки не нужны, обязательный job остаётся зелёной заглушкой.
+      - name: Лёгкий режим
+        if: ${{ needs.mode.outputs.mode == 'light' }}
+        run: echo "Лёгкий режим — тяжёлые проверки пропущены"
+
+      # Полный режим: все текущие проверки. Шаги выполняются, даже если предыдущая проверка упала,
+      # чтобы в одном прогоне были видны все ошибки.
       - name: Biome и tsc
-        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        if: ${{ needs.mode.outputs.mode == 'full' && !cancelled() && steps.install.outcome == 'success' }}
         run: pnpm check
 
       - name: Сборка админки платформы
-        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        if: ${{ needs.mode.outputs.mode == 'full' && !cancelled() && steps.install.outcome == 'success' }}
         run: pnpm --filter @studhub/admin build
 
       - name: Миграции соответствуют схеме
-        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        if: ${{ needs.mode.outputs.mode == 'full' && !cancelled() && steps.install.outcome == 'success' }}
         run: pnpm db:check
 
       - name: Клиент OpenAPI актуален
-        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        if: ${{ needs.mode.outputs.mode == 'full' && !cancelled() && steps.install.outcome == 'success' }}
         run: pnpm gen:client:check
 
       - name: Критерии приёмки покрыты тестами
-        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        if: ${{ needs.mode.outputs.mode == 'full' && !cancelled() && steps.install.outcome == 'success' }}
         run: pnpm ac:check
 
       # Только на PR: проверяет спецификации задач в Ready, чьи файлы изменил PR (docs/process.md §5).
       # actions/checkout берёт один коммит, поэтому шаг сам получает origin/main для сравнения.
       - name: Спецификации задач в Ready
-        if: ${{ !cancelled() && steps.install.outcome == 'success' && github.event_name == 'pull_request' }}
+        if: ${{ needs.mode.outputs.mode == 'full' && !cancelled() && steps.install.outcome == 'success' && github.event_name == 'pull_request' }}
         run: |
           git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
           node scripts/check-spec.mjs --changed
@@ -85,34 +116,70 @@ jobs:
       # Браузерный тест темы (SH-073) и E2E (SH-008) запускают Chromium из Playwright.
       # Кэш браузеров привязан к lockfile: версия Playwright лежит в нём, новая версия сбрасывает кэш.
       - name: Кэш браузеров Playwright
+        if: ${{ needs.mode.outputs.mode == 'full' }}
         uses: actions/cache@v5
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Chromium для Playwright
-        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        if: ${{ needs.mode.outputs.mode == 'full' && !cancelled() && steps.install.outcome == 'success' }}
         run: pnpm --filter @studhub/ui-tokens exec playwright install --with-deps chromium
 
       # Харнесс сам создаёт БД рядом с TEST_DATABASE_URL, применяет миграции и запускает приложение (tests/api).
       - name: API-тесты на Postgres 18
-        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        if: ${{ needs.mode.outputs.mode == 'full' && !cancelled() && steps.install.outcome == 'success' }}
         run: pnpm test:api
 
       # API-тесты уже прошли предыдущим шагом, поэтому их проект здесь пропускаем.
       - name: Vitest на Postgres 18
-        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        if: ${{ needs.mode.outputs.mode == 'full' && !cancelled() && steps.install.outcome == 'success' }}
         run: pnpm test --project '!@studhub/tests-api'
 
       # Собирает SPA, поднимает API и vite preview на свободных портах и гоняет Playwright (tests/e2e).
       - name: E2E в Playwright
-        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        if: ${{ needs.mode.outputs.mode == 'full' && !cancelled() && steps.install.outcome == 'success' }}
         run: pnpm test:e2e
 
-  # Образ (Dockerfile) собирается на каждый PR, чтобы поломка сборки была видна до слияния.
+  # Лёгкие проверки для PR, где изменены только docs/ (кроме docs/process.md) и backlog/.
+  light:
+    name: light
+    needs: mode
+    if: ${{ needs.mode.outputs.mode == 'light' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Установка зависимостей
+        run: pnpm install --frozen-lockfile
+
+      # Спецификации задач в Ready, чьи файлы изменил PR (docs/process.md §5).
+      - name: Спецификации задач в Ready
+        run: |
+          git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
+          node scripts/check-spec.mjs --changed
+
+      - name: Формат карточек задач
+        run: node scripts/check-spec.mjs
+
+      # Разбор документов через scripts/doc.mjs: падение здесь означает сломанную структуру документа.
+      - name: Разбор документов
+        run: node scripts/doc.mjs td 1 >/dev/null
+
+  # Образ (Dockerfile) собирается на каждый PR в полном режиме, чтобы поломка сборки была видна до слияния.
   # Публикация в GHCR с тегом SHA идёт только по push в main. Реестр принимает образ по GITHUB_TOKEN, отдельного секрета нет.
   image:
     name: image
+    needs: mode
+    if: ${{ needs.mode.outputs.mode == 'full' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -140,13 +207,13 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # Выкладка в prod: только по слиянию в main и только когда зелёные checks и сборка образа.
+  # Выкладка в prod: только по слиянию в main, в полном режиме и когда зелёные checks и сборка образа.
   # Скрипт infra/deploy.sh делает migrate, pull, up -d и проверку /healthz. Если проверка не прошла, job красный.
   # Секреты (Settings > Secrets and variables > Actions): DEPLOY_SSH_KEY, DEPLOY_HOST, DEPLOY_USER, DEPLOY_KNOWN_HOSTS.
   deploy:
     name: deploy
-    needs: [checks, image]
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    needs: [mode, checks, image]
+    if: ${{ needs.mode.outputs.mode == 'full' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     # 30 минут: сервер в РФ качает образ из GHCR медленно, первый деплой SH-011 не уложился в 10 минут.
     timeout-minutes: 30
@@ -154,6 +221,11 @@ jobs:
     concurrency:
       group: deploy-prod
       cancel-in-progress: false
+    # gh (mark-done) открывает и сливает PR, поэтому нужно больше прав, чем у остальных job.
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
     env:
       DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
       DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
@@ -179,3 +251,11 @@ jobs:
         run: >-
           ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes "$DEPLOY_TARGET"
           "cd /srv/studhub && chmod +x deploy.sh && ./deploy.sh ${{ github.sha }}"
+
+      # Только после успешной выкладки: задачи в Merged, чьи squash-коммиты — предки выложенного SHA,
+      # переводятся в Done. При красном deploy шаг не выполняется и статусы не меняются.
+      - name: Done
+        if: ${{ success() }}
+        run: |
+          git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
+          node scripts/mark-done.mjs ${{ github.sha }}
