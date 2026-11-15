@@ -1464,6 +1464,132 @@ describe("factory-tools и запуск: замечания ревью SH-098", 
   }, 30_000);
 });
 
+// ---------------------------------------------------------------------------------------------------------------
+// SH-105: права воркера на docker, git mv/rm/restore и скрипты миграций.
+
+describe("factory-tools: SH-105 docker, git mv/rm/restore и миграции", () => {
+  it("[SH-105 AC-1] подкоманды docker build, run, exec, logs, ps, inspect, stop, rm и compose разрешены", async () => {
+    const { matchesRule, WORKER_ALLOWED, WORKER_DISALLOWED } = await factoryTools();
+
+    for (const command of [
+      "docker build -t x .",
+      "docker run --rm x true",
+      "docker exec x id -u",
+      "docker logs x",
+      "docker ps -a",
+      "docker inspect x",
+      "docker stop x",
+      "docker rm x",
+      "docker compose up -d",
+    ]) {
+      expect(
+        WORKER_ALLOWED.some((rule) => matchesRule(rule, command)),
+        `${command}: нет в разрешённых`,
+      ).toBe(true);
+      expect(
+        WORKER_DISALLOWED.some((rule) => matchesRule(rule, command)),
+        `${command}: подходит к запрету`,
+      ).toBe(false);
+    }
+  });
+
+  it("[SH-105 AC-2] флаги docker с доступом к файлам хозяина и .env подходят к запретам", async () => {
+    const { matchesRule, WORKER_DISALLOWED } = await factoryTools();
+
+    for (const command of [
+      "docker run -v /tmp:/t x",
+      "docker run -v/tmp:/t x",
+      "docker run --volume /tmp:/t x",
+      "docker run --volumes-from other x",
+      "docker run --mount type=bind,src=/,dst=/h x",
+      "docker run --privileged x",
+      "docker run --env-file=.env x",
+      "docker run --env-file .env x",
+      "docker run --pid=host x",
+      "docker run --cap-add=ALL x",
+      "docker run --device /dev/sda x",
+    ]) {
+      expect(
+        WORKER_DISALLOWED.some((rule) => matchesRule(rule, command)),
+        `${command}: нет в запретах`,
+      ).toBe(true);
+    }
+  });
+
+  it("[SH-105 AC-3] подкоманды docker cp, save, login, push и system не подходят к разрешённым", async () => {
+    const { matchesRule, WORKER_ALLOWED } = await factoryTools();
+
+    for (const command of [
+      "docker cp x:/etc/passwd .",
+      "docker save x",
+      "docker login",
+      "docker push x",
+      "docker system prune -af",
+    ]) {
+      expect(
+        WORKER_ALLOWED.filter((rule) => matchesRule(rule, command)),
+        `${command}: подходит к разрешённому`,
+      ).toEqual([]);
+    }
+  });
+
+  it("[SH-105 AC-4] git mv, git rm и git restore разрешены; git reset, clean и stash не разрешены", async () => {
+    const { matchesRule, WORKER_ALLOWED, WORKER_DISALLOWED } = await factoryTools();
+
+    for (const command of ["git mv a.ts b.ts", "git rm old.ts", "git restore apps/web/src/main.tsx"]) {
+      expect(
+        WORKER_ALLOWED.some((rule) => matchesRule(rule, command)),
+        `${command}: нет в разрешённых`,
+      ).toBe(true);
+      expect(
+        WORKER_DISALLOWED.some((rule) => matchesRule(rule, command)),
+        `${command}: подходит к запрету`,
+      ).toBe(false);
+    }
+    for (const command of ["git reset --hard", "git clean -fd", "git stash"]) {
+      expect(
+        WORKER_ALLOWED.filter((rule) => matchesRule(rule, command)),
+        `${command}: подходит к разрешённому`,
+      ).toEqual([]);
+    }
+  });
+
+  it("[SH-105 AC-5] pnpm gen:client:check и четыре формы --filter разрешены; --filter с exec и start нет", async () => {
+    const { matchesRule, WORKER_ALLOWED, WORKER_DISALLOWED } = await factoryTools();
+
+    for (const command of [
+      "pnpm gen:client:check",
+      "pnpm --filter @studhub/api db:generate",
+      "pnpm --filter @studhub/api db:migrate",
+      "pnpm --filter @studhub/web build",
+      "pnpm --filter @studhub/admin build",
+    ]) {
+      expect(
+        WORKER_ALLOWED.some((rule) => matchesRule(rule, command)),
+        `${command}: нет в разрешённых`,
+      ).toBe(true);
+      expect(
+        WORKER_DISALLOWED.some((rule) => matchesRule(rule, command)),
+        `${command}: подходит к запрету`,
+      ).toBe(false);
+    }
+    for (const command of ["pnpm --filter @studhub/api exec git push", "pnpm --filter @studhub/api start"]) {
+      expect(
+        WORKER_ALLOWED.filter((rule) => matchesRule(rule, command)),
+        `${command}: подходит к разрешённому`,
+      ).toEqual([]);
+    }
+  });
+
+  it("[SH-105 AC-7] ни одно правило из WORKER_ALLOWED и WORKER_DISALLOWED не содержит запятой", async () => {
+    const { WORKER_ALLOWED, WORKER_DISALLOWED } = await factoryTools();
+
+    for (const rule of [...WORKER_ALLOWED, ...WORKER_DISALLOWED]) {
+      expect(rule, `${rule}: содержит запятую`).not.toContain(",");
+    }
+  });
+});
+
 describe("factory: parseWorkerReply", () => {
   const ID = "SH-098";
   const SESSION = "11111111-1111-4111-8111-111111111111";
