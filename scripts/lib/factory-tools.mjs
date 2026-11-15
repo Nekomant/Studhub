@@ -97,13 +97,15 @@ const SECRET_PATHS = [
 
 // Флаги docker, которые открывают контейнеру файлы хозяина, повышают его права или передают ему `.env` мимо запретов Read.
 // Шаблон `Bash(docker * -v*)` ловит и `-v /host:/c`, и `-v/host:/c`; `--volume*` ловит и `--volumes-from`.
+// `--pid` сужен до форм `--pid=…` и `--pid …`, чтобы не запрещать безобидный `--pids-limit`.
 const DOCKER_DENIED = [
   "-v*",
   "--volume*",
   "--mount*",
   "--privileged*",
   "--env-file*",
-  "--pid*",
+  "--pid=*",
+  "--pid *",
   "--cap-add*",
   "--device*",
 ].map((flag) => `Bash(docker * ${flag})`);

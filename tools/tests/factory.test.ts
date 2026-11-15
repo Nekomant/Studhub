@@ -1506,6 +1506,7 @@ describe("factory-tools: SH-105 docker, git mv/rm/restore и миграции", 
       "docker run --env-file=.env x",
       "docker run --env-file .env x",
       "docker run --pid=host x",
+      "docker run --pid host x",
       "docker run --cap-add=ALL x",
       "docker run --device /dev/sda x",
     ]) {
@@ -1513,6 +1514,12 @@ describe("factory-tools: SH-105 docker, git mv/rm/restore и миграции", 
         WORKER_DISALLOWED.some((rule) => matchesRule(rule, command)),
         `${command}: нет в запретах`,
       ).toBe(true);
+    }
+    for (const command of ["docker -v", "docker run --pids-limit 100"]) {
+      expect(
+        WORKER_DISALLOWED.some((rule) => matchesRule(rule, command)),
+        `${command}: ошибочно в запретах`,
+      ).toBe(false);
     }
   });
 
