@@ -7,7 +7,24 @@ import { existsSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
 
 // Подкоманды git, которые советует .claude/agents/sh-worker.md. Push намеренно не входит: пушит сессия задачи.
-const GIT = ["add", "commit", "status", "log", "diff", "show", "switch", "branch", "rev-parse", "fetch", "merge-base"];
+// `mv`, `rm` и `restore` нужны, чтобы переименовать или удалить файл и откатить свою правку: инструменты Edit и Write этого не умеют.
+// `rm` и `mv` работают только с файлами под git, `restore` не выходит за worktree.
+const GIT = [
+  "add",
+  "commit",
+  "status",
+  "log",
+  "diff",
+  "show",
+  "switch",
+  "branch",
+  "rev-parse",
+  "fetch",
+  "merge-base",
+  "mv",
+  "rm",
+  "restore",
+];
 
 // Скрипты pnpm из package.json, которые нужны воркеру. `pnpm exec` и `pnpm dlx` общим правилом не разрешены:
 // через них запускается любая программа, в том числе git push и curl.
@@ -24,13 +41,23 @@ const PNPM = [
   "db:reset-test",
   "gen:openapi",
   "gen:client",
+  "gen:client:check",
   "install --frozen-lockfile",
   "exec vitest",
   "exec biome",
   "exec tsc",
+  // Через `--filter` разрешены только перечисленные скрипты: общее правило `pnpm --filter` пропустило бы `exec`.
+  "--filter @studhub/api db:generate",
+  "--filter @studhub/api db:migrate",
+  "--filter @studhub/web build",
+  "--filter @studhub/admin build",
 ];
 
-// Префиксы команд Bash: скрипты проекта, чтение файлов и каталогов, Backlog.md, Docker Compose, git.
+// Подкоманды docker для задач про образ и деплой: собрать образ, запустить контейнер, проверить его, убрать за собой.
+// Опасные флаги запрещены ниже (DOCKER_DENIED): через них контейнер видит файлы хозяина или читает `.env`.
+const DOCKER = ["compose", "build", "run", "exec", "logs", "ps", "inspect", "stop", "rm"];
+
+// Префиксы команд Bash: скрипты проекта, чтение файлов и каталогов, Backlog.md, docker, git.
 // `cat` не входит: файлы читает инструмент Read, а он ограничен worktree и не читает `.env`.
 // Проверено живыми пробами (claude 2.1.325): `dontAsk` отклоняет составную команду, если любая часть не подходит под правила,
 // а также формы `$'…'` и `$?`; многострочный текст в кавычках, `2>&1` и конвейер в `tail` проходят.
@@ -48,7 +75,7 @@ const BASH = [
   "tail",
   "wc",
   "mkdir",
-  "docker compose",
+  ...DOCKER.map((sub) => `docker ${sub}`),
   ...GIT.map((sub) => `git ${sub}`),
 ];
 
@@ -67,6 +94,21 @@ const SECRET_PATHS = [
   "**/*.pem",
   "**/id_rsa*",
 ];
+
+// Флаги docker, которые открывают контейнеру файлы хозяина, повышают его права или передают ему `.env` мимо запретов Read.
+// Шаблон `Bash(docker * -v*)` ловит и `-v /host:/c`, и `-v/host:/c`; `--volume*` ловит и `--volumes-from`.
+// `--pid` сужен до форм `--pid=…` и `--pid …`, чтобы не запрещать безобидный `--pids-limit`.
+const DOCKER_DENIED = [
+  "-v*",
+  "--volume*",
+  "--mount*",
+  "--privileged*",
+  "--env-file*",
+  "--pid=*",
+  "--pid *",
+  "--cap-add*",
+  "--device*",
+].map((flag) => `Bash(docker * ${flag})`);
 
 // Запрещено всегда: публикация, сеть, чужие программы через pnpm, секреты. Запрет сильнее разрешения.
 // Правила `Bash(* .env*)` ловят `tail .env`, `grep x .env.local`, `head -n 5 ./.env`: у них шаблон со звёздочкой.
@@ -87,6 +129,7 @@ export const WORKER_DISALLOWED = [
   ].map((prefix) => `Bash(${prefix}:*)`),
   "Bash(* .env*)",
   "Bash(* */.env*)",
+  ...DOCKER_DENIED,
   ...SECRET_PATHS.flatMap((path) => [`Read(${path})`, `Edit(${path})`]),
 ];
 

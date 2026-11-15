@@ -98,6 +98,9 @@ hooks:
 - Не используй `$'…'`: форму `--plan $'1. a\n2. b'` фабрика отклоняет.
 - Коммит с телом: `git commit -m '<заголовок>` и дальше с новой строки пустая строка, тело, пустая строка и `Co-Authored-By: …'`. Либо два ключа `-m`: заголовок и строка `Co-Authored-By`.
 - Проходят формы `backlog task edit SH-NNN` с `-s`, `-a`, `--plan`, `--notes`, `--append-notes`, `--check-ac`, `--check-dod`, `--final-summary`. Каждую запускай одной командой.
+- Для образа и контейнера разрешены `docker build`, `docker run`, `docker exec`, `docker logs`, `docker ps`, `docker inspect`, `docker stop`, `docker rm` и `docker compose`. Не используй флаги `-v`, `--volume`, `--mount`, `--privileged`, `--env-file`, `--pid`, `--cap-add`, `--device`: фабрика их запрещает.
+- Переименование и удаление файлов: `git mv` и `git rm`. Откат своей правки: `git restore`. Подкоманды `reset`, `clean` и `stash` остаются запрещены.
+- Миграции и клиент: `pnpm gen:client:check`, `pnpm --filter @studhub/api db:generate`, `pnpm --filter @studhub/api db:migrate`, `pnpm --filter @studhub/web build`, `pnpm --filter @studhub/admin build`.
 
 ## Правила
 
