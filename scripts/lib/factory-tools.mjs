@@ -170,6 +170,56 @@ export function workerAllowed(worktree) {
   return ["Read", "Edit", "Write", "Grep", "Glob"].map((tool) => `${tool}(${glob})`).concat(WORKER_ALLOWED);
 }
 
+// SH-107: известные значения поля «Права» и их раскрытие в правила разрешений поверх базового набора.
+// «docker» повторяет подкоманды из WORKER_ALLOWED отдельной группой: так карточка явно запрашивает право,
+// которое штаб и фабрика могут сверить с правилами.
+export const RIGHTS = {
+  docker: DOCKER.map((sub) => `Bash(docker ${sub}:*)`),
+};
+export const KNOWN_RIGHTS = Object.keys(RIGHTS);
+
+// Правила разрешений, которые даёт список «Права» задачи.
+export function rightsAllowed(rights = []) {
+  return rights.flatMap((right) => RIGHTS[right] ?? []);
+}
+
+// SH-107: роли фабрики и их модели/уровни/режим прав (docs/process.md §7.1, ADR 0011).
+// sh-worker берёт модель и уровень из полей задачи «Модель» (pro → deepseek-v4-pro + high, flash → deepseek-flash):
+// вызов агента передаёт их явно через opts.
+const ROLE_CONFIG = {
+  "sh-reviewer": { model: "deepseek-v4-pro", effort: "max", readOnly: true },
+  "sh-verifier": { model: "deepseek-flash", readOnly: true },
+  "sh-retro": { model: "deepseek-flash", readOnly: true },
+  "sh-worker": { readOnly: false },
+};
+
+// Логическая спецификация запуска агента через `dsh headless`. Модель и уровень кладутся в args как
+// логические `--model <model>` и `--effort <effort>`: их разбирают тесты и функция запуска, которая
+// материализует их в `--patch`-файл. prompt по умолчанию — имя роли.
+export function agentInvocation(role, opts = {}) {
+  const config = ROLE_CONFIG[role];
+  if (!config) throw new Error(`неизвестная роль: ${role}`);
+  const model = opts.model ?? config.model;
+  const effort = opts.effort ?? config.effort;
+  const args = [
+    "headless",
+    "--json",
+    "--session-id",
+    opts.sessionId ?? "",
+    "--permission-mode",
+    config.readOnly ? "read-only" : "workspace-write",
+  ];
+  if (model) args.push("--model", model);
+  if (effort) args.push("--effort", effort);
+  return { command: "dsh", args, prompt: opts.prompt ?? role };
+}
+
+// SH-107: цены моделей в юанях за 1 млн токенов (вход и выход). Значения предварительные.
+export const MODEL_PRICE_CNY_PER_MTOK = {
+  "deepseek-v4-pro": { input: 4, output: 16 },
+  "deepseek-flash": { input: 0.5, output: 2 },
+};
+
 // Правило-имя инструмента (`Grep`) подходит, если `command` равна имени. Правило `Bash(<префикс>:*)` подходит,
 // если команда начинается с префикса, а дальше идёт конец строки или пробел: `Bash(ls:*)` — к `ls -la`, не к `lsof`.
 // Правило `Bash(<шаблон>)` со звёздочкой подходит, если вся команда подходит к шаблону (`*` — любая строка).

@@ -20,6 +20,7 @@ import {
 import { isAbsolute, join, resolve } from "node:path";
 
 // Все этапы по порядку. Список меняют только задачи SH-094–SH-097 вместе с ADR 0010.
+// SH-107 добавляет этапы оркестратора: проверки DoD, ревьюер, CI и слияние.
 export const STAGES = [
   "подготовлена",
   "в работе",
@@ -34,6 +35,12 @@ export const STAGES = [
   "ошибка PR",
   "PR",
   "Done, ждёт слияния",
+  "проверки DoD",
+  "красный коммит",
+  "ревью",
+  "готов к ревью",
+  "CI",
+  "Merged",
 ];
 
 // Этапы, где работает процесс. «подготовлена» не входит ни в этот список, ни в STAGES_WAIT_OWNER:
@@ -200,6 +207,17 @@ export function newTask(id, fields = {}) {
     verify_summary: "",
     review_count: 0,
     pr_url: "",
+    // SH-107: поля оркестратора.
+    worker_session_id: "",
+    round: 0,
+    remarks_count: 0,
+    worker_signal: "",
+    tokens: {
+      worker: { input: 0, output: 0, reasoning: 0 },
+      verifier: { input: 0, output: 0, reasoning: 0 },
+      reviewer: { input: 0, output: 0, reasoning: 0 },
+      retro: { input: 0, output: 0, reasoning: 0 },
+    },
     updated_at: at,
     ...fields,
   };

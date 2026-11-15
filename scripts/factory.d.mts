@@ -1,8 +1,7 @@
 export type WorkerReply = {
   stage: "готово" | "стоп" | "ошибка";
   reason: string;
-  cost: number;
-  denials: unknown[];
+  tokens: { input: number; output: number; reasoning: number };
   sessionReady: boolean;
 };
 

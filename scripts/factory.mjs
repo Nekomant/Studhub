@@ -1,26 +1,18 @@
 #!/usr/bin/env node
-// `pnpm factory run [SH-NNN]`: фабрика готовит задачу к работе (ADR 0010, docs/process.md §7.1).
-// Скрипт без модели: правила выполняет код. Запускается из любой папки клона; основная папка берётся из первой записи
-// `git worktree list --porcelain`, все операции идут в ней.
-// 1. `git fetch origin`, задачи читаются из origin/main (`git show`), а не из рабочей папки.
-// 2. Кандидат: статус Ready, все зависимости в Done, нет ветки sh-NNN-* (локальной и на origin), worktree и записи фабрики.
-// 3. Без аргумента скрипт печатает кандидатов и спрашивает номер (одного кандидата — y/n). С аргументом выбор пропущен.
-// 4. Для выбранной задачи: ветка `sh-NNN-<slug>` и worktree `<основная папка>/.claude/worktrees/<ветка>` от origin/main,
-//    `check-spec.mjs` и `pnpm install --frozen-lockfile` в worktree, запись в состоянии на этапе «подготовлена».
-//    При любой ошибке ветка и worktree, созданные этой командой, удаляются, код 1.
-// 5. После подготовки (или для задачи на этапе «подготовлена») фабрика запускает воркер `claude -p --agent sh-worker`
-//    в worktree задачи и разбирает его JSON-ответ кодом: этап «готово», «стоп» или «ошибка» (SH-098).
-//    Без --foreground воркера ведёт фоновый процесс `node scripts/factory.mjs _worker SH-NNN`, команда сразу завершается.
-//    Не больше двух задач с живым фоновым процессом. Этап, pid и лимит проверяются при записи «в работе» под блокировкой.
-//    Таймаут claude и бюджет задают FACTORY_WORKER_TIMEOUT_MIN и FACTORY_WORKER_BUDGET_USD (scripts/lib/factory-tools.mjs).
-// 6. SH-094: `answer SH-NNN "текст"` (этап «стоп») и `continue SH-NNN` (этап «ошибка») возобновляют воркера; `drop SH-NNN`
-//    снимает задачу; `pnpm factory` без аргументов печатает сводку. Переход на этап, который ждёт владельца, даёт уведомление
-//    macOS (osascript, заголовок «Фабрика»). Этап «в работе» без живого процесса становится «ошибка».
-// Состояние: scripts/lib/factory-state.mjs. Права воркера: scripts/lib/factory-tools.mjs. Окружение: scripts/lib/local-env.mjs.
-// Коды выхода: 0 — задача подготовлена и воркер запущен или ничего не запущено по выбору; 1 — задача не запущена; 2 — неверный вызов.
+// Фабрика-оркестратор (ADR 0011, docs/process.md §7.1). Скрипт без модели: правила выполняет код.
+// Запускается из любой папки клона; основная папка берётся из первой записи `git worktree list --porcelain`.
+// Команды:
+//   ready SH-NNN    выбор и проверка задачи, ветка, worktree, права и модель воркера, бриф подсессии
+//   next SH-NNN     проверки DoD, ревьюер, push, PR, ожидание CI
+//   merge SH-NNN    после добра владельца: ретро, статус Merged, squash-слияние, уборка
+//   status          текущий этап каждой задачи
+// Запасной вариант (ADR 0010): run/answer/continue/drop/list и сводка без аргументов. Запуск агентов — `dsh headless`.
+// Состояние: scripts/lib/factory-state.mjs. Права и роли: scripts/lib/factory-tools.mjs. Окружение: scripts/lib/local-env.mjs.
+// Коды выхода: 0 — команда выполнена; 1 — задача не запущена/не слита; 2 — неверный вызов.
 import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
+  appendFileSync,
   closeSync,
   existsSync,
   mkdirSync,
@@ -32,7 +24,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseTask } from "./lib/backlog-task.mjs";
@@ -48,7 +40,14 @@ import {
   stateDir,
   updateTask,
 } from "./lib/factory-state.mjs";
-import { WORKER_DISALLOWED, workerAllowed, workerBudgetUsd, workerTimeoutMs } from "./lib/factory-tools.mjs";
+import {
+  agentInvocation,
+  MODEL_PRICE_CNY_PER_MTOK,
+  rightsAllowed,
+  WORKER_DISALLOWED,
+  workerAllowed,
+  workerTimeoutMs,
+} from "./lib/factory-tools.mjs";
 import { listWorktrees, tryGit } from "./lib/git.mjs";
 import { readLocalEnv } from "./lib/local-env.mjs";
 
@@ -137,7 +136,7 @@ function readOriginTasks(dir) {
     .filter((path) => path.endsWith(".md"))
     .map((path) => {
       const shown = tryGit(["show", `${TARGET}:${path}`]);
-      return shown.ok ? parseTask(shown.stdout) : null;
+      return shown.ok ? { ...parseTask(shown.stdout), file: path } : null;
     })
     .filter((task) => task?.id);
 }
@@ -220,9 +219,9 @@ function classifyResult(result, taskId) {
   return { stage: "ошибка", reason: "неизвестный ответ" };
 }
 
-// Разбор ответа воркера без модели. error — ошибка запуска процесса (нет claude в PATH и т. п.).
+// Разбор ответа агента без модели. error — ошибка запуска процесса (нет dsh в PATH и т. п.).
 // Сначала проверяются причины ошибки по порядку, `result` разбирается, только если ни одна не сработала.
-// Стоимость, отказы и session_id берутся из валидного JSON при любой причине.
+// Токены и session_id берутся из валидного JSON при любой причине.
 export function parseWorkerReply({ stdout, code = 0, error, taskId, sessionId }) {
   let json = null;
   try {
@@ -231,30 +230,39 @@ export function parseWorkerReply({ stdout, code = 0, error, taskId, sessionId })
   } catch {
     // Невалидный JSON: json остаётся null.
   }
-  const cost = Number(json?.total_cost_usd);
+  const tokens = {
+    input: Number(json?.usage?.input_tokens ?? 0),
+    output: Number(json?.usage?.output_tokens ?? 0),
+    reasoning: Number(json?.usage?.reasoning_tokens ?? 0),
+  };
   const base = {
-    cost: json && Number.isFinite(cost) ? cost : 0,
-    denials: Array.isArray(json?.permission_denials) ? json.permission_denials : [],
+    tokens,
     sessionReady: json !== null && json.session_id === sessionId,
   };
   const failed = (reason) => ({ stage: "ошибка", reason, ...base });
 
-  if (error) return failed(`claude не запустился: ${reasonOf(error)}`);
+  if (error) return failed(`dsh не запустился: ${reasonOf(error)}`);
   if (json === null) return failed("невалидный JSON");
   if (typeof json.subtype === "string" && json.subtype.startsWith("error"))
-    return failed(`ошибка claude: ${json.subtype}`);
+    return failed(`ошибка dsh: ${json.subtype}`);
   if (json.is_error === true) return failed("is_error");
   if (code !== 0) return failed(`код ${code}`);
   if (typeof json.result !== "string") return failed("нет result");
   return { ...classifyResult(json.result, taskId), ...base };
 }
 
-// Пишет результат разбора в запись: этап и reason, стоимость прибавляется, denials заменяются,
-// session_ready только поднимается. pid и pid_started_at не трогает: их очищает фоновый процесс при выходе.
+// Пишет результат разбора в запись: этап и reason, токены воркера прибавляются,
+// session_ready только поднимается. pid и pid_started_at не трогает.
 export function applyWorkerReply(id, reply) {
   return setStage(id, reply.stage, reply.reason, (task) => ({
-    cost_usd: task.cost_usd + (Number(reply.cost) || 0),
-    denials: Array.isArray(reply.denials) ? reply.denials : [],
+    tokens: {
+      ...task.tokens,
+      worker: {
+        input: (task.tokens?.worker?.input ?? 0) + (Number(reply.tokens?.input) || 0),
+        output: (task.tokens?.worker?.output ?? 0) + (Number(reply.tokens?.output) || 0),
+        reasoning: (task.tokens?.worker?.reasoning ?? 0) + (Number(reply.tokens?.reasoning) || 0),
+      },
+    },
     session_ready: task.session_ready || reply.sessionReady === true,
   }));
 }
@@ -279,47 +287,170 @@ export function saveReply(id, role, stdout) {
   }
 }
 
-// Режимы запуска воркера. from — этап записи, с которого режим стартует.
-//   start    новый старт после подготовки (SH-098);
-//   answer   продолжение после «стоп» с ответом владельца через --resume (SH-094);
-//   continue повтор после «ошибка»: --resume, а без готовой сессии новый старт в том же worktree (SH-094).
+// ---------------------------------------------------------------------------------------------------------------
+// Запуск агентов через `dsh headless`. Модель и уровень материализуются в --patch-файл.
+
+const valueAfter = (args, flag) => {
+  const index = args.indexOf(flag);
+  return index === -1 ? undefined : args[index + 1];
+};
+
+// Git-каталог worktree для флага --add-dir.
+function resolveGitDir(worktree) {
+  const result = spawnSync("git", ["-C", worktree, "rev-parse", "--git-dir"], { encoding: "utf8" });
+  const dir = (result.stdout ?? "").trim();
+  if (!dir) return join(worktree, ".git");
+  return isAbsolute(dir) ? dir : join(worktree, dir);
+}
+
+// Файл --patch с моделью и уровнем reasoning (docs/process.md §7.1).
+function writeModelPatch(model, effort) {
+  const dir = mkdtempSync(join(tmpdir(), "factory-patch-"));
+  const file = join(dir, "patch.yml");
+  const config = `{ provider: 'deepseek-account', model: ${model}${effort ? `, reasoningEffort: ${effort}` : ""} }`;
+  writeFileSync(file, `- name: '@deepseek-ai/dsh-agent-default-model'\n  config: ${config}\n`);
+  return file;
+}
+
+// Запускает агента по логической спецификации agentInvocation и возвращает результат процесса.
+function runHeadless(id, invocation, { worktree, primaryFolder }) {
+  const model = valueAfter(invocation.args, "--model");
+  const effort = valueAfter(invocation.args, "--effort");
+  const patch = writeModelPatch(model, effort);
+  const args = [...invocation.args, "--add-dir", resolveGitDir(worktree), "--patch", patch, invocation.prompt];
+  logLine(id, `dsh ${args.map(quoteArg).join(" ")} (cwd ${worktree})`);
+  const env = { ...process.env, ...readLocalEnv(primaryFolder), ...readLocalEnv(worktree) };
+  const result = spawnSync("dsh", args, {
+    cwd: worktree,
+    env,
+    encoding: "utf8",
+    maxBuffer: REPLY_MAX_BUFFER,
+    timeout: workerTimeoutMs(),
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  return { stdout: result.stdout ?? "", stderr: result.stderr ?? "", code: result.status, error: result.error };
+}
+
+// Разбор ответа dsh headless без привязки к роли: ok/причина + result + токены.
+function parseAgentReply({ stdout, code = 0, error }) {
+  let json = null;
+  try {
+    const parsed = JSON.parse(String(stdout ?? ""));
+    if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) json = parsed;
+  } catch {
+    // Невалидный JSON.
+  }
+  const usage = {
+    input: Number(json?.usage?.input_tokens ?? 0),
+    output: Number(json?.usage?.output_tokens ?? 0),
+    reasoning: Number(json?.usage?.reasoning_tokens ?? 0),
+  };
+  if (error) return { ok: false, reason: `dsh не запустился: ${reasonOf(error)}`, usage };
+  if (json === null) return { ok: false, reason: "невалидный JSON", usage };
+  if (typeof json.subtype === "string" && json.subtype.startsWith("error"))
+    return { ok: false, reason: `ошибка dsh: ${json.subtype}`, usage };
+  if (json.is_error === true) return { ok: false, reason: "is_error", usage };
+  if (code !== 0) return { ok: false, reason: `код ${code}`, usage };
+  if (typeof json.result !== "string") return { ok: false, reason: "нет result", usage };
+  return { ok: true, result: json.result, usage };
+}
+
+// Прибавляет токены агента к разбивке записи.
+function addTokens(id, agent, usage) {
+  updateTask(id, (task) => ({
+    tokens: {
+      ...task.tokens,
+      [agent]: {
+        input: (task.tokens?.[agent]?.input ?? 0) + (Number(usage.input) || 0),
+        output: (task.tokens?.[agent]?.output ?? 0) + (Number(usage.output) || 0),
+        reasoning: (task.tokens?.[agent]?.reasoning ?? 0) + (Number(usage.reasoning) || 0),
+      },
+    },
+  }));
+}
+
+// Модель и уровень воркера из поля «Модель» задачи: pro → deepseek-v4-pro + high, flash → deepseek-flash.
+const workerModel = (model) => (model === "flash" ? "deepseek-flash" : "deepseek-v4-pro");
+const workerEffortFor = (model) => (model === "flash" ? undefined : "high");
+
+const modelName = (model) => workerModel(model);
+
+// ---------------------------------------------------------------------------------------------------------------
+// Уведомления macOS и живучесть фоновых процессов.
+
+const DEAD_REASON = "процесс завершился без ответа";
+const NOTIFY_MAX = 100;
+const NOTIFY_SCRIPT = [
+  "-e",
+  "on run argv",
+  "-e",
+  'display notification (item 1 of argv) with title "Фабрика"',
+  "-e",
+  "end run",
+];
+
+// Уведомление macOS, когда задача перешла на этап, который ждёт владельца. Текст идёт отдельным аргументом osascript.
+function notify(id, stage, reason) {
+  if (!STAGES_WAIT_OWNER.includes(stage)) return;
+  const detail = stage === "стоп" ? firstLine(reason) : String(reason ?? "").trim();
+  const text = Array.from([`${id} · ${stage}`, detail].filter(Boolean).join(" · "))
+    .slice(0, NOTIFY_MAX)
+    .join("");
+  const result = spawnSync("osascript", [...NOTIFY_SCRIPT, text], { stdio: "ignore", timeout: 10_000 });
+  if (!result.error && result.status === 0) return;
+  try {
+    logLine(id, `уведомление: ${text}`);
+  } catch {
+    // Журнал недоступен.
+  }
+}
+
+// Ставит этап и шлёт уведомление, если этап ждёт владельца.
+function moveStage(id, stage, reason, extra) {
+  const task = setStage(id, stage, reason, extra);
+  notify(id, stage, reason);
+  return task;
+}
+
+class Skip extends Error {}
+
+// Задача на этапе, где работает процесс, а процесс не жив: этап «ошибка» с причиной и уведомление.
+function markDeadWorkers() {
+  for (const record of Object.values(readState().tasks)) {
+    if (!STAGES_RUNNING.includes(record.stage) || isAlive(record)) continue;
+    try {
+      moveStage(record.id, "ошибка", DEAD_REASON, (current) => {
+        if (!STAGES_RUNNING.includes(current.stage) || isAlive(current)) throw new Skip();
+        return { pid: null, pid_started_at: "" };
+      });
+    } catch (error) {
+      if (!(error instanceof Skip)) throw error;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Запасной вариант: run/answer/continue — воркер в фоне через dsh headless.
+
 const MODES = {
   start: { from: "подготовлена", command: "_worker" },
   answer: { from: "стоп", command: "_answer" },
   continue: { from: "ошибка", command: "_continue" },
 };
 
-// Аргументы `claude -p` для воркера задачи (docs/process.md §7.1). Каждый список правил — один аргумент.
-// resume: продолжение сессии записи; текст ответа владельца идёт в промпт одним аргументом без изменений.
-function workerArgs(record, mode, resume) {
-  const limits = [
-    "--output-format",
-    "json",
-    "--permission-mode",
-    "dontAsk",
-    "--allowedTools",
-    workerAllowed(record.worktree).join(","),
-    "--disallowedTools",
-    WORKER_DISALLOWED.join(","),
-    "--max-budget-usd",
-    String(workerBudgetUsd()),
-  ];
-  if (resume) {
-    const prompt =
-      mode.kind === "answer" ? `Продолжение ${record.id}. Ответ владельца: ${mode.text}` : `Продолжение ${record.id}.`;
-    return ["-p", prompt, "--resume", record.session_id, "--agent", "sh-worker", ...limits];
-  }
-  return [
-    "-p",
-    `Новый старт ${record.id}. Ветка: ${record.branch}.`,
-    "--agent",
-    "sh-worker",
-    "--session-id",
-    record.session_id,
-    "--name",
-    `Фабрика ${record.id}`,
-    ...limits,
-  ];
+// Логическая спецификация вызова воркера. resume — продолжение сессии записи (--session-id уже задан).
+function workerInvocation(record, mode, resume) {
+  const prompt = resume
+    ? mode.kind === "answer"
+      ? `Продолжение ${record.id}. Ответ владельца: ${mode.text}`
+      : `Продолжение ${record.id}.`
+    : `Новый старт ${record.id}. Ветка: ${record.branch}.`;
+  return agentInvocation("sh-worker", {
+    sessionId: record.session_id,
+    model: workerModel(record.model),
+    effort: workerEffortFor(record.model),
+    prompt: `${prompt} (sh-worker)`,
+  });
 }
 
 const quoteArg = (arg) => (/^[\w./:=,()*@%+-]+$/.test(arg) ? arg : JSON.stringify(arg));
@@ -327,10 +458,8 @@ const quoteArg = (arg) => (/^[\w./:=,()*@%+-]+$/.test(arg) ? arg : JSON.stringif
 // Отказ занять задачу: этап не «подготовлена», живой pid или лимит живых процессов.
 class ClaimError extends Error {}
 
-// Переводит запись в «в работе» с pid и временем старта этого процесса. Проверки этапа, pid и лимита живых
-// процессов идут в той же записи под одной блокировкой состояния: два процесса не пройдут проверку вместе.
-// Новый session_id пишется там же: второй запуск не подменит session_id работающего воркера. Возвращает запись.
-// Новый session_id получают новый старт и повтор без готовой сессии; продолжение оставляет session_id записи.
+// Переводит запись в «в работе» с pid и временем старта этого процесса. Новый session_id получают новый старт
+// и повтор без готовой сессии; продолжение оставляет session_id записи.
 function claimWorker(id, mode) {
   const startedAt = processStartedAt(process.pid);
   const from = MODES[mode.kind].from;
@@ -353,63 +482,7 @@ function claimWorker(id, mode) {
   });
 }
 
-const DEAD_REASON = "процесс завершился без ответа";
-const NOTIFY_MAX = 100;
-const NOTIFY_SCRIPT = [
-  "-e",
-  "on run argv",
-  "-e",
-  'display notification (item 1 of argv) with title "Фабрика"',
-  "-e",
-  "end run",
-];
-
-// Уведомление macOS, когда задача перешла на этап, который ждёт владельца. Текст идёт отдельным аргументом osascript,
-// а не внутри скрипта AppleScript: кавычки и обратная косая черта в ответе модели не исполняются.
-// Нет osascript или он завершился с ошибкой: текст пишется в журнал задачи, работа продолжается.
-function notify(id, stage, reason) {
-  if (!STAGES_WAIT_OWNER.includes(stage)) return;
-  const detail = stage === "стоп" ? firstLine(reason) : String(reason ?? "").trim();
-  const text = Array.from([`${id} · ${stage}`, detail].filter(Boolean).join(" · "))
-    .slice(0, NOTIFY_MAX)
-    .join("");
-  const result = spawnSync("osascript", [...NOTIFY_SCRIPT, text], { stdio: "ignore", timeout: 10_000 });
-  if (!result.error && result.status === 0) return;
-  try {
-    logLine(id, `уведомление: ${text}`);
-  } catch {
-    // Журнал недоступен: уведомление не должно менять этап, который уже записан.
-  }
-}
-
-// Ставит этап и шлёт уведомление, если этап ждёт владельца. Уведомление шлёт процесс, который сменил этап.
-function moveStage(id, stage, reason, extra) {
-  const task = setStage(id, stage, reason, extra);
-  notify(id, stage, reason);
-  return task;
-}
-
-class Skip extends Error {}
-
-// Задача на этапе, где работает процесс, а процесс не жив: этап «ошибка» с причиной и уведомление.
-// Проверка повторяется под блокировкой записи: ответ воркера, пришедший между чтением и записью, не затирается.
-function markDeadWorkers() {
-  for (const record of Object.values(readState().tasks)) {
-    if (!STAGES_RUNNING.includes(record.stage) || isAlive(record)) continue;
-    try {
-      moveStage(record.id, "ошибка", DEAD_REASON, (current) => {
-        if (!STAGES_RUNNING.includes(current.stage) || isAlive(current)) throw new Skip();
-        return { pid: null, pid_started_at: "" };
-      });
-    } catch (error) {
-      if (!(error instanceof Skip)) throw error;
-    }
-  }
-}
-
-// Выполняет воркера в текущем процессе: проверка и этап «в работе» с pid (одна запись под блокировкой, до запуска
-// claude), запуск claude с таймаутом, разбор и запись ответа. В конце pid очищается при любом исходе.
-// Возвращает false, если запуск отклонён: причина напечатана, код выхода 1.
+// Выполняет воркера в текущем процессе: этап «в работе» с pid, запуск dsh headless, разбор и запись ответа.
 function runWorker(id, primaryFolder, mode = { kind: "start" }) {
   if (!readState().tasks[id]) throw new Error(`нет записи фабрики для ${id}`);
   let record;
@@ -424,32 +497,22 @@ function runWorker(id, primaryFolder, mode = { kind: "start" }) {
   }
   try {
     const resume = mode.kind === "answer" || (mode.kind === "continue" && record.session_ready);
-    const args = workerArgs(record, mode, resume);
-    logLine(id, `claude ${args.map(quoteArg).join(" ")} (cwd ${record.worktree})`);
-    const env = { ...process.env, ...readLocalEnv(primaryFolder), ...readLocalEnv(record.worktree) };
-    const timeoutMs = workerTimeoutMs();
-    const result = spawnSync("claude", args, {
-      cwd: record.worktree,
-      env,
-      encoding: "utf8",
-      maxBuffer: REPLY_MAX_BUFFER,
-      timeout: timeoutMs,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    const stdout = result.stdout ?? "";
+    const invocation = workerInvocation(record, mode, resume);
+    const result = runHeadless(id, invocation, { worktree: record.worktree, primaryFolder });
+    const stdout = result.stdout;
     saveReply(id, "worker", stdout);
-    const stderr = firstLine(result.stderr ?? "");
-    if (stderr) logLine(id, `claude stderr: ${stderr.slice(0, 200)}`);
+    const stderr = firstLine(result.stderr);
+    if (stderr) logLine(id, `dsh stderr: ${stderr.slice(0, 200)}`);
     const reply = parseWorkerReply({
       stdout,
-      code: result.status,
+      code: result.code,
       error: result.error,
       taskId: id,
       sessionId: record.session_id,
     });
     const timedOut = result.error?.code === "ETIMEDOUT";
     const final = timedOut
-      ? { ...reply, stage: "ошибка", reason: `таймаут ${timeoutMs / 60_000} мин, claude остановлен` }
+      ? { ...reply, stage: "ошибка", reason: `таймаут ${workerTimeoutMs() / 60_000} мин, dsh остановлен` }
       : reply;
     applyWorkerReply(id, final);
     notify(id, final.stage, final.reason);
@@ -471,8 +534,7 @@ function runWorker(id, primaryFolder, mode = { kind: "start" }) {
 
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
-// Запускает воркера для записи на этапе mode.from. Без foreground — фоновый процесс (`_worker`, `_answer` или
-// `_continue`) и сразу выход. Текст ответа владельца уходит фоновому процессу отдельным аргументом без оболочки.
+// Запускает воркера для записи на этапе mode.from. Без foreground — фоновый процесс и сразу выход.
 async function launchWorker(record, primaryFolder, foreground, mode = { kind: "start" }) {
   const { id } = record;
   const from = MODES[mode.kind].from;
@@ -508,8 +570,6 @@ async function launchWorker(record, primaryFolder, foreground, mode = { kind: "s
     failure ||= `процесс вышел с кодом ${code}`;
   });
   child.unref();
-  // Выходим, когда фоновый процесс записал этап «в работе»: быстрый ответ claude не обгоняет эту запись.
-  // Этап мог вернуться на прежний (после «стоп» снова «стоп»), поэтому сравнивается и время смены этапа.
   const moved = () => {
     const current = readState().tasks[id];
     return current?.stage !== from || current.stage_changed_at !== record.stage_changed_at;
@@ -525,7 +585,7 @@ async function launchWorker(record, primaryFolder, foreground, mode = { kind: "s
   process.exitCode = 1;
 }
 
-// Не больше MAX_LIVE задач с живым фоновым процессом. false — лимит исчерпан, причина напечатана, код 1.
+// Не больше MAX_LIVE задач с живым фоновым процессом.
 function checkLimit() {
   const live = Object.values(readState().tasks)
     .filter((record) => isAlive(record))
@@ -536,6 +596,455 @@ function checkLimit() {
   );
   process.exitCode = 1;
   return false;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Подготовка задачи (общая для ready и запасного run).
+
+// Запуск команды с записью в журнал задачи.
+function runLogged(id, command, args, options = {}) {
+  logLine(id, `${command} ${args.join(" ")}${options.cwd ? ` (cwd ${options.cwd})` : ""}`);
+  return spawnSync(command, args, { encoding: "utf8", ...options });
+}
+
+// `pnpm install --frozen-lockfile` с выводом stdout и stderr в один файл: порядок строк сохраняется.
+function installDependencies(id, worktree) {
+  const dir = mkdtempSync(join(tmpdir(), "factory-install-"));
+  const file = join(dir, "output.txt");
+  const fd = openSync(file, "w");
+  logLine(id, `pnpm install --frozen-lockfile (cwd ${worktree})`);
+  const result = spawnSync("pnpm", ["install", "--frozen-lockfile"], { cwd: worktree, stdio: ["ignore", fd, fd] });
+  closeSync(fd);
+  const output = readFileSync(file, "utf8");
+  rmSync(dir, { recursive: true, force: true });
+  if (result.error) return { ok: false, tail: `pnpm не запускается: ${result.error.code ?? result.error.message}` };
+  if (result.status === 0) return { ok: true };
+  const lines = output.trimEnd().split("\n");
+  return { ok: false, tail: lines.slice(-INSTALL_TAIL).join("\n") };
+}
+
+function removeCreated(id, branch, worktree, created) {
+  if (created.worktree) {
+    logLine(id, `git worktree remove --force ${worktree}`);
+    tryGit(["worktree", "remove", "--force", worktree]);
+  }
+  if (created.branch) {
+    logLine(id, `git branch -D ${branch}`);
+    tryGit(["branch", "-D", "--quiet", branch]);
+  }
+  tryGit(["worktree", "prune"]);
+}
+
+// Права и модель воркера в настройках worktree (.claude/settings.local.json).
+function writeWorktreeSettings(worktree, task) {
+  const settings = {
+    permissions: {
+      allow: [...workerAllowed(worktree), ...rightsAllowed(task.rights)],
+      deny: WORKER_DISALLOWED,
+    },
+    model: modelName(task.model),
+  };
+  const dir = join(worktree, ".claude");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "settings.local.json"), `${JSON.stringify(settings, null, 2)}\n`);
+}
+
+// Готовит ветку, worktree, права, модель и запись. Возвращает запись на этапе «подготовлена» или ничего при ошибке.
+function prepare(task, primaryFolder) {
+  const { id, title } = task;
+  const branch = `${id.toLowerCase()}-${slugify(title)}`;
+  const worktree = join(primaryFolder, ".claude/worktrees", branch);
+  const created = { branch: false, worktree: false };
+  const fail = (message) => {
+    process.stdout.write(`${message}\n`);
+    removeCreated(id, branch, worktree, created);
+    process.exitCode = 1;
+  };
+
+  const added = runLogged(id, "git", ["worktree", "add", "--no-track", "-b", branch, worktree, TARGET]);
+  if (added.status !== 0) return fail(`${id}: git worktree add не удался: ${oneLine(added.stderr)}`);
+  created.branch = true;
+  created.worktree = true;
+
+  const checked = runLogged(id, process.execPath, [CHECK_SPEC, id, "--root", worktree], { cwd: primaryFolder });
+  if (checked.status !== 0)
+    return fail(`${checked.stdout}${checked.stderr}`.trimEnd() || `${id}: check-spec.mjs завершился с ошибкой`);
+
+  const installed = installDependencies(id, worktree);
+  if (!installed.ok)
+    return fail(`${id}: pnpm install --frozen-lockfile не удался. Последние ${INSTALL_TAIL} строк:\n${installed.tail}`);
+
+  try {
+    createTask(id, {
+      title,
+      branch,
+      worktree,
+      model: task.model,
+      rights: task.rights,
+      reason: "ветка и worktree готовы",
+    });
+  } catch (error) {
+    return fail(
+      error instanceof StateBusyError ? "Состояние занято" : `${id}: запись состояния не удалась: ${error.message}`,
+    );
+  }
+  process.stdout.write(`${id}: подготовлена\nВетка: ${branch}\nWorktree: ${worktree}\n`);
+  return readState().tasks[id];
+}
+
+// Бриф подсессии: ID, ветка, worktree, модель и права (docs/process.md §7.1).
+function printBrief(task, record) {
+  process.stdout.write(
+    [
+      `${task.id}: бриф`,
+      `Ветка: ${record.branch}`,
+      `Worktree: ${record.worktree}`,
+      `Модель: ${modelName(task.model)}`,
+      `Права: ${task.rights.length > 0 ? task.rights.join(", ") : "базовые"}`,
+    ].join("\n") + "\n",
+  );
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// factory ready: выбор и проверка задачи, актуальность по «Затрагивает», подготовка и бриф.
+
+// Файлы из поля «Затрагивает», которые изменились после коммита, где задача перешла в Ready.
+function changedSinceReady(task) {
+  const changed = [];
+  if (!task.affects?.length) return changed;
+  const commit = tryGit(["log", "-1", "--format=%H", TARGET, "--", task.file]);
+  if (!commit.ok) return changed;
+  const base = commit.stdout.trim();
+  for (const file of task.affects) {
+    const atBase = tryGit(["rev-parse", `${base}:${file}`]);
+    const atHead = tryGit(["rev-parse", `${TARGET}:${file}`]);
+    if (atBase.ok !== atHead.ok || atBase.stdout !== atHead.stdout) changed.push(file);
+  }
+  return changed;
+}
+
+async function readyCommand(task, primaryFolder) {
+  const changed = changedSinceReady(task);
+  if (changed.length > 0) {
+    for (const file of changed) process.stdout.write(`${file}\n`);
+    const answer = await ask("Подготовить задачу, несмотря на изменения? [y/n] ");
+    if (!/^(y|yes)$/i.test(answer)) {
+      process.stdout.write("Задача не подготовлена\n");
+      return;
+    }
+  }
+  const record = prepare(task, primaryFolder);
+  if (record) {
+    writeWorktreeSettings(record.worktree, task);
+    printBrief(task, record);
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// factory next: проверки DoD, красный коммит, ревьюер, PR и CI.
+
+const DOD_CHECKS = [
+  { name: "тесты", args: ["test"] },
+  { name: "линт", args: ["exec", "biome", "ci", "."] },
+  { name: "типы", args: ["exec", "tsc", "-b"] },
+  { name: "критерии", args: ["ac:check"] },
+];
+
+function runDoDChecks(record) {
+  const errors = [];
+  let ok = true;
+  for (const check of DOD_CHECKS) {
+    logLine(record.id, `pnpm ${check.args.join(" ")} (cwd ${record.worktree})`);
+    const result = spawnSync("pnpm", check.args, {
+      cwd: record.worktree,
+      encoding: "utf8",
+      maxBuffer: REPLY_MAX_BUFFER,
+    });
+    if (result.status === 0) continue;
+    ok = false;
+    errors.push(`проверка ${check.name} не прошла:`);
+    const output = `${result.stdout ?? ""}${result.stderr ?? ""}`.trim();
+    if (output) for (const line of output.split("\n")) errors.push(line);
+  }
+  return { ok, errors };
+}
+
+const isTestFile = (path) =>
+  /(^|\/)(tests?|__tests__|tools\/tests)\//.test(path) || /\.(test|spec)\.[jt]sx?$/.test(path);
+
+// Проверка красного коммита: первый коммит ветки после origin/main должен содержать только тестовые файлы,
+// и после него нельзя менять проверки в тестах (тогда нужен sh-verifier).
+function checkRedCommit(record) {
+  const wt = record.worktree;
+  const base = oneLine(tryGit(["-C", wt, "merge-base", TARGET, "HEAD"]).stdout);
+  const commits = tryGit(["-C", wt, "log", "--format=%H", "--reverse", `${base}..HEAD`])
+    .stdout.split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const errors = [];
+  let verifier = false;
+  if (commits.length === 0) return { ok: true, verifier, errors };
+  const filesOf = (commit) =>
+    tryGit(["-C", wt, "show", "--name-only", "--format=", commit])
+      .stdout.split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+  const nonTest = filesOf(commits[0]).filter((file) => !isTestFile(file));
+  if (nonTest.length > 0) errors.push(`в красном коммите есть не-тестовые файлы: ${nonTest.join(", ")}`);
+  for (const commit of commits.slice(1)) {
+    if (filesOf(commit).some(isTestFile)) {
+      verifier = true;
+      errors.push("после красного коммита изменены проверки в тестах");
+      break;
+    }
+  }
+  return { ok: errors.length === 0, verifier, errors };
+}
+
+// Вердикт ревьюера: первая строка «чисто» или «блокирует: N».
+function parseReviewerVerdict(result) {
+  const line = firstLine(result);
+  if (line === "чисто") return { verdict: "clean" };
+  const blocked = /^блокирует:\s*(\d+)/.exec(line);
+  if (blocked) return { verdict: "blocked", count: Number(blocked[1]) };
+  return { verdict: "unknown" };
+}
+
+function writeReviewFile(record, result) {
+  const dir = join(record.worktree, "docs");
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, `review-${record.id}.md`);
+  writeFileSync(file, `${result}\n`);
+  return file;
+}
+
+function pushBranch(record) {
+  const pushed = tryGit(["-C", record.worktree, "push", "-q", "origin", record.branch]);
+  if (!pushed.ok) logLine(record.id, `git push origin ${record.branch}: ${pushed.stderr}`);
+  return pushed.ok;
+}
+
+function createPr(record) {
+  const result = runLogged(record.id, "gh", ["pr", "create", "--fill"], { cwd: record.worktree });
+  return oneLine(result.stdout);
+}
+
+function checkCi(record, prUrl) {
+  const result = runLogged(record.id, "gh", ["pr", "checks", prUrl], { cwd: record.worktree });
+  let state = "SUCCESS";
+  let log = "";
+  try {
+    const parsed = JSON.parse(result.stdout);
+    state = String(parsed.state ?? "SUCCESS");
+    log = String(parsed.log ?? "");
+  } catch {
+    // Не JSON — считаем зелёным, если процесс завершился успешно.
+  }
+  return { ok: state === "SUCCESS", log };
+}
+
+// Печать результата: первая строка — действие для воркера, вторая — фраза этапа, дальше — доп. строки.
+function emitResult(action, stage, extraLines = []) {
+  process.stdout.write(`${action}\n${stage}\n`);
+  for (const line of extraLines) process.stdout.write(`${line}\n`);
+}
+
+async function nextCommand(id, primaryFolder) {
+  const record = readState().tasks[id];
+  if (!record) {
+    process.stdout.write(`${id}: нет записи фабрики\n`);
+    process.exitCode = 1;
+    return;
+  }
+  const worktree = record.worktree;
+  if (!existsSync(worktree)) {
+    process.stdout.write(`${id}: нет worktree ${worktree}\n`);
+    process.exitCode = 1;
+    return;
+  }
+
+  const dod = runDoDChecks(record);
+  if (!dod.ok) {
+    emitResult("доработать", "проверки DoD", dod.errors);
+    setStage(id, "проверки DoD", "проверки DoD не прошли");
+    return;
+  }
+
+  const red = checkRedCommit(record);
+  if (!red.ok) {
+    if (red.verifier) {
+      const verifier = agentInvocation("sh-verifier", {
+        sessionId: randomUUID(),
+        prompt: `sh-verifier Проверь ${id}`,
+      });
+      const result = runHeadless(id, verifier, { worktree, primaryFolder });
+      const reply = parseAgentReply(result);
+      addTokens(id, "verifier", reply.usage);
+      saveReply(id, "verifier", result.stdout);
+      if (!reply.ok) logLine(id, `sh-verifier: ${reply.reason}`);
+    }
+    emitResult("доработать", "красный коммит", red.errors);
+    setStage(id, "красный коммит", red.errors.join("; "));
+    return;
+  }
+
+  pushBranch(record);
+
+  const reviewer = agentInvocation("sh-reviewer", {
+    sessionId: randomUUID(),
+    prompt: `sh-reviewer Проверь ${id}`,
+  });
+  const reviewResult = runHeadless(id, reviewer, { worktree, primaryFolder });
+  saveReply(id, "reviewer", reviewResult.stdout);
+  const reply = parseAgentReply(reviewResult);
+  addTokens(id, "reviewer", reply.usage);
+  if (!reply.ok) {
+    emitResult("ошибка", "ревью", [reply.reason]);
+    setStage(id, "ревью", reply.reason);
+    return;
+  }
+
+  const verdict = parseReviewerVerdict(reply.result);
+  if (verdict.verdict === "blocked") {
+    const file = writeReviewFile(record, reply.result);
+    updateTask(id, (task) => ({
+      round: (task.round ?? 0) + 1,
+      remarks_count: (task.remarks_count ?? 0) + verdict.count,
+    }));
+    emitResult(`доработать, замечания в файле ${file}`, "ревью");
+    setStage(id, "ревью", "блокирует");
+    return;
+  }
+  if (verdict.verdict !== "clean") {
+    emitResult("ошибка", "ревью", ["неверный формат ответа ревьюера"]);
+    setStage(id, "ревью", "неверный формат ответа ревьюера");
+    return;
+  }
+
+  const prUrl = record.pr_url || createPr(record);
+  updateTask(id, { pr_url: prUrl });
+  const ci = checkCi(record, prUrl);
+  if (!ci.ok) {
+    emitResult("доработать", "CI", [ci.log || "красный CI"]);
+    setStage(id, "CI", ci.log || "красный CI");
+    return;
+  }
+
+  emitResult(`PR готов, замечаний: ${record.remarks_count ?? 0}`, "готов к ревью");
+  setStage(id, "готов к ревью", "");
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// factory merge: ретро, статус Merged, squash-слияние, уборка и статистика токенов.
+
+function appendRetroEntry(record, entry) {
+  const dir = join(record.worktree, "docs");
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, "process-retro.md");
+  const existing = existsSync(file) ? readFileSync(file, "utf8") : "";
+  appendFileSync(file, `${existing && !existing.endsWith("\n") ? "\n" : ""}${entry.trim()}\n`);
+  tryGit(["-C", record.worktree, "add", "docs/process-retro.md"]);
+  tryGit(["-C", record.worktree, "commit", "-q", "-m", `chore(retro): ${record.id} ретро-анализ`]);
+}
+
+function commitMergedStatus(record) {
+  const dir = join(record.worktree, "backlog", "tasks");
+  let names;
+  try {
+    names = readdirSync(dir);
+  } catch {
+    return;
+  }
+  const file = names.find((name) => name.toLowerCase().startsWith(`${record.id.toLowerCase()} - `));
+  if (!file) return;
+  const path = join(dir, file);
+  const text = readFileSync(path, "utf8");
+  const updated = text.replace(/^status:\s*.*$/m, "status: Merged");
+  if (updated === text) return;
+  writeFileSync(path, updated);
+  tryGit(["-C", record.worktree, "add", `backlog/tasks/${file}`]);
+  tryGit(["-C", record.worktree, "commit", "-q", "-m", `chore(backlog): ${record.id} Merged`]);
+}
+
+function tokenCost(tokens) {
+  let cost = 0;
+  for (const agent of ["worker", "verifier", "reviewer", "retro"]) {
+    const usage = tokens?.[agent] ?? {};
+    const price = MODEL_PRICE_CNY_PER_MTOK[agentModel(agent)] ?? { input: 0, output: 0 };
+    cost += ((Number(usage.input) || 0) * (price.input || 0) + (Number(usage.output) || 0) * (price.output || 0)) / 1e6;
+  }
+  return cost;
+}
+
+const agentModel = (agent) => (agent === "reviewer" ? "deepseek-v4-pro" : "deepseek-flash");
+
+function tokenTotals(tokens) {
+  const usage = { input: 0, output: 0, reasoning: 0 };
+  for (const agent of ["worker", "verifier", "reviewer", "retro"]) {
+    const part = tokens?.[agent] ?? {};
+    usage.input += Number(part.input) || 0;
+    usage.output += Number(part.output) || 0;
+    usage.reasoning += Number(part.reasoning) || 0;
+  }
+  return { ...usage, total: usage.input + usage.output + usage.reasoning };
+}
+
+async function mergeCommand(id, primaryFolder) {
+  const record = readState().tasks[id];
+  if (!record) {
+    process.stdout.write(`${id}: нет записи фабрики\n`);
+    process.exitCode = 1;
+    return;
+  }
+  const worktree = record.worktree;
+  const ci = checkCi(record, record.pr_url);
+  if (!ci.ok) {
+    process.stdout.write(`Слияние не выполнено: CI не зелёный${ci.log ? ` — ${ci.log}` : ""}\n`);
+    process.exitCode = 1;
+    return;
+  }
+
+  const retro = agentInvocation("sh-retro", { sessionId: randomUUID(), prompt: `sh-retro ${id}` });
+  const retroResult = runHeadless(id, retro, { worktree, primaryFolder });
+  saveReply(id, "retro", retroResult.stdout);
+  const retroReply = parseAgentReply(retroResult);
+  addTokens(id, "retro", retroReply.usage);
+  if (retroReply.ok && retroReply.result.trim() && retroReply.result.trim() !== "чисто") {
+    appendRetroEntry(record, retroReply.result);
+  }
+  commitMergedStatus(record);
+  pushBranch(record);
+
+  process.stdout.write(`gh pr merge ${record.pr_url} --squash\n`);
+  runLogged(id, "gh", ["pr", "merge", record.pr_url, "--squash"], { cwd: worktree });
+
+  // Уборка: worktree, ветка, основная папка на origin/main.
+  tryGit(["worktree", "remove", "--force", worktree]);
+  tryGit(["worktree", "prune"]);
+  tryGit(["branch", "-D", "--quiet", record.branch]);
+  tryGit(["fetch", "origin", "--quiet"]);
+  tryGit(["merge", "--ff-only", "origin/main"]);
+
+  const totals = tokenTotals(readState().tasks[id]?.tokens);
+  const cost = tokenCost(readState().tasks[id]?.tokens);
+  process.stdout.write(
+    `Токены: ${totals.total} (input ${totals.input}, output ${totals.output}, reasoning ${totals.reasoning}), стоимость ~¥${cost.toFixed(2)}\n`,
+  );
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// factory status, сводка, list, answer, continue, drop.
+
+function statusCommand() {
+  const records = Object.values(readState().tasks);
+  if (records.length === 0) {
+    process.stdout.write("Фабрика пуста\n");
+    return;
+  }
+  const byAge = (a, b) => Date.parse(a.stage_changed_at) - Date.parse(b.stage_changed_at);
+  for (const record of records.sort(byAge)) {
+    process.stdout.write(`${record.id}  ${record.stage}${record.reason ? `  ${firstLine(record.reason)}` : ""}\n`);
+  }
 }
 
 const naming = (task) => `${task.id} ${task.title}`;
@@ -573,7 +1082,6 @@ function loadOriginTasks() {
   }
 
   const tasks = readOriginTasks(TASK_DIR);
-  // Статус зависимости определяем и для архивных задач; запись из backlog/tasks перекрывает архивную.
   const statuses = new Map([...ARCHIVE_DIRS.flatMap(readOriginTasks), ...tasks].map((task) => [task.id, task.status]));
   return { tasks, statuses, context: readContext() };
 }
@@ -635,78 +1143,7 @@ async function choose(candidates) {
   return candidates[Number(answer) - 1] ?? null;
 }
 
-// Запуск команды с записью в журнал задачи.
-function runLogged(id, command, args, options = {}) {
-  logLine(id, `${command} ${args.join(" ")}${options.cwd ? ` (cwd ${options.cwd})` : ""}`);
-  return spawnSync(command, args, { encoding: "utf8", ...options });
-}
-
-// `pnpm install --frozen-lockfile` с выводом stdout и stderr в один файл: порядок строк сохраняется.
-function installDependencies(id, worktree) {
-  const dir = mkdtempSync(join(tmpdir(), "factory-install-"));
-  const file = join(dir, "output.txt");
-  const fd = openSync(file, "w");
-  logLine(id, `pnpm install --frozen-lockfile (cwd ${worktree})`);
-  const result = spawnSync("pnpm", ["install", "--frozen-lockfile"], { cwd: worktree, stdio: ["ignore", fd, fd] });
-  closeSync(fd);
-  const output = readFileSync(file, "utf8");
-  rmSync(dir, { recursive: true, force: true });
-  if (result.error) return { ok: false, tail: `pnpm не запускается: ${result.error.code ?? result.error.message}` };
-  if (result.status === 0) return { ok: true };
-  const lines = output.trimEnd().split("\n");
-  return { ok: false, tail: lines.slice(-INSTALL_TAIL).join("\n") };
-}
-
-function removeCreated(id, branch, worktree, created) {
-  if (created.worktree) {
-    logLine(id, `git worktree remove --force ${worktree}`);
-    tryGit(["worktree", "remove", "--force", worktree]);
-  }
-  if (created.branch) {
-    logLine(id, `git branch -D ${branch}`);
-    tryGit(["branch", "-D", "--quiet", branch]);
-  }
-  tryGit(["worktree", "prune"]);
-}
-
-// Готовит ветку, worktree и запись. Возвращает запись на этапе «подготовлена» или ничего при ошибке (код 1).
-function prepare(task, primaryFolder) {
-  const { id, title } = task;
-  const branch = `${id.toLowerCase()}-${slugify(title)}`;
-  const worktree = join(primaryFolder, ".claude/worktrees", branch);
-  const created = { branch: false, worktree: false };
-  const fail = (message) => {
-    process.stdout.write(`${message}\n`);
-    removeCreated(id, branch, worktree, created);
-    process.exitCode = 1;
-  };
-
-  const added = runLogged(id, "git", ["worktree", "add", "--no-track", "-b", branch, worktree, TARGET]);
-  if (added.status !== 0) return fail(`${id}: git worktree add не удался: ${oneLine(added.stderr)}`);
-  created.branch = true;
-  created.worktree = true;
-
-  const checked = runLogged(id, process.execPath, [CHECK_SPEC, id, "--root", worktree], { cwd: primaryFolder });
-  if (checked.status !== 0)
-    return fail(`${checked.stdout}${checked.stderr}`.trimEnd() || `${id}: check-spec.mjs завершился с ошибкой`);
-
-  const installed = installDependencies(id, worktree);
-  if (!installed.ok)
-    return fail(`${id}: pnpm install --frozen-lockfile не удался. Последние ${INSTALL_TAIL} строк:\n${installed.tail}`);
-
-  try {
-    createTask(id, { title, branch, worktree, reason: "ветка и worktree готовы" });
-  } catch (error) {
-    return fail(
-      error instanceof StateBusyError ? "Состояние занято" : `${id}: запись состояния не удалась: ${error.message}`,
-    );
-  }
-  process.stdout.write(`${id}: подготовлена\nВетка: ${branch}\nWorktree: ${worktree}\n`);
-  return readState().tasks[id];
-}
-
-// `answer` и `continue`: возобновляют воркера задачи. answer — на этапе «стоп», с текстом владельца;
-// continue — на этапе «ошибка». Неподходящий этап, нет записи, лимит процессов: причина, код 1, claude не запущен.
+// `answer` и `continue`: возобновляют воркера задачи.
 async function resumeCommand(kind, id, text, primaryFolder, foreground) {
   const record = readState().tasks[id];
   if (!record) {
@@ -725,8 +1162,7 @@ async function resumeCommand(kind, id, text, primaryFolder, foreground) {
   return launchWorker(record, primaryFolder, foreground, kind === "answer" ? { kind, text } : { kind });
 }
 
-// `drop`: снимает задачу с фабрики. Живой процесс — отказ без вопроса. Журнал задачи остаётся.
-// Чистый worktree удаляется. Локальная ветка удаляется, если её нет на origin и worktree удалён; печатается её SHA.
+// `drop`: снимает задачу с фабрики.
 async function dropCommand(id) {
   const record = readState().tasks[id];
   if (!record) {
@@ -815,7 +1251,7 @@ function lastWorkerResult(id) {
 
 const QUESTION = "Вопрос владельцу:";
 
-// Строки вопроса из ответа воркера. СТОП: вопрос и варианты `- А…`, `- Б…`. ЗАМЕЧАНИЯ: пронумерованные строки и вопрос.
+// Строки вопроса из ответа воркера.
 function questionLines(result) {
   const lines = result.split("\n").map((line) => line.trim());
   const remarks = firstLine(result).startsWith("ЗАМЕЧАНИЯ");
@@ -825,7 +1261,7 @@ function questionLines(result) {
 
 const clip = (text) => Array.from(text).slice(0, DENIAL_MAX).join("");
 
-// Отказ прав воркера одной строкой: для Bash команда, для других инструментов имя и путь.
+// Отказ прав воркера одной строкой.
 function denialText(denial) {
   const tool = String(denial?.tool_name ?? denial?.tool ?? "");
   const input = denial?.tool_input ?? {};
@@ -840,7 +1276,7 @@ function ageText(record) {
   return minutes < 60 ? `${minutes} мин` : `${Math.floor(minutes / 60)} ч`;
 }
 
-// Строки одной задачи в сводке: строка задачи и строки под ней.
+// Строки одной задачи в сводке.
 function summaryBlock(record) {
   const lines = [`${record.id}  ${record.stage}  ${ageText(record)}  $${Number(record.cost_usd || 0).toFixed(2)}`];
   if (record.stage === "стоп") {
@@ -857,8 +1293,7 @@ function summaryBlock(record) {
   return lines;
 }
 
-// Сводка: сначала задачи, которые ждут владельца, затем остальные; внутри групп от старых к новым.
-// Не больше SUMMARY_MAX_LINES строк: задача печатается целиком или не печатается.
+// Сводка: сначала задачи, которые ждут владельца, затем остальные.
 function printSummary() {
   const records = Object.values(readState().tasks);
   if (records.length === 0) {
@@ -888,7 +1323,7 @@ function printSummary() {
 }
 
 const USAGE =
-  'Использование: pnpm factory run [SH-NNN] [--foreground] | list | answer SH-NNN "текст" | continue SH-NNN | drop SH-NNN; без аргументов: сводка\n';
+  'Использование: pnpm factory run [SH-NNN] [--foreground] | list | answer SH-NNN "текст" | continue SH-NNN | drop SH-NNN | ready SH-NNN | next SH-NNN | merge SH-NNN | status; без аргументов: сводка\n';
 
 async function main() {
   const args = process.argv.slice(2).filter((arg) => arg !== "--");
@@ -903,11 +1338,14 @@ async function main() {
     list: rest.length === 0 && !foreground,
     continue: rest.length === 1 && Boolean(idMatch),
     drop: rest.length === 1 && Boolean(idMatch),
+    ready: rest.length === 1 && Boolean(idMatch),
+    next: rest.length === 1 && Boolean(idMatch),
+    merge: rest.length === 1 && Boolean(idMatch),
+    status: rest.length === 0,
     _worker: rest.length === 1 && Boolean(idMatch),
     _answer: rest.length === 2 && Boolean(idMatch),
     _continue: rest.length === 1 && Boolean(idMatch),
   };
-  // Слово «undefined» как команда не равно отсутствию команды: ключ `undefined` в valid относится только к пустому вызову.
   const known =
     command === undefined
       ? valid.undefined
@@ -923,7 +1361,7 @@ async function main() {
     process.exitCode = 2;
     return;
   }
-  // Основная папка: первая запись списка worktree. Все операции идут в ней, откуда бы ни запустили скрипт.
+  // Основная папка: первая запись списка worktree.
   const primaryFolder = listWorktrees()[0].path;
   process.chdir(primaryFolder);
 
@@ -933,44 +1371,65 @@ async function main() {
 
   if (command === "list") return printCandidateRows();
 
-  // Сводка, run, answer и continue сначала ставят «ошибка» задачам, у которых процесс умер без ответа.
   markDeadWorkers();
   if (command === undefined) return printSummary();
+  if (command === "status") return statusCommand();
   if (command === "drop") return dropCommand(target);
   if (command === "answer") return resumeCommand("answer", target, rest[1], primaryFolder, foreground);
   if (command === "continue") return resumeCommand("continue", target, "", primaryFolder, foreground);
 
-  const wanted = idMatch;
-  if (!checkLimit()) return;
+  const findTask = () => {
+    const loaded = loadOriginTasks();
+    if (!loaded) return undefined;
+    const task = loaded.tasks.find((item) => item.id === target);
+    if (!task) {
+      process.stdout.write(`${target} не найдена: нет в ${TARGET}\n`);
+      process.exitCode = 1;
+      return undefined;
+    }
+    const { reasons } = blockers(task, loaded.statuses, loaded.context);
+    if (reasons.length > 0) {
+      process.stdout.write(`${target} не подготовлена: ${reasons.join("; ")}\n`);
+      process.exitCode = 1;
+      return undefined;
+    }
+    return task;
+  };
 
-  // Задача на этапе «подготовлена»: ветка и worktree готовы, fetch, check-spec и install не нужны.
-  const prepared = wanted ? readState().tasks[`SH-${wanted[1]}`] : undefined;
+  if (command === "ready") {
+    const task = findTask();
+    if (task) return readyCommand(task, primaryFolder);
+    return;
+  }
+  if (command === "next") return nextCommand(target, primaryFolder);
+  if (command === "merge") return mergeCommand(target, primaryFolder);
+
+  // Запасной run.
+  if (!checkLimit()) return;
+  const prepared = idMatch ? readState().tasks[`SH-${idMatch[1]}`] : undefined;
   if (prepared?.stage === "подготовлена") return launchWorker(prepared, primaryFolder, foreground);
 
-  const found = loadOriginTasks();
-  if (!found) return;
-  const { tasks, statuses, context } = found;
+  const loaded = loadOriginTasks();
+  if (!loaded) return;
+  const { tasks, statuses, context } = loaded;
 
-  const launch = (record) => (record ? launchWorker(record, primaryFolder, foreground) : undefined);
-
-  if (wanted) {
-    const id = `SH-${wanted[1]}`;
-    const task = tasks.find((item) => item.id === id);
+  if (idMatch) {
+    const task = tasks.find((item) => item.id === target);
     if (!task) {
-      process.stdout.write(`${id} не запущена: нет в ${TARGET}\n`);
+      process.stdout.write(`${target} не запущена: нет в ${TARGET}\n`);
       process.exitCode = 1;
       return;
     }
     const { reasons } = blockers(task, statuses, context);
     if (reasons.length > 0) {
-      process.stdout.write(`${id} не запущена: ${reasons.join("; ")}\n`);
+      process.stdout.write(`${target} не запущена: ${reasons.join("; ")}\n`);
       process.exitCode = 1;
       return;
     }
-    return launch(prepare(task, primaryFolder));
+    return launch(prepare(task, primaryFolder), primaryFolder, foreground);
   }
 
-  const { candidates, waiting } = pickCandidates(found);
+  const { candidates, waiting } = pickCandidates({ tasks, statuses, context });
   printList(candidates, waiting, statuses);
   if (candidates.length === 0) {
     process.stdout.write("Задач в Ready нет\n");
@@ -981,7 +1440,10 @@ async function main() {
     process.stdout.write("Ничего не запущено\n");
     return;
   }
-  return launch(prepare(chosen, primaryFolder));
+  return launch(prepare(chosen, primaryFolder), primaryFolder, foreground);
 }
+
+const launch = (record, primaryFolder, foreground) =>
+  record ? launchWorker(record, primaryFolder, foreground) : undefined;
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await main();

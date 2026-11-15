@@ -115,6 +115,17 @@ const toArray = (value) => {
   return items.map((item) => String(item).trim().toUpperCase()).filter(Boolean);
 };
 
+// Список строк без приведения к верхнему регистру: для полей «Права» и «Затрагивает».
+const stringArray = (value) => {
+  if (value == null) return [];
+  const items = Array.isArray(value) ? value : String(value).split(",");
+  return items.map((item) => String(item).trim()).filter(Boolean);
+};
+
+// Известные значения поля «Модель» (docs/process.md §4). По умолчанию pro.
+export const KNOWN_MODELS = ["pro", "flash"];
+export const DEFAULT_MODEL = "pro";
+
 export function parseTask(text) {
   const front = /^---\n([\s\S]*?)\n---/.exec(text);
   const meta = (front ? YAML.parse(front[1]) : null) ?? {};
@@ -126,6 +137,13 @@ export function parseTask(text) {
     status: String(meta.status ?? ""),
     milestone: meta.milestone ? String(meta.milestone) : "",
     dependencies: toArray(meta.dependencies),
+    // SH-107: поля «Права», «Затрагивает» и «Модель». Права — строчными буквами, затрагиваемые файлы — как в карточке.
+    rights: stringArray(meta.rights).map((item) => item.toLowerCase()),
+    affects: stringArray(meta.affects),
+    model:
+      meta.model === undefined || meta.model === null || meta.model === ""
+        ? DEFAULT_MODEL
+        : String(meta.model).toLowerCase(),
     description,
     criteria: parseCriteria(text),
     plan: parseTestPlan(description),
