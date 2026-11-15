@@ -428,3 +428,21 @@ describe("[SH-090 AC-9] скилл sh-spec и документы описыва�
     expect(paragraph).toMatch(/описани[а-я]* PR/);
   });
 });
+
+describe("[SH-107 AC-32] sh-spec-critic: сначала spec:check, при ошибках остановка", () => {
+  it("[SH-107 AC-32] шаг pnpm spec:check SH-NNN идёт раньше чтения задачи", () => {
+    const { body } = agentFile();
+    const specCheck = body.indexOf("pnpm spec:check SH-NNN");
+    const taskRead = body.indexOf("node scripts/task.mjs SH-NNN --spec");
+    expect(specCheck).toBeGreaterThanOrEqual(0);
+    expect(taskRead).toBeGreaterThanOrEqual(0);
+    expect(specCheck).toBeLessThan(taskRead);
+  });
+
+  it("[SH-107 AC-32] при ошибках вернуть и остановиться", () => {
+    const { body } = agentFile();
+    expect(body).toMatch(/при ошибк/i);
+    expect(body).toMatch(/верн[уе]/i);
+    expect(body).toMatch(/останови/i);
+  });
+});

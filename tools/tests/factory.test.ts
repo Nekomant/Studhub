@@ -42,25 +42,64 @@ function git(cwd: string, ...args: string[]): string {
   return result.stdout.trim();
 }
 
-// Подставные pnpm и gh: пишут `<имя> <аргументы> cwd=<папка>` в журнал FAKE_LOG.
-// pnpm с FAKE_PNPM_FAIL печатает 25 строк и завершается с кодом 1.
+// Подставной pnpm: пишет `pnpm <аргументы> cwd=<папка>` в журнал FAKE_LOG.
+// С FAKE_PNPM_FAIL (любая команда) или FAKE_PNPM_FAIL_MATCH (команда с подстрокой) печатает
+// FAKE_PNPM_FAIL_OUTPUT (по умолчанию 25 строк «install-line …») и завершается с кодом 1.
 const fakeBin = join(workDir, "bin");
 mkdirSync(fakeBin, { recursive: true });
-for (const name of ["pnpm", "gh"]) {
-  writeFileSync(
-    join(fakeBin, name),
-    `#!/bin/sh
-echo "${name} $* cwd=$PWD" >> "$FAKE_LOG"
-if [ "${name}" = "pnpm" ] && [ -n "$FAKE_PNPM_FAIL" ]; then
-  i=1
-  while [ $i -le 25 ]; do echo "install-line $i"; i=$((i + 1)); done
+writeFileSync(
+  join(fakeBin, "pnpm"),
+  `#!/bin/sh
+echo "pnpm $* cwd=$PWD" >> "$FAKE_LOG"
+fail=0
+if [ -n "$FAKE_PNPM_FAIL" ]; then fail=1; fi
+if [ -n "$FAKE_PNPM_FAIL_MATCH" ] && echo " $* " | grep -q "$FAKE_PNPM_FAIL_MATCH"; then fail=1; fi
+if [ "$fail" = "1" ]; then
+  if [ -n "$FAKE_PNPM_FAIL_OUTPUT" ]; then
+    printf '%s\n' "$FAKE_PNPM_FAIL_OUTPUT"
+  else
+    i=1
+    while [ $i -le 25 ]; do echo "install-line $i"; i=$((i + 1)); done
+  fi
   exit 1
 fi
 echo '{}'
 `,
-  );
-  chmodSync(join(fakeBin, name), 0o755);
+);
+chmodSync(join(fakeBin, "pnpm"), 0o755);
+
+// Подставной gh: пишет `gh <аргументы> cwd=<папка>` в журнал FAKE_LOG.
+// `pr create` печатает FAKE_GH_PR_URL, `pr checks`/`pr view` — FAKE_GH_CHECKS (по умолчанию SUCCESS),
+// `pr merge` имитирует squash-слияние: переводит origin/main на пушнутую ветку задачи.
+writeFileSync(
+  join(fakeBin, "gh"),
+  `#!/usr/bin/env node
+const fs = require("node:fs");
+const cp = require("node:child_process");
+const a = process.argv.slice(2);
+fs.appendFileSync(process.env.FAKE_LOG, "gh " + a.join(" ") + " cwd=" + process.cwd() + "\\n");
+const pair = (a[0] ?? "") + " " + (a[1] ?? "");
+const exit = Number(process.env.FAKE_GH_EXIT ?? 0);
+if (pair === "pr create") {
+  process.stdout.write(process.env.FAKE_GH_PR_URL ?? "https://github.com/x/y/pull/1");
+  process.exitCode = exit;
+} else if (pair === "pr checks" || pair === "pr view") {
+  process.stdout.write(process.env.FAKE_GH_CHECKS ?? '{"state":"SUCCESS"}');
+  process.exitCode = exit;
+} else if (pair === "pr merge") {
+  cp.execSync("git fetch origin", { stdio: "ignore" });
+  const branches = cp
+    .execSync("git for-each-ref --format=%(refname:short) refs/remotes/origin", { encoding: "utf8" })
+    .split("\\n")
+    .filter((b) => /sh-[0-9]+-/.test(b));
+  if (branches[0]) cp.execSync("git push origin " + branches[0] + ":refs/heads/main", { stdio: "ignore" });
+  process.exitCode = exit;
+} else {
+  process.stdout.write("{}");
 }
+`,
+);
+chmodSync(join(fakeBin, "gh"), 0o755);
 
 // Подставной claude: строка JSON `{ args, cwd, env }` в `<FAKE_LOG>.claude`, затем ответ.
 // Ответ по умолчанию: «СТОП <ID из промпта>: заглушка», другой session_id, стоимость 0, отказов нет.
@@ -102,6 +141,36 @@ process.exitCode = process.env.FAKE_OSASCRIPT_FAIL ? 1 : 0;
 );
 chmodSync(join(fakeBin, "osascript"), 0o755);
 
+// Подставной dsh (SH-107): строка JSON `{ args, cwd, env }` в `<FAKE_LOG>.dsh`, затем ответ.
+// Ответ по умолчанию — валидный JSON с result «чисто» и usage 0. Настройка: FAKE_DSH_RESULT (текст result),
+// FAKE_DSH_RAW (stdout как есть), FAKE_DSH_EXIT (код), FAKE_DSH_SESSION=same (session_id из --session-id),
+// FAKE_DSH_INPUT / FAKE_DSH_OUTPUT / FAKE_DSH_REASONING (токены usage).
+writeFileSync(
+  join(fakeBin, "dsh"),
+  `#!/usr/bin/env node
+const fs = require("node:fs");
+const args = process.argv.slice(2);
+const env = process.env;
+fs.appendFileSync(env.FAKE_LOG + ".dsh", JSON.stringify({ args, cwd: process.cwd(), env }) + "\\n");
+const after = (flag) => args[args.indexOf(flag) + 1] ?? "";
+const reply = {
+  type: "result",
+  subtype: "success",
+  is_error: false,
+  result: env.FAKE_DSH_RESULT ?? "чисто",
+  session_id: env.FAKE_DSH_SESSION === "same" ? after("--session-id") : "other-session",
+  usage: {
+    input_tokens: Number(env.FAKE_DSH_INPUT ?? 0),
+    output_tokens: Number(env.FAKE_DSH_OUTPUT ?? 0),
+    reasoning_tokens: Number(env.FAKE_DSH_REASONING ?? 0),
+  },
+};
+process.stdout.write(env.FAKE_DSH_RAW ?? JSON.stringify(reply));
+process.exitCode = Number(env.FAKE_DSH_EXIT ?? 0);
+`,
+);
+chmodSync(join(fakeBin, "dsh"), 0o755);
+
 type FixtureTask = {
   id: string;
   title?: string;
@@ -111,6 +180,10 @@ type FixtureTask = {
   criteria?: number;
   // Спецификация без раздела «Зачем»: check-spec.mjs отвечает ошибкой.
   broken?: boolean;
+  // SH-107: поля «Права» (известные значения, например docker), «Затрагивает» (файлы/документы) и «Модель» (pro/flash).
+  rights?: string[];
+  affects?: string[];
+  model?: string;
 };
 
 function taskFile(task: FixtureTask): string {
@@ -132,6 +205,9 @@ function taskFile(task: FixtureTask): string {
     .map(([name, body]) => `## ${name}\n${body}\n`)
     .join("\n");
   const deps = task.deps?.length ? `\n${task.deps.map((d) => `  - ${d}`).join("\n")}` : " []";
+  const rights = task.rights?.length ? `\nrights:\n${task.rights.map((r) => `  - ${r}`).join("\n")}` : "";
+  const affects = task.affects?.length ? `\naffects:\n${task.affects.map((a) => `  - ${a}`).join("\n")}` : "";
+  const model = task.model ? `\nmodel: ${task.model}` : "";
   return `---
 id: ${task.id}
 title: ${JSON.stringify(task.title ?? `Задача ${task.id.slice(3)}`)}
@@ -139,7 +215,7 @@ status: ${task.status ?? "Ready"}
 assignee: []
 labels: []
 dependencies:${deps}
-priority: ${task.priority ?? "medium"}
+priority: ${task.priority ?? "medium"}${rights}${affects}${model}
 ---
 
 ## Description
@@ -250,6 +326,7 @@ function runFactory(
   writeFileSync(scenario.log, "");
   writeFileSync(`${scenario.log}.claude`, "");
   writeFileSync(`${scenario.log}.osa`, "");
+  writeFileSync(`${scenario.log}.dsh`, "");
   const started = Date.now();
   const result = spawnSync(process.execPath, [script, ...args], {
     cwd,
@@ -275,6 +352,22 @@ const claudeCalls = (scenario: Scenario): ClaudeCall[] =>
 
 // Значение флага в аргументах claude.
 const flagValue = (call: ClaudeCall, flag: string) => call.args[call.args.indexOf(flag) + 1];
+
+type DshCall = { args: string[]; cwd: string; env: Record<string, string> };
+
+// Вызовы заглушки dsh с начала последнего runFactory (SH-107).
+const dshCalls = (scenario: Scenario): DshCall[] =>
+  readFileSync(`${scenario.log}.dsh`, "utf8")
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+
+// check-spec.mjs (SH-107 AC-11): проверка полей «Права»/«Затрагивает»/«Модель» на фикстуре через --root.
+const checkSpecScript = join(repoRoot, "scripts/check-spec.mjs");
+function runCheckSpec(root: string, ...args: string[]) {
+  const result = spawnSync(process.execPath, [checkSpecScript, ...args, "--root", root], { encoding: "utf8" });
+  return { code: result.status, out: `${result.stdout}${result.stderr}` };
+}
 
 // Выполняет код ES-модуля в папке cwd. Модуль состояния подключён как `m`.
 function nodeEval(cwd: string, code: string, env: Record<string, string> = {}) {
@@ -2924,5 +3017,481 @@ describe("factory: list", () => {
     expect(result.status).toBe(2);
     expect(result.stderr).toContain("pnpm factory run [SH-NNN] [--foreground] | list");
     expect(result.stdout).toBe("");
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// SH-107: фабрика-оркестратор — команды ready/next/merge/status, запуск модели через `dsh headless`,
+// поля задачи «Права»/«Затрагивает»/«Модель» и новые поля состояния.
+
+const argAfter = (args: string[], flag: string) => args[args.indexOf(flag) + 1];
+
+// Коммитит файлы в worktree задачи одной командой git.
+function commitFiles(worktree: string, files: Record<string, string>, message: string) {
+  for (const [path, content] of Object.entries(files)) {
+    const full = join(worktree, path);
+    mkdirSync(join(full, ".."), { recursive: true });
+    writeFileSync(full, content);
+  }
+  git(worktree, "add", ".");
+  git(worktree, "commit", "-q", "-m", message);
+}
+
+// Красный коммит (только тесты) и коммит реализации (только код): правильный порядок TDD.
+const RED_TEST =
+  'import { describe, expect, it } from "vitest";\nimport { add } from "../src/add";\n' +
+  'describe("add", () => { it("[SH-901 AC-1] складывает", () => { expect(add(1, 2)).toBe(3); }); });\n';
+const IMPL = "export const add = (a: number, b: number): number => a + b;\n";
+
+function commitRedGreen(worktree: string) {
+  commitFiles(worktree, { "tests/add.test.ts": RED_TEST }, "красный: тесты");
+  commitFiles(worktree, { "src/add.ts": IMPL }, "реализация");
+}
+
+// Задача в работе: ветка, worktree, запись с worker_signal «закончил», коммиты TDD и пуш ветки.
+function taskInWork(s: Scenario, opts: { round?: number; remarks?: number; prUrl?: string; push?: boolean } = {}) {
+  const { worktree, branch } = prepared(
+    s,
+    "SH-901",
+    TITLE_FABRIKA,
+    BRANCH_901,
+    `, worker_signal: "закончил", round: ${opts.round ?? 1}, remarks_count: ${opts.remarks ?? 0}, worker_session_id: "sess-1"${
+      opts.prUrl ? `, pr_url: ${JSON.stringify(opts.prUrl)}` : ""
+    }`,
+  );
+  commitRedGreen(worktree);
+  if (opts.push !== false) git(worktree, "push", "-q", "origin", branch);
+  return { worktree, branch };
+}
+
+// Репозиторий для AC-10: задача с «Затрагивает» docs/foo.md, который меняется после перехода задачи в Ready.
+function affectedRepo(): Scenario {
+  counter += 1;
+  const base = join(workDir, `case-${counter}`);
+  const origin = join(base, "origin.git");
+  const seed = join(base, "seed");
+  const work = join(base, "work");
+  mkdirSync(base, { recursive: true });
+  git(base, "init", "--bare", "-b", "main", origin);
+  git(base, "clone", "-q", origin, seed);
+  git(seed, "checkout", "-q", "-b", "main");
+  mkdirSync(join(seed, "backlog/tasks"), { recursive: true });
+  mkdirSync(join(seed, "docs"), { recursive: true });
+  writeFileSync(join(seed, "README.md"), "readme\n");
+  writeFileSync(join(seed, ".gitignore"), ".claude/worktrees/\n");
+  writeFileSync(join(seed, "docs/foo.md"), "v1\n");
+  writeFileSync(
+    join(seed, taskPath("SH-901")),
+    taskFile({ id: "SH-901", title: TITLE_FABRIKA, affects: ["docs/foo.md"] }),
+  );
+  git(seed, "add", ".");
+  git(seed, "commit", "-q", "-m", "ready");
+  git(seed, "push", "-q", "origin", "main");
+  writeFileSync(join(seed, "docs/foo.md"), "v2\n");
+  git(seed, "add", ".");
+  git(seed, "commit", "-q", "-m", "изменили docs/foo.md");
+  git(seed, "push", "-q", "origin", "main");
+  git(base, "clone", "-q", origin, work);
+  return { base, origin, work, seed, log: join(base, "fake.log"), stateDir: join(work, ".git/factory") };
+}
+
+const reviewerCall = (s: Scenario) =>
+  dshCalls(s).find((c) => c.args.includes("deepseek-v4-pro") && c.args.includes("max"));
+
+const settingsOf = (s: Scenario, branch: string) => {
+  const path = join(s.work, ".claude/worktrees", branch, ".claude/settings.local.json");
+  return existsSync(path) ? readFileSync(path, "utf8") : "";
+};
+
+describe("factory-tools: agentInvocation (SH-107)", () => {
+  it("[SH-107 AC-17] возвращает dsh, headless, --json, --session-id и права по readOnly", async () => {
+    const { agentInvocation } = await factoryTools();
+    const inv = agentInvocation("sh-reviewer", { sessionId: "sess-1", worktree: "/w" });
+    expect(inv.command).toBe("dsh");
+    expect(inv.args).toContain("headless");
+    expect(inv.args).toContain("--json");
+    expect(inv.args).toContain("--session-id");
+    expect(argAfter(inv.args, "--session-id")).toBe("sess-1");
+    expect(inv.args).toContain("--permission-mode");
+    expect(argAfter(inv.args, "--permission-mode")).toBe("read-only");
+    expect(inv.prompt).toContain("sh-reviewer");
+  });
+
+  it("[SH-107 AC-17] sh-reviewer: deepseek-v4-pro, max, read-only", async () => {
+    const { agentInvocation } = await factoryTools();
+    const inv = agentInvocation("sh-reviewer", {});
+    expect(inv.args).toContain("deepseek-v4-pro");
+    expect(inv.args).toContain("max");
+    expect(argAfter(inv.args, "--permission-mode")).toBe("read-only");
+    expect(inv.prompt).toContain("sh-reviewer");
+  });
+
+  it("[SH-107 AC-11] worker по полю Модель: pro → deepseek-v4-pro + high, flash → deepseek-flash; readOnly=false → workspace-write", async () => {
+    const { agentInvocation } = await factoryTools();
+    const pro = agentInvocation("sh-worker", { model: "deepseek-v4-pro", effort: "high" });
+    expect(pro.args).toContain("deepseek-v4-pro");
+    expect(pro.args).toContain("high");
+    expect(argAfter(pro.args, "--permission-mode")).toBe("workspace-write");
+    const flash = agentInvocation("sh-worker", { model: "deepseek-flash" });
+    expect(flash.args).toContain("deepseek-flash");
+    expect(flash.args).not.toContain("high");
+    expect(flash.args).not.toContain("max");
+  });
+
+  it("[SH-107 AC-39] sh-retro: deepseek-flash и read-only; sh-verifier: deepseek-flash", async () => {
+    const { agentInvocation } = await factoryTools();
+    const retro = agentInvocation("sh-retro", {});
+    expect(retro.args).toContain("deepseek-flash");
+    expect(argAfter(retro.args, "--permission-mode")).toBe("read-only");
+    expect(retro.prompt).toContain("sh-retro");
+    const verifier = agentInvocation("sh-verifier", {});
+    expect(verifier.args).toContain("deepseek-flash");
+  });
+});
+
+describe("factory-state: поля SH-107", () => {
+  it("[SH-107 AC-40] newTask включает worker_session_id, round, remarks_count, worker_signal и tokens по агентам", () => {
+    const s = happy();
+    const { code, out, err } = nodeEval(s.work, `console.log(JSON.stringify(m.newTask("SH-901")));`);
+    expect(err).toBe("");
+    expect(code).toBe(0);
+    const task = JSON.parse(out);
+    expect(task).toMatchObject({
+      worker_session_id: "",
+      round: 0,
+      remarks_count: 0,
+      worker_signal: "",
+    });
+    expect(task.tokens).toEqual({
+      worker: { input: 0, output: 0, reasoning: 0 },
+      verifier: { input: 0, output: 0, reasoning: 0 },
+      reviewer: { input: 0, output: 0, reasoning: 0 },
+      retro: { input: 0, output: 0, reasoning: 0 },
+    });
+  });
+});
+
+describe("check-spec: поля Права и Модель (SH-107)", () => {
+  it("[SH-107 AC-11] известное значение Права (docker) и Модель pro: OK", () => {
+    const s = makeRepo([{ id: "SH-901", title: "Задача", rights: ["docker"], model: "pro" }]);
+    const { code, out } = runCheckSpec(s.work, "SH-901");
+    expect(code).toBe(0);
+    expect(out).toContain("SH-901: OK");
+  });
+
+  it("[SH-107 AC-11] неизвестное значение Права отклоняется", () => {
+    const s = makeRepo([{ id: "SH-901", title: "Задача", rights: ["sudo"] }]);
+    const { code, out } = runCheckSpec(s.work, "SH-901");
+    expect(code).toBe(1);
+    expect(out).toContain("ОШИБКА");
+    expect(out).toMatch(/права/i);
+  });
+
+  it("[SH-107 AC-11] неизвестное значение Модель отклоняется", () => {
+    const s = makeRepo([{ id: "SH-901", title: "Задача", model: "ultra" }]);
+    const { code, out } = runCheckSpec(s.work, "SH-901");
+    expect(code).toBe(1);
+    expect(out).toContain("ОШИБКА");
+    expect(out).toMatch(/модел/i);
+  });
+
+  it("[SH-107 AC-11] Модель по умолчанию pro: без поля ошибки нет", () => {
+    const s = makeRepo([{ id: "SH-901", title: "Задача" }]);
+    const { code, out } = runCheckSpec(s.work, "SH-901");
+    expect(code).toBe(0);
+    expect(out).toContain("SH-901: OK");
+  });
+});
+
+describe("factory: ready (SH-107)", () => {
+  it("[SH-107 AC-9] создаёт ветку, worktree, запись состояния, права и модель в настройках worktree и бриф", () => {
+    const s = makeRepo([{ id: "SH-901", title: TITLE_FABRIKA, rights: ["docker"], model: "pro" }]);
+    const { code, out } = runFactory(s, s.work, ["ready", "SH-901"]);
+    expect(code).toBe(0);
+    expect(branchesOf(s.work)).toContain(BRANCH_901);
+    const worktree = join(s.work, ".claude/worktrees", BRANCH_901);
+    expect(existsSync(join(worktree, "backlog/tasks"))).toBe(true);
+    const task = readTasks(s)["SH-901"];
+    expect(task).toMatchObject({ branch: BRANCH_901, worktree });
+    for (const field of ["worker_session_id", "round", "remarks_count", "worker_signal", "tokens"]) {
+      expect(task).toHaveProperty(field);
+    }
+    const settings = settingsOf(s, BRANCH_901);
+    expect(settings).toContain("docker");
+    expect(settings).toContain("git push");
+    expect(settings).toContain("deepseek-v4-pro");
+    expect(out).toContain("SH-901");
+    expect(out).toContain(BRANCH_901);
+  });
+
+  it("[SH-107 AC-11] Модель pro → deepseek-v4-pro в настройках worktree, flash → deepseek-flash", () => {
+    const pro = makeRepo([{ id: "SH-901", title: TITLE_FABRIKA, model: "pro" }]);
+    runFactory(pro, pro.work, ["ready", "SH-901"]);
+    expect(settingsOf(pro, BRANCH_901)).toContain("deepseek-v4-pro");
+
+    const flash = makeRepo([{ id: "SH-901", title: TITLE_FABRIKA, model: "flash" }]);
+    runFactory(flash, flash.work, ["ready", "SH-901"]);
+    expect(settingsOf(flash, BRANCH_901)).toContain("deepseek-flash");
+    expect(settingsOf(flash, BRANCH_901)).not.toContain("deepseek-v4-pro");
+  });
+});
+
+describe("factory: ready и актуальность по Затрагивает (SH-107)", () => {
+  it("[SH-107 AC-10] изменённый файл из «Затрагивает» печатается, задача не готовится без подтверждения", () => {
+    const s = affectedRepo();
+    const { out } = runFactory(s, s.work, ["ready", "SH-901"]);
+    expect(out).toContain("docs/foo.md");
+    expect(branchesOf(s.work).filter((name) => name.startsWith("sh-901-"))).toHaveLength(0);
+    expect(existsSync(join(s.work, ".claude/worktrees", BRANCH_901))).toBe(false);
+  });
+
+  it("[SH-107 AC-10] подтверждение владельца готовит задачу, несмотря на изменения", () => {
+    const s = affectedRepo();
+    const { code, out } = runFactory(s, s.work, ["ready", "SH-901"], { input: "y\n" });
+    expect(code).toBe(0);
+    expect(branchesOf(s.work)).toContain(BRANCH_901);
+    expect(out).toContain("docs/foo.md");
+  });
+});
+
+describe("factory: next — проверки DoD (SH-107)", () => {
+  it("[SH-107 AC-13] красные проверки DoD: «доработать» со списком ошибок, ревьюер не запущен", () => {
+    const s = happy();
+    prepared(s);
+    commitRedGreen(join(s.work, ".claude/worktrees", BRANCH_901));
+    const { out } = runFactory(s, s.work, ["next", "SH-901"], { env: { FAKE_PNPM_FAIL: "1" } });
+    const lines = out.trim().split("\n");
+    expect(lines[0]).toBe("доработать");
+    expect(lines.length).toBeGreaterThan(2);
+    expect(reviewerCall(s)).toBeUndefined();
+  });
+
+  it("[SH-107 AC-14] нет теста с меткой [SH-NNN AC-n] → «доработать»", () => {
+    const s = happy();
+    prepared(s);
+    commitRedGreen(join(s.work, ".claude/worktrees", BRANCH_901));
+    const { out } = runFactory(s, s.work, ["next", "SH-901"], {
+      env: { FAKE_PNPM_FAIL_MATCH: "ac:check", FAKE_PNPM_FAIL_OUTPUT: "нет теста с меткой [SH-901 AC-2]" },
+    });
+    expect(out.trim().split("\n")[0]).toBe("доработать");
+    expect(out).toContain("[SH-901 AC-2]");
+    expect(reviewerCall(s)).toBeUndefined();
+  });
+
+  it("[SH-107 AC-15] в красном коммите есть не-тестовые файлы → «доработать»", () => {
+    const s = happy();
+    const { worktree } = prepared(s);
+    commitFiles(worktree, { "src/index.ts": "x", "tests/a.test.ts": "y" }, "красный");
+    const { out } = runFactory(s, s.work, ["next", "SH-901"]);
+    expect(out.trim().split("\n")[0]).toBe("доработать");
+    expect(reviewerCall(s)).toBeUndefined();
+  });
+
+  it("[SH-107 AC-16] изменены проверки тестов после красного коммита → «доработать» и запуск sh-verifier", () => {
+    const s = happy();
+    const { worktree } = prepared(s);
+    commitFiles(worktree, { "tests/a.test.ts": "it('x', () => {})" }, "красный");
+    commitFiles(worktree, { "tests/a.test.ts": "it('x', () => { expect(1).toBe(1) })" }, "правка теста");
+    const { out } = runFactory(s, s.work, ["next", "SH-901"]);
+    expect(out.trim().split("\n")[0]).toBe("доработать");
+    const verifier = dshCalls(s).find((c) => c.args.some((a) => a.includes("sh-verifier")));
+    expect(verifier).toBeDefined();
+    expect(reviewerCall(s)).toBeUndefined();
+  });
+});
+
+describe("factory: next — ревьюер (SH-107)", () => {
+  it("[SH-107 AC-17] ревьюер запускается фабрикой как dsh headless с моделью, уровнем и правами", () => {
+    const s = happy();
+    const { worktree } = taskInWork(s);
+    runFactory(s, s.work, ["next", "SH-901"], { env: { FAKE_DSH_RESULT: "чисто" } });
+    const reviewer = reviewerCall(s);
+    expect(reviewer).toBeDefined();
+    expect(reviewer!.args).toContain("headless");
+    expect(reviewer!.args).toContain("--json");
+    expect(argAfter(reviewer!.args, "--permission-mode")).toBe("read-only");
+    expect(reviewer!.args.some((a) => a.includes("sh-reviewer"))).toBe(true);
+    expect(reviewer!.cwd).toBe(worktree);
+  });
+
+  it("[SH-107 AC-18] вердикт «блокирует» на 1-м круге: «доработать, замечания в файле X» и переход на 2-й круг", () => {
+    const s = happy();
+    const { worktree } = taskInWork(s, { round: 1 });
+    const verdict = "блокирует: 2\n- блокирует: нарушено правило ТД §1\n- замечание: имя переменной";
+    const { out } = runFactory(s, s.work, ["next", "SH-901"], { env: { FAKE_DSH_RESULT: verdict } });
+    expect(out.trim().split("\n")[0]).toContain("доработать");
+    expect(out).toMatch(/замечания в файле/);
+    expect(readTasks(s)["SH-901"]?.round).toBe(2);
+    expect(readTasks(s)["SH-901"]?.remarks_count).toBe(2);
+    expect(existsSync(join(worktree, "docs", "review-SH-901.md"))).toBe(true);
+  });
+
+  it("[SH-107 AC-19] вердикт «чисто»: создаётся PR", () => {
+    const s = happy();
+    taskInWork(s);
+    const { out, calls } = runFactory(s, s.work, ["next", "SH-901"], { env: { FAKE_DSH_RESULT: "чисто" } });
+    expect(calls).toContain("gh pr create");
+    expect(readTasks(s)["SH-901"]?.pr_url).toBeTruthy();
+    expect(out).toContain("PR");
+  });
+
+  it.each([
+    ["невалидный формат ответа", { FAKE_DSH_RAW: "not-json" }],
+    ["ненулевой код процесса", { FAKE_DSH_EXIT: "3" }],
+    [
+      "исчерпанный бюджет",
+      { FAKE_DSH_RAW: JSON.stringify({ type: "result", subtype: "error_max_budget_usd", is_error: true, result: "" }) },
+    ],
+  ])("[SH-107 AC-20] %s → «ошибка», а не «чисто»", (_name, env) => {
+    const s = happy();
+    taskInWork(s);
+    const { out, calls } = runFactory(s, s.work, ["next", "SH-901"], { env });
+    expect(out.trim().split("\n")[0]).toBe("ошибка");
+    expect(out).not.toContain("чисто");
+    expect(calls).not.toContain("gh pr create");
+  });
+});
+
+describe("factory: next — CI и этапы (SH-107)", () => {
+  it("[SH-107 AC-21] красный CI: «доработать» с логом ошибок", () => {
+    const s = happy();
+    taskInWork(s);
+    const { out } = runFactory(s, s.work, ["next", "SH-901"], {
+      env: { FAKE_DSH_RESULT: "чисто", FAKE_GH_CHECKS: '{"state":"FAILURE","log":"сбой сборки"}' },
+    });
+    expect(out.trim().split("\n")[0]).toBe("доработать");
+    expect(out).toMatch(/сбой сборки|FAILURE|ошиб/);
+  });
+
+  it("[SH-107 AC-22] зелёный CI: состояние «готов к ревью» и «PR готов, замечаний: N»", () => {
+    const s = happy();
+    taskInWork(s);
+    const { out } = runFactory(s, s.work, ["next", "SH-901"], { env: { FAKE_DSH_RESULT: "чисто" } });
+    expect(out).toContain("PR готов");
+    expect(out).toMatch(/замечаний:\s*\d+/);
+    expect(readTasks(s)["SH-901"]?.stage).toContain("готов к ревью");
+  });
+
+  it("[SH-107 AC-23] первая строка — действие, вторая — фраза этапа; этап в state.json и показывается status", () => {
+    const s = happy();
+    prepared(s);
+    commitRedGreen(join(s.work, ".claude/worktrees", BRANCH_901));
+    const { out } = runFactory(s, s.work, ["next", "SH-901"], { env: { FAKE_PNPM_FAIL: "1" } });
+    const lines = out.trim().split("\n");
+    expect(lines[0]).toBe("доработать");
+    expect(lines[1]).toBeTruthy();
+    expect(lines[1]).not.toBe(lines[0]);
+    expect(readTasks(s)["SH-901"]?.stage).toBe(lines[1]);
+    const status = runFactory(s, s.work, ["status"]);
+    expect(status.out).toContain(lines[1]);
+  });
+
+  it("[SH-107 AC-24] после правок владельца next проходит полный круг: DoD, ревьюер, обновление PR и новый CI", () => {
+    const s = happy();
+    const { worktree } = taskInWork(s, { prUrl: "https://github.com/x/y/pull/1" });
+    commitFiles(
+      worktree,
+      { "src/add.ts": "export const add = (a: number, b: number): number => a + b + 1;\n" },
+      "правки владельца",
+    );
+    const { out, calls } = runFactory(s, s.work, ["next", "SH-901"], { env: { FAKE_DSH_RESULT: "чисто" } });
+    expect(reviewerCall(s)).toBeDefined();
+    expect(calls).toMatch(/gh pr (create|view|checks|merge)/);
+    expect(out).toContain("PR готов");
+  });
+});
+
+describe("factory: merge (SH-107)", () => {
+  it("[SH-107 AC-25] зелёный CI: коммитит статус Merged и сливает PR squash", () => {
+    const s = happy();
+    taskInWork(s, { prUrl: "https://github.com/x/y/pull/1" });
+    const { code, calls } = runFactory(s, s.work, ["merge", "SH-901"]);
+    expect(code).toBe(0);
+    expect(calls).toMatch(/gh pr merge/);
+    expect(calls).toContain("--squash");
+  });
+
+  it("[SH-107 AC-26] после слияния удаляет ветку и worktree и подтягивает main в основной папке", () => {
+    const s = happy();
+    const { worktree } = taskInWork(s, { prUrl: "https://github.com/x/y/pull/1" });
+    const { code } = runFactory(s, s.work, ["merge", "SH-901"]);
+    expect(code).toBe(0);
+    expect(branchesOf(s.work)).not.toContain(BRANCH_901);
+    expect(existsSync(worktree)).toBe(false);
+    expect(git(s.work, "rev-parse", "main")).toBe(git(s.work, "rev-parse", "origin/main"));
+  });
+
+  it("[SH-107 AC-27] красный или незавершённый CI: отказ без изменений", () => {
+    const s = happy();
+    taskInWork(s, { prUrl: "https://github.com/x/y/pull/1" });
+    const before = snapshot(s);
+    const { code, calls } = runFactory(s, s.work, ["merge", "SH-901"], {
+      env: { FAKE_GH_CHECKS: '{"state":"FAILURE"}' },
+    });
+    expect(code).toBe(1);
+    expect(calls).not.toContain("gh pr merge");
+    expect(snapshot(s)).toEqual(before);
+  });
+
+  it("[SH-107 AC-39] запускает sh-retro на deepseek-flash и коммитит запись в docs/process-retro.md", () => {
+    const s = happy();
+    taskInWork(s, { prUrl: "https://github.com/x/y/pull/1" });
+    const entry = "## SH-901\n- Причина: неоднозначный критерий\n- Предложение: уточнить критерий";
+    const { out } = runFactory(s, s.work, ["merge", "SH-901"], { env: { FAKE_DSH_RESULT: entry } });
+    const retro = dshCalls(s).find(
+      (c) => c.args.includes("deepseek-flash") && c.args.some((a) => a.includes("sh-retro")),
+    );
+    expect(retro).toBeDefined();
+    expect(retro!.args).toContain("headless");
+    expect(argAfter(retro!.args, "--permission-mode")).toBe("read-only");
+    expect(git(s.work, "show", "origin/main:docs/process-retro.md")).toContain("неоднозначный критерий");
+    expect(out).toMatch(/gh pr merge/);
+  });
+
+  it("[SH-107 AC-40] печатает строку с токенами и стоимостью в юанях; state имеет разбивку по агентам", () => {
+    const s = happy();
+    taskInWork(s, { prUrl: "https://github.com/x/y/pull/1" });
+    const { out } = runFactory(s, s.work, ["merge", "SH-901"], {
+      env: {
+        FAKE_DSH_RESULT: "## SH-901\n- Причина: x",
+        FAKE_DSH_INPUT: "1000",
+        FAKE_DSH_OUTPUT: "200",
+        FAKE_DSH_REASONING: "300",
+      },
+    });
+    expect(out).toMatch(/токен/i);
+    expect(out).toMatch(/юан|¥|CNY/i);
+    const stateText = readFileSync(stateFileOf(s), "utf8");
+    for (const agent of ["worker", "verifier", "reviewer", "retro"]) expect(stateText).toContain(agent);
+  });
+
+  it("[SH-107 AC-40] цены — константы в factory-tools: числа больше нуля для deepseek-v4-pro и deepseek-flash", async () => {
+    const tools = await factoryTools();
+    expect(typeof tools.MODEL_PRICE_CNY_PER_MTOK).toBe("object");
+    const prices = tools.MODEL_PRICE_CNY_PER_MTOK;
+    for (const model of ["deepseek-v4-pro", "deepseek-flash"]) {
+      expect(prices?.[model]).toBeDefined();
+      expect(Number.isFinite(prices?.[model]?.input)).toBe(true);
+      expect(prices?.[model]?.input).toBeGreaterThan(0);
+      expect(Number.isFinite(prices?.[model]?.output)).toBe(true);
+      expect(prices?.[model]?.output).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe("factory: запасной вариант и удаление close-task (SH-107)", () => {
+  it("[SH-107 AC-34] package.json не имеет close-task, scripts/close-task.mjs не существует", () => {
+    const pkg = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
+    expect(pkg.scripts?.["close-task"]).toBeUndefined();
+    expect(existsSync(join(repoRoot, "scripts/close-task.mjs"))).toBe(false);
+  });
+
+  it("[SH-107 AC-35] запасной run запускает воркера через dsh headless, а не claude", () => {
+    const s = happy();
+    const { code } = runFactory(s, s.work, ["run", "SH-901"]);
+    expect(code).toBe(0);
+    expect(dshCalls(s).length).toBeGreaterThan(0);
+    expect(dshCalls(s)[0]?.args).toContain("headless");
+    expect(claudeCalls(s)).toHaveLength(0);
   });
 });

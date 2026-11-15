@@ -36,23 +36,63 @@ function frontmatter(path: string): Record<string, unknown> {
 const toolList = (value: unknown) =>
   (Array.isArray(value) ? value : String(value).split(",")).map((tool) => String(tool).trim());
 
-describe("[SH-077 AC-1] субагент sh-worker", () => {
-  it("[SH-077 AC-1] tools без Skill и MCP, skills загружает sh-task", () => {
+function agentFile(path: string) {
+  const match = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/.exec(read(path));
+  if (!match?.[1]) throw new Error(`в ${path} нет frontmatter`);
+  return { meta: YAML.parse(match[1]) as Record<string, unknown>, body: match[2] ?? "" };
+}
+
+describe("[SH-107 AC-12] субагент sh-worker: frontmatter", () => {
+  it("[SH-107 AC-12] skills содержит sh-code-rules; модель deepseek, не sonnet", () => {
     const meta = frontmatter(".claude/agents/sh-worker.md");
     expect(meta.name).toBe("sh-worker");
+    const skills = Array.isArray(meta.skills) ? meta.skills : [meta.skills];
+    expect(skills).toContain("sh-code-rules");
+    expect(existsSync(join(repoRoot, ".claude/skills/sh-code-rules/SKILL.md"))).toBe(true);
+    expect(meta.model).toBeDefined();
+    expect(meta.model).not.toBe("sonnet");
+    expect(String(meta.model).toLowerCase()).toContain("deepseek");
+  });
+
+  it("[SH-107 AC-12] tools без Skill и MCP", () => {
+    const meta = frontmatter(".claude/agents/sh-worker.md");
     const tools = toolList(meta.tools);
     expect(tools).not.toContain("Skill");
     expect(tools.filter((tool) => tool.startsWith("mcp__"))).toEqual([]);
     for (const tool of tools) expect(["Read", "Edit", "Write", "Bash", "Grep", "Glob", "Agent"]).toContain(tool);
-    expect(meta.skills).toContain("sh-task");
-    expect(existsSync(join(repoRoot, ".claude/skills/sh-task/SKILL.md"))).toBe(true);
-    for (const field of ["model", "effort", "maxTurns", "autoCompactWindow"]) expect(meta).toHaveProperty(field);
+    for (const field of ["effort", "maxTurns", "autoCompactWindow"]) expect(meta).toHaveProperty(field);
   });
 
   it("[SH-077 AC-1] в .claude/settings.json нет ключа agent", () => {
     const path = join(repoRoot, ".claude/settings.json");
     const settings = existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : {};
     expect(settings).not.toHaveProperty("agent");
+  });
+});
+
+describe("[SH-107 AC-12] тело sh-worker: без статусов, с запретами и factory next", () => {
+  it("[SH-107 AC-12] нет проверки статуса и Definition of Ready", () => {
+    const { body } = agentFile(".claude/agents/sh-worker.md");
+    expect(body).not.toContain("Проверь статус");
+    expect(body).not.toMatch(/Definition of Ready/i);
+  });
+
+  it("[SH-107 AC-12] нет смены статусов через backlog task edit", () => {
+    const { body } = agentFile(".claude/agents/sh-worker.md");
+    expect(body).not.toMatch(/Проходят формы[^\n]*backlog task edit/);
+    expect(body).not.toMatch(/-s\s*["']?(In Progress|Review|Done)["']?/);
+  });
+
+  it("[SH-107 AC-12] запреты: git push, gh, backlog task edit", () => {
+    const { body } = agentFile(".claude/agents/sh-worker.md");
+    expect(body).toContain("git push");
+    expect(body).toMatch(/\bgh\b/);
+    expect(body).toContain("backlog task edit");
+  });
+
+  it("[SH-107 AC-12] вызов factory next", () => {
+    const { body } = agentFile(".claude/agents/sh-worker.md");
+    expect(body).toContain("factory next");
   });
 });
 

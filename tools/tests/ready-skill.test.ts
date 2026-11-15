@@ -63,13 +63,13 @@ describe("[SH-104] скилл ready", () => {
     expect(existsSync(join(repoRoot, ".claude/commands"))).toBe(false);
   });
 
-  it("[SH-104 AC-11] pnpm factory run в .claude/skills упомянут только в ready/SKILL.md", () => {
+  it("[SH-107 AC-33] factory ready в .claude/skills упомянут только в ready/SKILL.md", () => {
     const dir = join(repoRoot, ".claude/skills");
-    const withRun = filesUnder(dir)
-      .filter((file) => readFileSync(file, "utf8").includes("pnpm factory run"))
+    const withReady = filesUnder(dir)
+      .filter((file) => readFileSync(file, "utf8").includes("factory ready"))
       .map((file) => file.slice(dir.length + 1));
 
-    expect(withRun).toEqual(["ready/SKILL.md"]);
+    expect(withReady).toEqual(["ready/SKILL.md"]);
   });
 
   it("[SH-104 AC-12] .claude/settings.json не содержит /ready и pnpm factory", () => {
@@ -109,5 +109,25 @@ describe("[SH-104] документы", () => {
 
     expect(readme).toContain("/ready");
     expect(readme).toContain("pnpm factory list");
+  });
+});
+
+describe("[SH-107 AC-33] скилл /ready: фабрика-оркестратор", () => {
+  it("[SH-107 AC-33] SKILL.md вызывает factory ready, merge, status", () => {
+    const text = skillText();
+    expect(text).toContain("factory ready");
+    expect(text).toContain("factory merge");
+    expect(text).toContain("factory status");
+  });
+
+  it("[SH-107 AC-33] SKILL.md открывает подсессию start_session и архивирует её после слияния", () => {
+    const text = skillText();
+    expect(text).toContain("start_session");
+    expect(text).toMatch(/подсесси/);
+    expect(text).toMatch(/архив/);
+  });
+
+  it("[SH-107 AC-33] SKILL.md показывает фразы этапа", () => {
+    expect(skillText()).toMatch(/этап/);
   });
 });
