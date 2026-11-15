@@ -101,7 +101,7 @@ describe("[SH-009 AC-2] scripts/check-ac-coverage", () => {
   it("[SH-009 AC-2] критерий без метки: код 1, в выводе ID и текст критерия", () => {
     const root = setup(
       [
-        { id: "SH-902", status: "Review", criteria: ["есть метка", "нет метки у этого критерия"] },
+        { id: "SH-902", status: "Merged", criteria: ["есть метка", "нет метки у этого критерия"] },
         { id: "SH-903", status: "Done", criteria: ["тоже без метки"] },
       ],
       { "tests/api/src/b.test.ts": testFile("[SH-902 AC-1]") },
@@ -114,7 +114,7 @@ describe("[SH-009 AC-2] scripts/check-ac-coverage", () => {
     expect(result.output).not.toContain("SH-902 AC-1");
   });
 
-  it("[SH-009 AC-2] проверяются только задачи в Review и Done", () => {
+  it("[SH-009 AC-2] проверяются только задачи в Merged и Done", () => {
     const root = setup(
       [
         { id: "SH-904", status: "In Progress", criteria: ["без метки"] },

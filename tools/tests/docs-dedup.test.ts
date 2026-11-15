@@ -217,6 +217,14 @@ describe("[SH-107 AC-37] документы нового процесса: ADR-0
     expect(existsSync(join(repoRoot, "docs/tech-debt.md")), "docs/tech-debt.md должен существовать").toBe(true);
     expect(existsSync(join(repoRoot, "docs/process-retro.md")), "docs/process-retro.md должен существовать").toBe(true);
   });
+
+  it("[SH-104 AC-22] в ADR-0010 есть абзац, начинающийся «Пункт 2 дополняется:»", () => {
+    expect(
+      read("docs/adr/0010-factory.md")
+        .split("\n")
+        .some((line) => line.startsWith("Пункт 2 дополняется:")),
+    ).toBe(true);
+  });
 });
 
 describe("[SH-107 AC-30] файл docs/tech-debt.md с форматом записи", () => {

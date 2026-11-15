@@ -1882,7 +1882,7 @@ describe("factory: applyWorkerReply и saveReply", () => {
   const seed = (extra = "") =>
     `m.createTask("SH-950", { title: "Т", branch: "sh-950-t", worktree: "/w", stage: "в работе", pid: 4242, pid_started_at: "2026-01-01T00:00:00.000Z"${extra} });`;
 
-  it("[SH-098 AC-11] токены воркера накапливаются, этап и reason из ответа, pid не тронут, в том числе при is_error", () => {
+  it("[SH-098 AC-11, AC-12] applyWorkerReply: токены воркера накапливаются, этап и reason из ответа, pid не тронут, в том числе при is_error", () => {
     const s = happy();
 
     const { code, out, err } = nodeEvalAll(

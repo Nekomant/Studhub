@@ -86,4 +86,24 @@ describe("CI: .github/workflows/ci.yml — лёгкий и полный режи
     expect(deploy?.if, "deploy должен выполняться только в полном режиме").toMatch(/full/);
     expect(deploy?.if, "deploy должен идти только по push в main").toMatch(/push|refs\/heads\/main/);
   });
+
+  it("[SH-006 AC-6] в CI есть шаги проверки актуальности клиента OpenAPI и pnpm test:api", () => {
+    const steps = workflow().jobs.checks?.steps ?? [];
+    for (const command of ["pnpm gen:client:check", "pnpm test:api"]) {
+      expect(
+        steps.find((candidate) => candidate.run?.trim() === command),
+        `нет шага ${command}`,
+      ).toBeDefined();
+    }
+  });
+
+  it("[SH-008 AC-6] в CI есть шаг Playwright E2E с кэшем браузеров", () => {
+    const steps = workflow().jobs.checks?.steps ?? [];
+    expect(
+      steps.find((candidate) => candidate.run?.trim() === "pnpm test:e2e"),
+      "нет шага test:e2e",
+    ).toBeDefined();
+    expect(workflowText()).toMatch(/actions\/cache@/);
+    expect(workflowText()).toMatch(/ms-playwright/);
+  });
 });
