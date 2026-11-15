@@ -146,7 +146,7 @@ describe("CI: образ и деплой", () => {
     const build = wf.jobs.image?.steps.find((step) => step.uses?.startsWith("docker/build-push-action@"));
     expect(build, "нет шага docker/build-push-action").toBeDefined();
     expect(String(build?.with?.push)).toContain("github.event_name == 'push'");
-    expect(wf.jobs.image?.if).toBeUndefined();
+    expect(String(wf.jobs.image?.if)).toContain("full");
   });
 
   it("[SH-011 AC-2] по слиянию в main образ уходит в GHCR с тегом SHA", () => {

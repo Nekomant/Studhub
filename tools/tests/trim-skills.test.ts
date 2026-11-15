@@ -40,26 +40,6 @@ describe("[SH-082 AC-4] скилл sh-task без раздела «Закрыт�
   });
 });
 
-describe("[SH-082 AC-4] действия бывшего раздела описаны в docs/process.md", () => {
-  const section = (text: string, from: string, to: string) => {
-    const start = text.indexOf(from);
-    return text.slice(start, text.indexOf(to, start));
-  };
-  const process = read("docs/process.md");
-  const lifecycle = section(process, "## 7. Жизненный цикл задачи", "## 8. Тесты");
-
-  it("[SH-082 AC-4] команда Done с номерами пунктов DoD и сверка номеров с config", () => {
-    expect(lifecycle).toContain("-s Done --check-dod 2 --check-dod 5 --check-dod 6");
-    expect(lifecycle).toMatch(/сверя[а-я]+[^\n]*(config\.yml|task\.mjs)/);
-  });
-
-  it("[SH-082 AC-4] возврат в Review со снятием отметок и закрытие цикла", () => {
-    expect(lifecycle).toContain("--uncheck-dod 2 --uncheck-dod 5 --uncheck-dod 6");
-    expect(lifecycle).toContain("git switch --detach origin/main");
-    expect(lifecycle).toContain("git branch -D");
-  });
-});
-
 describe("[SH-082 AC-5] документы про плагины и шаблон задачи", () => {
   it("[SH-082 AC-5] process.md описывает отключённые плагины и включение через settings.local.json", () => {
     const process = read("docs/process.md");

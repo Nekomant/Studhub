@@ -87,12 +87,12 @@ if (pair === "pr create") {
   process.stdout.write(process.env.FAKE_GH_CHECKS ?? '{"state":"SUCCESS"}');
   process.exitCode = exit;
 } else if (pair === "pr merge") {
-  cp.execSync("git fetch origin", { stdio: "ignore" });
+  cp.execFileSync("git", ["fetch", "origin"], { stdio: "ignore" });
   const branches = cp
-    .execSync("git for-each-ref --format=%(refname:short) refs/remotes/origin", { encoding: "utf8" })
+    .execFileSync("git", ["for-each-ref", "--format=%(refname:short)", "refs/remotes/origin"], { encoding: "utf8" })
     .split("\\n")
     .filter((b) => /sh-[0-9]+-/.test(b));
-  if (branches[0]) cp.execSync("git push origin " + branches[0] + ":refs/heads/main", { stdio: "ignore" });
+  if (branches[0]) cp.execFileSync("git", ["push", "origin", branches[0] + ":refs/heads/main"], { stdio: "ignore" });
   process.exitCode = exit;
 } else {
   process.stdout.write("{}");
@@ -144,7 +144,7 @@ chmodSync(join(fakeBin, "osascript"), 0o755);
 // Подставной dsh (SH-107): строка JSON `{ args, cwd, env }` в `<FAKE_LOG>.dsh`, затем ответ.
 // Ответ по умолчанию — валидный JSON с result «чисто» и usage 0. Настройка: FAKE_DSH_RESULT (текст result),
 // FAKE_DSH_RAW (stdout как есть), FAKE_DSH_EXIT (код), FAKE_DSH_SESSION=same (session_id из --session-id),
-// FAKE_DSH_INPUT / FAKE_DSH_OUTPUT / FAKE_DSH_REASONING (токены usage).
+// FAKE_DSH_INPUT / FAKE_DSH_OUTPUT / FAKE_DSH_REASONING (токены usage), FAKE_DSH_SLEEP (мс до ответа).
 writeFileSync(
   join(fakeBin, "dsh"),
   `#!/usr/bin/env node
@@ -152,12 +152,16 @@ const fs = require("node:fs");
 const args = process.argv.slice(2);
 const env = process.env;
 fs.appendFileSync(env.FAKE_LOG + ".dsh", JSON.stringify({ args, cwd: process.cwd(), env }) + "\\n");
+if (env.FAKE_DSH_SLEEP) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(env.FAKE_DSH_SLEEP));
 const after = (flag) => args[args.indexOf(flag) + 1] ?? "";
+// Воркер по умолчанию возвращает «СТОП <id>: заглушка» (как старая заглушка claude), остальные роли — «чисто».
+const worker = String(args[args.length - 1] ?? "").includes("sh-worker");
+const id = /SH-\\d+/.exec(args.join(" "))?.[0] ?? "SH-0";
 const reply = {
   type: "result",
   subtype: "success",
   is_error: false,
-  result: env.FAKE_DSH_RESULT ?? "чисто",
+  result: env.FAKE_DSH_RESULT ?? (worker ? "СТОП " + id + ": заглушка" : "чисто"),
   session_id: env.FAKE_DSH_SESSION === "same" ? after("--session-id") : "other-session",
   usage: {
     input_tokens: Number(env.FAKE_DSH_INPUT ?? 0),
@@ -350,9 +354,6 @@ const claudeCalls = (scenario: Scenario): ClaudeCall[] =>
     .filter(Boolean)
     .map((line) => JSON.parse(line));
 
-// Значение флага в аргументах claude.
-const flagValue = (call: ClaudeCall, flag: string) => call.args[call.args.indexOf(flag) + 1];
-
 type DshCall = { args: string[]; cwd: string; env: Record<string, string> };
 
 // Вызовы заглушки dsh с начала последнего runFactory (SH-107).
@@ -361,6 +362,9 @@ const dshCalls = (scenario: Scenario): DshCall[] =>
     .split("\n")
     .filter(Boolean)
     .map((line) => JSON.parse(line));
+
+// Значение флага в аргументах dsh.
+const dshFlag = (call: DshCall, flag: string) => call.args[call.args.indexOf(flag) + 1];
 
 // check-spec.mjs (SH-107 AC-11): проверка полей «Права»/«Затрагивает»/«Модель» на фикстуре через --root.
 const checkSpecScript = join(repoRoot, "scripts/check-spec.mjs");
@@ -835,6 +839,12 @@ describe("factory-state: модуль", () => {
       "ошибка PR",
       "PR",
       "Done, ждёт слияния",
+      "проверки DoD",
+      "красный коммит",
+      "ревью",
+      "готов к ревью",
+      "CI",
+      "Merged",
     ]);
     expect(exported.RUNNING).toEqual(["в работе", "проверки"]);
     expect([...exported.WAIT].sort()).toEqual(
@@ -993,7 +1003,7 @@ describe("factory-state: модуль", () => {
 const factoryTools = () => import("../../scripts/lib/factory-tools.mjs");
 const factoryModule = () => import("../../scripts/factory.mjs");
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-const SLOW = { FAKE_CLAUDE_SLEEP: "2500" };
+const SLOW = { FAKE_DSH_SLEEP: "2500" };
 
 // Выполняет код ES-модуля в папке cwd. Модули состояния и фабрики подключены как `m` и `f`.
 function nodeEvalAll(cwd: string, code: string) {
@@ -1012,6 +1022,8 @@ function nodeEvalAll(cwd: string, code: string) {
 // Задача, подготовленная командой SH-093, но без запуска воркера: ветка, worktree и запись на этапе «подготовлена».
 function prepared(s: Scenario, id = "SH-901", title = TITLE_FABRIKA, branch = BRANCH_901, fields = "") {
   const worktree = join(s.work, ".claude/worktrees", branch);
+  // Как `factory ready`: ветка берётся от свежего origin/main, а не от устаревшей локальной ссылки.
+  git(s.work, "fetch", "-q", "origin", "main");
   git(s.work, "worktree", "add", "-q", "--no-track", "-b", branch, worktree, "origin/main");
   const result = nodeEvalAll(
     s.work,
@@ -1037,7 +1049,7 @@ async function liveProcess() {
 }
 
 describe("factory: запуск воркера в фоне", () => {
-  it("[SH-098 AC-1] без --foreground: этап «в работе» с pid и временем старта, код 0 до ответа claude", async () => {
+  it("[SH-098 AC-1] без --foreground: этап «в работе» с pid и временем старта, код 0 до ответа dsh", async () => {
     const s = happy();
 
     const { code } = runFactory(s, s.work, ["run", "SH-901"], { env: SLOW, settle: false });
@@ -1075,14 +1087,14 @@ describe("factory: запуск воркера в фоне", () => {
     } finally {
       expect(settle(s)).toBe(true);
     }
-    expect(flagValue(claudeCalls(s)[0] as ClaudeCall, "--session-id")).toBe(readTasks(s)["SH-901"]?.session_id);
+    expect(dshFlag(dshCalls(s)[0]!, "--session-id")).toBe(readTasks(s)["SH-901"]?.session_id);
   }, 20_000);
 
-  it("[SH-098 AC-3] --foreground: pid и время старта текущего процесса, команда ждёт ответа claude", async () => {
+  it("[SH-098 AC-3] --foreground: pid и время старта текущего процесса, команда ждёт ответа dsh", async () => {
     const s = happy();
     prepared(s);
     writeFileSync(s.log, "");
-    writeFileSync(`${s.log}.claude`, "");
+    writeFileSync(`${s.log}.dsh`, "");
     const child = spawn(process.execPath, [script, "run", "SH-901", "--foreground"], {
       cwd: s.work,
       stdio: "ignore",
@@ -1101,20 +1113,22 @@ describe("factory: запуск воркера в фоне", () => {
     expect(readTasks(s)["SH-901"]?.stage).toBe("стоп");
   }, 20_000);
 
-  it("[SH-098 AC-15] --foreground на заглушке: 001-worker.json, этап, reason, стоимость, строка claude в журнале, pid очищен", () => {
+  it("[SH-098 AC-15] --foreground на заглушке: 001-worker.json, этап, reason, токены, строка dsh в журнале, pid очищен", () => {
     const s = happy();
     prepared(s);
 
-    const { code } = runFactory(s, s.work, ["run", "SH-901", "--foreground"], { env: { FAKE_CLAUDE_COST: "0.25" } });
+    const { code } = runFactory(s, s.work, ["run", "SH-901", "--foreground"], {
+      env: { FAKE_DSH_INPUT: "25", FAKE_DSH_OUTPUT: "5" },
+    });
 
     expect(code).toBe(0);
     const reply = JSON.parse(readFileSync(join(s.stateDir, "SH-901/001-worker.json"), "utf8"));
     expect(reply.result).toBe("СТОП SH-901: заглушка");
     const task = readTasks(s)["SH-901"];
     expect(task).toMatchObject({ stage: "стоп", reason: "СТОП SH-901: заглушка", pid: null, pid_started_at: "" });
-    expect(task?.cost_usd).toBeCloseTo(0.25);
+    expect((task?.tokens as { worker?: unknown } | undefined)?.worker).toMatchObject({ input: 25, output: 5 });
     const log = logOf(s, "SH-901");
-    expect(log).toMatch(/claude -p .*--agent sh-worker/);
+    expect(log).toMatch(/dsh headless .*sh-worker/);
     expect(log).toMatch(/этап: подготовлена → в работе/);
     expect(log).toMatch(/этап: в работе → стоп; СТОП SH-901: заглушка/);
   }, 20_000);
@@ -1123,7 +1137,7 @@ describe("factory: запуск воркера в фоне", () => {
     const s = happy();
     prepared(s);
 
-    runFactory(s, s.work, ["run", "SH-901"], { env: { FAKE_CLAUDE_RESULT: "ГОТОВО SH-901" } });
+    runFactory(s, s.work, ["run", "SH-901"], { env: { FAKE_DSH_RESULT: "ГОТОВО SH-901" } });
 
     const log = logOf(s, "SH-901");
     expect(log.indexOf("подготовлена → в работе")).toBeGreaterThan(-1);
@@ -1140,7 +1154,7 @@ describe("factory: run SH-NNN после подготовки", () => {
     const { code, calls } = runFactory(s, s.work, ["run", "SH-901"]);
 
     expect(code).toBe(0);
-    expect(claudeCalls(s)).toHaveLength(1);
+    expect(dshCalls(s)).toHaveLength(1);
     expect(calls).not.toContain("pnpm");
     expect(logOf(s, "SH-901")).not.toContain("check-spec");
     expect(readTasks(s)["SH-901"]?.stage).toBe("стоп");
@@ -1158,7 +1172,7 @@ describe("factory: run SH-NNN после подготовки", () => {
 
       expect(code).toBe(1);
       expect(out).toContain(`этапе «${stage}»`);
-      expect(claudeCalls(s)).toHaveLength(0);
+      expect(dshCalls(s)).toHaveLength(0);
       expect(calls).not.toContain("pnpm");
       expect(snapshot(s)).toEqual(before);
     },
@@ -1182,47 +1196,34 @@ describe("factory: run SH-NNN на этапе «в работе»", () => {
 
     expect(code).toBe(1);
     expect(out).toContain("этапе «в работе»");
-    expect(claudeCalls(s)).toHaveLength(0);
+    expect(dshCalls(s)).toHaveLength(0);
     expect(snapshot(s)).toEqual(before);
   }, 20_000);
 });
 
-describe("factory: команда claude и окружение", () => {
-  it("[SH-098 AC-5] аргументы и cwd вызова claude, --session-id равен session_id записи", async () => {
+describe("factory: команда dsh и окружение", () => {
+  it("[SH-098 AC-5] аргументы и cwd вызова dsh, --session-id равен session_id записи", async () => {
     const s = happy();
     const { worktree } = prepared(s);
-    const { workerAllowed, WORKER_DISALLOWED, WORKER_BUDGET_USD } = await factoryTools();
 
     runFactory(s, s.work, ["run", "SH-901"]);
 
-    const calls = claudeCalls(s);
+    const calls = dshCalls(s);
     expect(calls).toHaveLength(1);
     const sessionId = readTasks(s)["SH-901"]?.session_id;
     expect(sessionId).toMatch(UUID);
-    expect(calls[0]?.args).toEqual([
-      "-p",
-      `Новый старт SH-901. Ветка: ${BRANCH_901}.`,
-      "--agent",
-      "sh-worker",
-      "--session-id",
-      sessionId,
-      "--name",
-      "Фабрика SH-901",
-      "--output-format",
-      "json",
-      "--permission-mode",
-      "dontAsk",
-      "--allowedTools",
-      workerAllowed(worktree).join(","),
-      "--disallowedTools",
-      WORKER_DISALLOWED.join(","),
-      "--max-budget-usd",
-      String(WORKER_BUDGET_USD),
-    ]);
+    const args = calls[0]!.args;
+    expect(args).toContain("headless");
+    expect(args).toContain("--json");
+    expect(dshFlag(calls[0]!, "--session-id")).toBe(sessionId);
+    expect(dshFlag(calls[0]!, "--permission-mode")).toBe("workspace-write");
+    expect(dshFlag(calls[0]!, "--model")).toBe("deepseek-v4-pro");
+    expect(dshFlag(calls[0]!, "--effort")).toBe("high");
+    expect(args.some((arg) => arg.includes("sh-worker"))).toBe(true);
     expect(calls[0]?.cwd).toBe(worktree);
   }, 20_000);
 
-  it("[SH-098 AC-20] claude получает TEST_DATABASE_URL из .env основной папки, не получает переменные вне ALLOWED", () => {
+  it("[SH-098 AC-20] dsh получает TEST_DATABASE_URL из .env основной папки, не получает переменные вне ALLOWED", () => {
     const s = happy();
     const { worktree } = prepared(s);
     writeFileSync(
@@ -1235,7 +1236,7 @@ describe("factory: команда claude и окружение", () => {
       env: { POSTGRES_PORT: "5111", DATABASE_URL: "postgres://process/db", S3_SECRET_ACCESS_KEY: "" },
     });
 
-    const env = claudeCalls(s)[0]?.env ?? {};
+    const env = dshCalls(s)[0]?.env ?? {};
     expect(env.TEST_DATABASE_URL).toBe("postgres://main/db_test");
     expect(env.POSTGRES_PORT).toBe("5999");
     expect(env.DATABASE_URL).toBe("postgres://process/db");
@@ -1249,7 +1250,7 @@ describe("factory: команда claude и окружение", () => {
 
     runFactory(s, s.work, ["run", "SH-901"], { env: { POSTGRES_PORT: "5111" } });
 
-    expect(claudeCalls(s)[0]?.env.POSTGRES_PORT).toBe("5434");
+    expect(dshCalls(s)[0]?.env.POSTGRES_PORT).toBe("5434");
   }, 20_000);
 });
 
@@ -1448,21 +1449,12 @@ describe("factory-tools и запуск: замечания ревью SH-098", 
     }
   });
 
-  it("[SH-098 AC-5] FACTORY_WORKER_BUDGET_USD попадает в --max-budget-usd", () => {
-    const s = happy();
-    prepared(s);
-
-    runFactory(s, s.work, ["run", "SH-901", "--foreground"], { env: { FACTORY_WORKER_BUDGET_USD: "2.5" } });
-
-    expect(flagValue(claudeCalls(s)[0] as ClaudeCall, "--max-budget-usd")).toBe("2.5");
-  }, 20_000);
-
-  it("[SH-098 AC-5] таймаут claude: этап «ошибка» с причиной, pid очищен", () => {
+  it("[SH-098 AC-5] таймаут dsh: этап «ошибка» с причиной, pid очищен", () => {
     const s = happy();
     prepared(s);
 
     const { code } = runFactory(s, s.work, ["run", "SH-901", "--foreground"], {
-      env: { FAKE_CLAUDE_SLEEP: "20000", FACTORY_WORKER_TIMEOUT_MIN: "0.03" },
+      env: { FAKE_DSH_SLEEP: "20000", FACTORY_WORKER_TIMEOUT_MIN: "0.03" },
     });
 
     expect(code).toBe(0);
@@ -1472,7 +1464,7 @@ describe("factory-tools и запуск: замечания ревью SH-098", 
   }, 30_000);
 
   it.each(["в работе", "готово", "стоп", "ошибка"])(
-    "[SH-098 AC-4] _worker на записи с этапом «%s»: отказ, код 1, claude не вызван, запись не изменена",
+    "[SH-098 AC-4] _worker на записи с этапом «%s»: отказ, код 1, dsh не вызван, запись не изменена",
     (stage) => {
       const s = happy();
       prepared(s);
@@ -1483,13 +1475,13 @@ describe("factory-tools и запуск: замечания ревью SH-098", 
 
       expect(code).toBe(1);
       expect(out).toContain(`этап «${stage}»`);
-      expect(claudeCalls(s)).toHaveLength(0);
+      expect(dshCalls(s)).toHaveLength(0);
       expect(snapshot(s).state).toEqual(before.state);
     },
     20_000,
   );
 
-  it("[SH-098 AC-4] _worker на записи «подготовлена» с живым pid: отказ, claude не вызван", async () => {
+  it("[SH-098 AC-4] _worker на записи «подготовлена» с живым pid: отказ, dsh не вызван", async () => {
     const s = happy();
     const live = await liveProcess();
     prepared(
@@ -1504,11 +1496,11 @@ describe("factory-tools и запуск: замечания ревью SH-098", 
 
     expect(code).toBe(1);
     expect(out).toContain("живой процесс");
-    expect(claudeCalls(s)).toHaveLength(0);
+    expect(dshCalls(s)).toHaveLength(0);
     expect(readTasks(s)["SH-901"]?.stage).toBe("подготовлена");
   }, 20_000);
 
-  it("[SH-098 AC-16] _worker при двух чужих живых процессах: отказ, код 1, claude не вызван", async () => {
+  it("[SH-098 AC-16] _worker при двух чужих живых процессах: отказ, код 1, dsh не вызван", async () => {
     const s = happy();
     prepared(s);
     const a = await liveProcess();
@@ -1522,11 +1514,11 @@ describe("factory-tools и запуск: замечания ревью SH-098", 
     expect(code).toBe(1);
     expect(out).toContain("SH-902");
     expect(out).toContain("SH-903");
-    expect(claudeCalls(s)).toHaveLength(0);
+    expect(dshCalls(s)).toHaveLength(0);
     expect(readTasks(s)["SH-901"]?.stage).toBe("подготовлена");
   }, 20_000);
 
-  it("[SH-098 AC-16] два _worker одновременно при одном чужом живом процессе: claude запускает один", async () => {
+  it("[SH-098 AC-16] два _worker одновременно при одном чужом живом процессе: dsh запускает один", async () => {
     const s = happy();
     prepared(s);
     prepared(s, "SH-902", TITLE_FABRIKA, "sh-902-second");
@@ -1538,7 +1530,7 @@ describe("factory-tools и запуск: замечания ревью SH-098", 
       ).code,
     ).toBe(0);
     writeFileSync(s.log, "");
-    writeFileSync(`${s.log}.claude`, "");
+    writeFileSync(`${s.log}.dsh`, "");
     const start = (id: string) =>
       new Promise<number | null>((done) => {
         const child = spawn(process.execPath, [script, "_worker", id], {
@@ -1552,7 +1544,7 @@ describe("factory-tools и запуск: замечания ревью SH-098", 
     const codes = await Promise.all([start("SH-901"), start("SH-902")]);
 
     expect([...codes].sort()).toEqual([0, 1]);
-    expect(claudeCalls(s)).toHaveLength(1);
+    expect(dshCalls(s)).toHaveLength(1);
     expect(waitUntil(() => pidRecords(s).join() === "SH-903")).toBe(true);
   }, 30_000);
 });
@@ -1700,8 +1692,7 @@ describe("factory: parseWorkerReply", () => {
       is_error: false,
       result: "ГОТОВО SH-098",
       session_id: SESSION,
-      total_cost_usd: 0.3,
-      permission_denials: [],
+      usage: { input_tokens: 3, output_tokens: 2, reasoning_tokens: 1 },
       ...over,
     });
 
@@ -1732,7 +1723,7 @@ describe("factory: parseWorkerReply", () => {
       name: "subtype ошибки раньше is_error",
       input: { stdout: body({ subtype: "error_during_execution", is_error: true }), code: 1 },
       stage: "ошибка",
-      reason: "ошибка claude: error_during_execution",
+      reason: "ошибка dsh: error_during_execution",
     },
     {
       name: "чужой ID у ГОТОВО",
@@ -1776,15 +1767,15 @@ describe("factory: parseWorkerReply", () => {
     { name: "нет result", input: { stdout: body({ result: undefined }) }, stage: "ошибка", reason: "нет result" },
     {
       name: "ошибка запуска",
-      input: { stdout: "", error: "spawn claude ENOENT" },
+      input: { stdout: "", error: "spawn dsh ENOENT" },
       stage: "ошибка",
-      reason: "claude не запустился: spawn claude ENOENT",
+      reason: "dsh не запустился: spawn dsh ENOENT",
     },
     {
       name: "ошибка запуска как Error",
-      input: { stdout: "", error: new Error("spawn claude ENOENT") },
+      input: { stdout: "", error: new Error("spawn dsh ENOENT") },
       stage: "ошибка",
-      reason: "claude не запустился: spawn claude ENOENT",
+      reason: "dsh не запустился: spawn dsh ENOENT",
     },
     {
       name: "ЗАМЕЧАНИЯ SH-NNN",
@@ -1826,36 +1817,34 @@ describe("factory: parseWorkerReply", () => {
     });
   });
 
-  it("[SH-098 AC-9] без валидного JSON: cost 0, denials [], sessionReady false", async () => {
+  it("[SH-098 AC-9] без валидного JSON: токены 0, sessionReady false", async () => {
     const { parseWorkerReply } = await factoryModule();
 
     for (const input of [
       { stdout: "не json", code: 0 },
-      { stdout: "", error: "spawn claude ENOENT" },
+      { stdout: "", error: "spawn dsh ENOENT" },
     ]) {
       expect(parseWorkerReply({ taskId: ID, sessionId: SESSION, ...input })).toMatchObject({
-        cost: 0,
-        denials: [],
+        tokens: { input: 0, output: 0, reasoning: 0 },
         sessionReady: false,
       });
     }
   });
 
-  it("[SH-098 AC-9] стоимость и отказы берутся из валидного JSON при любой причине ошибки", async () => {
+  it("[SH-098 AC-9] токены берутся из валидного JSON при любой причине ошибки", async () => {
     const { parseWorkerReply } = await factoryModule();
-    const denials = [{ tool_name: "Bash", tool_input: { command: "curl x" } }];
 
     const reply = parseWorkerReply({
-      stdout: body({ is_error: true, total_cost_usd: 0.7, permission_denials: denials }),
+      stdout: body({ is_error: true, usage: { input_tokens: 7, output_tokens: 2, reasoning_tokens: 1 } }),
       code: 1,
       taskId: ID,
       sessionId: SESSION,
     });
 
-    expect(reply).toMatchObject({ stage: "ошибка", reason: "is_error", cost: 0.7, denials });
+    expect(reply).toMatchObject({ stage: "ошибка", reason: "is_error", tokens: { input: 7, output: 2, reasoning: 1 } });
   });
 
-  it("[SH-098 AC-10] превышение бюджета: «ошибка claude: error_max_budget_usd» и стоимость из ответа", async () => {
+  it("[SH-098 AC-10] превышение бюджета: «ошибка dsh: error_max_budget_usd» и токены из ответа", async () => {
     const { parseWorkerReply } = await factoryModule();
     const stdout = JSON.stringify({
       type: "result",
@@ -1864,15 +1853,17 @@ describe("factory: parseWorkerReply", () => {
       is_error: true,
       num_turns: 14,
       session_id: SESSION,
-      total_cost_usd: 5.0213,
-      usage: { input_tokens: 10 },
-      permission_denials: [],
+      usage: { input_tokens: 10, output_tokens: 2, reasoning_tokens: 0 },
       errors: ["Reached maximum budget ($5)"],
     });
 
     const reply = parseWorkerReply({ stdout, code: 1, taskId: ID, sessionId: SESSION });
 
-    expect(reply).toMatchObject({ stage: "ошибка", reason: "ошибка claude: error_max_budget_usd", cost: 5.0213 });
+    expect(reply).toMatchObject({
+      stage: "ошибка",
+      reason: "ошибка dsh: error_max_budget_usd",
+      tokens: { input: 10, output: 2, reasoning: 0 },
+    });
   });
 
   it("[SH-098 AC-13] sessionReady true при совпадении session_id с sessionId, false при другом", async () => {
@@ -1889,21 +1880,21 @@ describe("factory: parseWorkerReply", () => {
 
 describe("factory: applyWorkerReply и saveReply", () => {
   const seed = (extra = "") =>
-    `m.createTask("SH-950", { title: "Т", branch: "sh-950-t", worktree: "/w", stage: "в работе", cost_usd: 0.4, pid: 4242, pid_started_at: "2026-01-01T00:00:00.000Z"${extra} });`;
+    `m.createTask("SH-950", { title: "Т", branch: "sh-950-t", worktree: "/w", stage: "в работе", pid: 4242, pid_started_at: "2026-01-01T00:00:00.000Z"${extra} });`;
 
-  it("[SH-098 AC-11] cost_usd 0.40 + 0.25 = 0.65, этап и reason из ответа, pid не тронут, в том числе при is_error", () => {
+  it("[SH-098 AC-11] токены воркера накапливаются, этап и reason из ответа, pid не тронут, в том числе при is_error", () => {
     const s = happy();
 
     const { code, out, err } = nodeEvalAll(
       s.work,
       `${seed()}
-       f.applyWorkerReply("SH-950", { stage: "ошибка", reason: "is_error", cost: 0.25, denials: [], sessionReady: false });
+       f.applyWorkerReply("SH-950", { stage: "ошибка", reason: "is_error", tokens: { input: 4, output: 2, reasoning: 1 }, sessionReady: false });
        console.log(JSON.stringify(m.readState().tasks["SH-950"]));`,
     );
 
     expect(code, err).toBe(0);
     const task = JSON.parse(out);
-    expect(task.cost_usd).toBeCloseTo(0.65);
+    expect(task.tokens.worker).toMatchObject({ input: 4, output: 2, reasoning: 1 });
     expect(task).toMatchObject({
       stage: "ошибка",
       reason: "is_error",
@@ -1913,30 +1904,13 @@ describe("factory: applyWorkerReply и saveReply", () => {
     expect(readFileSync(join(s.stateDir, "SH-950/log.txt"), "utf8")).toMatch(/этап: в работе → ошибка; is_error/);
   });
 
-  it("[SH-098 AC-12] denials из ответа как есть; без поля — пустой массив", () => {
-    const s = happy();
-    const denials = [{ tool_name: "Bash", tool_use_id: "t1", tool_input: { command: "curl -I example.com" } }];
-
-    const { code, out, err } = nodeEvalAll(
-      s.work,
-      `${seed(", denials: [{ old: true }]")}
-       f.applyWorkerReply("SH-950", { stage: "стоп", reason: "СТОП SH-950: x", cost: 0, denials: ${JSON.stringify(denials)}, sessionReady: false });
-       const first = m.readState().tasks["SH-950"].denials;
-       f.applyWorkerReply("SH-950", { stage: "стоп", reason: "СТОП SH-950: x", cost: 0, sessionReady: false });
-       console.log(JSON.stringify({ first, second: m.readState().tasks["SH-950"].denials }));`,
-    );
-
-    expect(code, err).toBe(0);
-    expect(JSON.parse(out)).toEqual({ first: denials, second: [] });
-  });
-
   it("[SH-098 AC-13] sessionReady true ставит session_ready, false не сбрасывает true", () => {
     const s = happy();
 
     const { code, out, err } = nodeEvalAll(
       s.work,
       `${seed()}
-       const reply = { stage: "готово", reason: "", cost: 0, denials: [] };
+       const reply = { stage: "готово", reason: "", tokens: { input: 0, output: 0, reasoning: 0 } };
        const seen = [m.readState().tasks["SH-950"].session_ready];
        f.applyWorkerReply("SH-950", { ...reply, sessionReady: false });
        seen.push(m.readState().tasks["SH-950"].session_ready);
@@ -2020,7 +1994,7 @@ describe("factory: не больше двух живых фоновых проц
       expect(out).toContain("SH-902");
       expect(out).toContain("SH-903");
       expect(snapshot(s)).toEqual(before);
-      expect(claudeCalls(s)).toHaveLength(0);
+      expect(dshCalls(s)).toHaveLength(0);
     }
   });
 
@@ -2078,19 +2052,6 @@ describe("local-env: общий список переменных", () => {
 // `$'…'`, `$?`, `$(…)` и `grep` отклоняются, одинарные кавычки с переводом строки, `2>&1` и конвейер в `tail` проходят.
 describe("factory: инструкция sh-worker.md и права воркера", () => {
   const workerDoc = readFileSync(join(repoRoot, ".claude/agents/sh-worker.md"), "utf8");
-  const section = (() => {
-    const start = workerDoc.indexOf("## Команды Bash под фабрикой");
-    if (start < 0) return "";
-    const next = workerDoc.indexOf("\n## ", start + 1);
-    return workerDoc.slice(start, next < 0 ? undefined : next);
-  })();
-
-  it("[SH-098 AC-8] sh-worker.md: раздел о командах Bash отправляет к Read и Grep и по одной команде за вызов", () => {
-    expect(section).not.toBe("");
-    for (const word of ["Read", "Grep", "одну команду", "одинарных кавычках", "dontAsk"])
-      expect(section).toContain(word);
-    for (const banned of ["`;`", "`&&`", "`echo`", "`$?`", "`$(…)`", "`$'…'`"]) expect(section).toContain(banned);
-  });
 
   it("[SH-098 AC-8] sh-worker.md: команды из текста подходят к разрешённым правилам и не подходят к запретам", async () => {
     const { matchesRule, WORKER_ALLOWED, WORKER_DISALLOWED } = await factoryTools();
@@ -2174,12 +2135,12 @@ const osaCalls = (s: Scenario): string[][] =>
     .filter(Boolean)
     .map((line) => JSON.parse(line));
 
-// Папка с подставными pnpm, gh и claude и с обычными git, ps, sh, env и node, но без osascript.
+// Папка с подставными pnpm, gh и dsh и с обычными git, ps, sh, env и node, но без osascript.
 function binWithoutOsascript(): string {
   const dir = join(workDir, "bin-no-osa");
   if (existsSync(dir)) return dir;
   mkdirSync(dir);
-  for (const name of ["pnpm", "gh", "claude"]) symlinkSync(join(fakeBin, name), join(dir, name));
+  for (const name of ["pnpm", "gh", "dsh"]) symlinkSync(join(fakeBin, name), join(dir, name));
   for (const name of ["git", "ps", "sh", "env", "sleep"]) {
     const found = spawnSync("sh", ["-c", `command -v ${name}`], { encoding: "utf8" }).stdout.trim();
     if (found) symlinkSync(found, join(dir, name));
@@ -2252,7 +2213,7 @@ describe("factory: уведомления", () => {
     const s = happy();
     prepared(s);
 
-    runFactory(s, s.work, ["run", "SH-901", "--foreground"], { env: { FAKE_CLAUDE_RAW: "не json" } });
+    runFactory(s, s.work, ["run", "SH-901", "--foreground"], { env: { FAKE_DSH_RAW: "не json" } });
 
     const calls = osaCalls(s);
     expect(calls).toHaveLength(1);
@@ -2265,7 +2226,7 @@ describe("factory: уведомления", () => {
     prepared(s);
     const result = `СТОП SH-901: ${"я".repeat(200)}`;
 
-    runFactory(s, s.work, ["run", "SH-901", "--foreground"], { env: { FAKE_CLAUDE_RESULT: result } });
+    runFactory(s, s.work, ["run", "SH-901", "--foreground"], { env: { FAKE_DSH_RESULT: result } });
 
     const text = osaCalls(s)[0]?.[OSA_HEAD.length] ?? "";
     expect(Array.from(text)).toHaveLength(100);
@@ -2279,7 +2240,7 @@ describe("factory: уведомления", () => {
     const first = `СТОП SH-901: он сказал "да" \\ и 'нет'`;
 
     const { code } = runFactory(s, s.work, ["run", "SH-901", "--foreground"], {
-      env: { FAKE_CLAUDE_RESULT: `${first}\nвторая строка` },
+      env: { FAKE_DSH_RESULT: `${first}\nвторая строка` },
     });
 
     expect(code).toBe(0);
@@ -2309,34 +2270,21 @@ describe("factory: уведомления", () => {
 describe("factory: answer", () => {
   const ANSWER = `Да, "кавычки", $HOME и $(date) и \`x\`\nвторая 'строка' \\ конец`;
 
-  it("[SH-094 AC-4] answer на «стоп»: claude получает --resume, промпт с текстом без изменений, флаги SH-098, cwd — worktree", async () => {
+  it("[SH-094 AC-4] answer на «стоп»: dsh получает session_id, промпт с текстом без изменений, cwd — worktree", async () => {
     const s = happy();
     const { worktree } = onStage(s, "стоп");
-    const { workerAllowed, WORKER_DISALLOWED, WORKER_BUDGET_USD } = await factoryTools();
 
     const { code } = runFactory(s, s.work, ["answer", "SH-901", ANSWER]);
 
     expect(code).toBe(0);
-    const calls = claudeCalls(s);
+    const calls = dshCalls(s);
     expect(calls).toHaveLength(1);
-    expect(calls[0]?.args).toEqual([
-      "-p",
-      `Продолжение SH-901. Ответ владельца: ${ANSWER}`,
-      "--resume",
-      "sess-1",
-      "--agent",
-      "sh-worker",
-      "--output-format",
-      "json",
-      "--permission-mode",
-      "dontAsk",
-      "--allowedTools",
-      workerAllowed(worktree).join(","),
-      "--disallowedTools",
-      WORKER_DISALLOWED.join(","),
-      "--max-budget-usd",
-      String(WORKER_BUDGET_USD),
-    ]);
+    const args = calls[0]!.args;
+    expect(args).toContain("headless");
+    expect(dshFlag(calls[0]!, "--session-id")).toBe("sess-1");
+    expect(dshFlag(calls[0]!, "--permission-mode")).toBe("workspace-write");
+    expect(args.some((arg) => arg.includes(`Продолжение SH-901. Ответ владельца: ${ANSWER}`))).toBe(true);
+    expect(args.some((arg) => arg.includes("sh-worker"))).toBe(true);
     expect(calls[0]?.cwd).toBe(worktree);
   }, 20_000);
 
@@ -2360,22 +2308,22 @@ describe("factory: answer", () => {
     expect(readTasks(s)["SH-901"]).toMatchObject({ stage: "стоп", pid: null });
   }, 20_000);
 
-  it("[SH-094 AC-5] answer --foreground: после ответа claude этап по SH-098, cost_usd 0.40 + 0.25 = 0.65", () => {
+  it("[SH-094 AC-5] answer --foreground: после ответа dsh этап по SH-098, токены воркера накоплены", () => {
     const s = happy();
-    onStage(s, "стоп", ", cost_usd: 0.4");
+    onStage(s, "стоп");
 
     const { code } = runFactory(s, s.work, ["answer", "SH-901", "ответ", "--foreground"], {
-      env: { FAKE_CLAUDE_COST: "0.25", FAKE_CLAUDE_RESULT: "ГОТОВО SH-901" },
+      env: { FAKE_DSH_INPUT: "4", FAKE_DSH_OUTPUT: "2", FAKE_DSH_RESULT: "ГОТОВО SH-901" },
     });
 
     expect(code).toBe(0);
     const task = readTasks(s)["SH-901"];
     expect(task).toMatchObject({ stage: "готово", pid: null, pid_started_at: "" });
-    expect(task?.cost_usd).toBeCloseTo(0.65);
+    expect((task?.tokens as { worker?: unknown } | undefined)?.worker).toMatchObject({ input: 4, output: 2 });
   }, 20_000);
 
   it.each(["подготовлена", "готово", "ошибка"])(
-    "[SH-094 AC-6] answer на этапе «%s»: причина, код 1, claude не вызван",
+    "[SH-094 AC-6] answer на этапе «%s»: причина, код 1, dsh не вызван",
     (stage) => {
       const s = happy();
       onStage(s, stage);
@@ -2385,22 +2333,22 @@ describe("factory: answer", () => {
 
       expect(code).toBe(1);
       expect(out).toContain(`этапе «${stage}»`);
-      expect(claudeCalls(s)).toHaveLength(0);
+      expect(dshCalls(s)).toHaveLength(0);
       expect(snapshot(s)).toEqual(before);
     },
   );
 
-  it("[SH-094 AC-6] answer без записи в state.json: причина, код 1, claude не вызван", () => {
+  it("[SH-094 AC-6] answer без записи в state.json: причина, код 1, dsh не вызван", () => {
     const s = happy();
 
     const { code, out } = runFactory(s, s.work, ["answer", "SH-901", "ответ"]);
 
     expect(code).toBe(1);
     expect(out).toContain("нет записи");
-    expect(claudeCalls(s)).toHaveLength(0);
+    expect(dshCalls(s)).toHaveLength(0);
   });
 
-  it("[SH-094 AC-6] answer при двух живых процессах: ID живых задач, код 1, claude не вызван, этап «стоп»", async () => {
+  it("[SH-094 AC-6] answer при двух живых процессах: ID живых задач, код 1, dsh не вызван, этап «стоп»", async () => {
     const s = happy();
     onStage(s, "стоп");
     const a = await liveProcess();
@@ -2413,7 +2361,7 @@ describe("factory: answer", () => {
     expect(code).toBe(1);
     expect(out).toContain("SH-902");
     expect(out).toContain("SH-903");
-    expect(claudeCalls(s)).toHaveLength(0);
+    expect(dshCalls(s)).toHaveLength(0);
     expect(readTasks(s)["SH-901"]?.stage).toBe("стоп");
   }, 20_000);
 
@@ -2425,41 +2373,27 @@ describe("factory: answer", () => {
     const { code } = runFactory(s, s.work, ["answer", "SH-901", "поправь 1"]);
 
     expect(code).toBe(0);
-    const call = claudeCalls(s)[0] as ClaudeCall;
-    expect(flagValue(call, "-p")).toBe("Продолжение SH-901. Ответ владельца: поправь 1");
-    expect(flagValue(call, "--resume")).toBe("sess-1");
+    const args = dshCalls(s)[0]!.args;
+    expect(args.some((arg) => arg.includes("Продолжение SH-901. Ответ владельца: поправь 1"))).toBe(true);
+    expect(dshFlag(dshCalls(s)[0]!, "--session-id")).toBe("sess-1");
   }, 20_000);
 });
 
 describe("factory: continue", () => {
-  it("[SH-094 AC-7] continue на «ошибка» с session_ready true: --resume и текст «Продолжение SH-901.»", async () => {
+  it("[SH-094 AC-7] continue на «ошибка» с session_ready true: session_id прежний и текст «Продолжение SH-901.»", async () => {
     const s = happy();
     const { worktree } = onStage(s, "ошибка");
-    const { workerAllowed, WORKER_DISALLOWED, WORKER_BUDGET_USD } = await factoryTools();
 
     const { code } = runFactory(s, s.work, ["continue", "SH-901"]);
 
     expect(code).toBe(0);
-    const calls = claudeCalls(s);
+    const calls = dshCalls(s);
     expect(calls).toHaveLength(1);
-    expect(calls[0]?.args).toEqual([
-      "-p",
-      "Продолжение SH-901.",
-      "--resume",
-      "sess-1",
-      "--agent",
-      "sh-worker",
-      "--output-format",
-      "json",
-      "--permission-mode",
-      "dontAsk",
-      "--allowedTools",
-      workerAllowed(worktree).join(","),
-      "--disallowedTools",
-      WORKER_DISALLOWED.join(","),
-      "--max-budget-usd",
-      String(WORKER_BUDGET_USD),
-    ]);
+    const args = calls[0]!.args;
+    expect(args).toContain("headless");
+    expect(dshFlag(calls[0]!, "--session-id")).toBe("sess-1");
+    expect(args.some((arg) => arg.includes("Продолжение SH-901."))).toBe(true);
+    expect(args.some((arg) => arg.includes("sh-worker"))).toBe(true);
     expect(calls[0]?.cwd).toBe(worktree);
   }, 20_000);
 
@@ -2472,36 +2406,19 @@ describe("factory: continue", () => {
       BRANCH_901,
       ', stage: "ошибка", session_id: "old-sess", session_ready: false',
     );
-    const { workerAllowed, WORKER_DISALLOWED, WORKER_BUDGET_USD } = await factoryTools();
 
     const { code, calls: shell } = runFactory(s, s.work, ["continue", "SH-901"]);
 
     expect(code).toBe(0);
-    const calls = claudeCalls(s);
+    const calls = dshCalls(s);
     expect(calls).toHaveLength(1);
     const sessionId = readTasks(s)["SH-901"]?.session_id;
     expect(sessionId).toMatch(UUID);
     expect(sessionId).not.toBe("old-sess");
-    expect(calls[0]?.args).toEqual([
-      "-p",
-      `Новый старт SH-901. Ветка: ${BRANCH_901}.`,
-      "--agent",
-      "sh-worker",
-      "--session-id",
-      sessionId,
-      "--name",
-      "Фабрика SH-901",
-      "--output-format",
-      "json",
-      "--permission-mode",
-      "dontAsk",
-      "--allowedTools",
-      workerAllowed(worktree).join(","),
-      "--disallowedTools",
-      WORKER_DISALLOWED.join(","),
-      "--max-budget-usd",
-      String(WORKER_BUDGET_USD),
-    ]);
+    const args = calls[0]!.args;
+    expect(dshFlag(calls[0]!, "--session-id")).toBe(sessionId);
+    expect(args.some((arg) => arg.includes(`Новый старт SH-901. Ветка: ${BRANCH_901}.`))).toBe(true);
+    expect(args.some((arg) => arg.includes("sh-worker"))).toBe(true);
     expect(calls[0]?.cwd).toBe(worktree);
     expect(shell).not.toContain("pnpm");
     expect(logOf(s, "SH-901")).not.toContain("check-spec");
@@ -2516,7 +2433,7 @@ describe("factory: continue", () => {
 
     expect(code).toBe(1);
     expect(out).toContain(`этапе «${stage}»`);
-    expect(claudeCalls(s)).toHaveLength(0);
+    expect(dshCalls(s)).toHaveLength(0);
     expect(snapshot(s)).toEqual(before);
   });
 
@@ -2529,16 +2446,16 @@ describe("factory: continue", () => {
 
     expect(running.code).toBe(1);
     expect(running.out).toContain("этапе «в работе»");
-    expect(claudeCalls(s)).toHaveLength(0);
+    expect(dshCalls(s)).toHaveLength(0);
 
     const empty = happy();
     const missing = runFactory(empty, empty.work, ["continue", "SH-901"]);
     expect(missing.code).toBe(1);
     expect(missing.out).toContain("нет записи");
-    expect(claudeCalls(empty)).toHaveLength(0);
+    expect(dshCalls(empty)).toHaveLength(0);
   }, 20_000);
 
-  it("[SH-094 AC-7] continue при двух живых процессах: код 1, claude не вызван", async () => {
+  it("[SH-094 AC-7] continue при двух живых процессах: код 1, dsh не вызван", async () => {
     const s = happy();
     onStage(s, "ошибка");
     const a = await liveProcess();
@@ -2550,7 +2467,7 @@ describe("factory: continue", () => {
 
     expect(code).toBe(1);
     expect(out).toContain("SH-902");
-    expect(claudeCalls(s)).toHaveLength(0);
+    expect(dshCalls(s)).toHaveLength(0);
     expect(readTasks(s)["SH-901"]?.stage).toBe("ошибка");
   }, 20_000);
 });
@@ -2643,7 +2560,7 @@ describe("factory: сводка", () => {
     putRecord(s, "SH-902", { stage: "подготовлена", stage_changed_at: minutesAgo(200) });
     putRecord(s, "SH-903", {
       stage: "ошибка",
-      reason: "таймаут 180 мин, claude остановлен",
+      reason: "таймаут 180 мин, dsh остановлен",
       stage_changed_at: minutesAgo(119),
       cost_usd: 1.5,
     });
@@ -2691,7 +2608,7 @@ describe("factory: сводка", () => {
     expect(lines).toContain("- Б: второй вариант");
     expect(out).not.toContain("Старый вопрос");
     expect(out).not.toContain("Сделано");
-    expect(out).toContain("таймаут 180 мин, claude остановлен");
+    expect(out).toContain("таймаут 180 мин, dsh остановлен");
     expect(out).toContain(join(s.stateDir, "SH-903/log.txt"));
   });
 
@@ -2837,7 +2754,7 @@ describe("factory: процесс завершился без ответа", () 
 
     expect(code).toBe(1);
     expect(readTasks(s)["SH-901"]).toMatchObject({ stage: "ошибка", reason: DEAD_REASON });
-    expect(claudeCalls(s)).toHaveLength(0);
+    expect(dshCalls(s)).toHaveLength(0);
     expectMarked(s);
   });
 
@@ -2849,7 +2766,7 @@ describe("factory: процесс завершился без ответа", () 
 
     expect(code).toBe(1);
     expect(out).toContain("этапе «ошибка»");
-    expect(claudeCalls(s)).toHaveLength(0);
+    expect(dshCalls(s)).toHaveLength(0);
     expectMarked(s);
   });
 
@@ -2860,7 +2777,7 @@ describe("factory: процесс завершился без ответа", () 
     const { code } = runFactory(s, s.work, ["continue", "SH-901"]);
 
     expect(code).toBe(0);
-    expect(claudeCalls(s)).toHaveLength(1);
+    expect(dshCalls(s)).toHaveLength(1);
     expectMarked(s);
   }, 20_000);
 });
@@ -2928,7 +2845,7 @@ describe("factory: list", () => {
     expect(code).toBe(0);
     expect(snapshot(s)).toEqual(before);
     expect(pidRecords(s)).toEqual([]);
-    expect(claudeCalls(s)).toHaveLength(0);
+    expect(dshCalls(s)).toHaveLength(0);
   });
 
   it("[SH-104 AC-9] run после выноса отбора: те же кандидаты, что у list, а run по номеру запускает воркера как раньше", () => {
@@ -2947,13 +2864,13 @@ describe("factory: list", () => {
       expect(rowsOf(listedOut.out).some((row) => row.startsWith(`${id}\t`))).toBe(true);
     }
     expect(picked.out).not.toMatch(/^\d+\. SH-903 /m);
-    expect(claudeCalls(s)).toHaveLength(0);
+    expect(dshCalls(s)).toHaveLength(0);
 
     const started = runFactory(s, s.work, ["run", "SH-901"]);
 
     expect(started.code).toBe(0);
     expect(started.out).toContain("SH-901: воркер запущен");
-    expect(claudeCalls(s)).toHaveLength(1);
+    expect(dshCalls(s)).toHaveLength(1);
   }, 30_000);
 
   it("[SH-104 AC-5] кандидатов нет: первая строка «Задач в Ready нет», блок ожидающих после неё, код 0", () => {

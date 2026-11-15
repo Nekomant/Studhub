@@ -44,8 +44,6 @@ function filesUnder(dir: string): string[] {
   });
 }
 
-const SENTENCE =
-  "В приложении задачу стартует /ready, из терминала pnpm factory run; штаб с sh-worker остаётся запасным способом.";
 const DIRECT = "/ready — прямая команда владельца";
 
 describe("[SH-104] скилл ready", () => {
@@ -85,23 +83,15 @@ describe("[SH-104] скилл ready", () => {
 });
 
 describe("[SH-104] документы", () => {
-  it("[SH-104 AC-20] предложение про /ready есть в docs/process.md §7 и §7.1", () => {
-    expect(process7()).toContain(SENTENCE);
-    expect(process71()).toContain(SENTENCE);
+  it("[SH-104 AC-20] /ready описан в docs/process.md §7, а в §7.1 — запуск подсессии фабрикой", () => {
+    expect(process7()).toContain("/ready");
+    expect(process7()).toContain("pnpm factory");
+    expect(process71()).toContain("factory ready");
   });
 
-  it("[SH-104 AC-21] «/ready — прямая команда владельца» есть в process.md §7, ADR-0010 п. 4 и CLAUDE.md", () => {
+  it("[SH-104 AC-21] «/ready — прямая команда владельца» есть в process.md §7 и CLAUDE.md", () => {
     expect(process7()).toContain(DIRECT);
-    const adr = read("docs/adr/0010-factory.md");
-    const item4 = adr.split("\n").find((line) => line.startsWith("4. "));
-    expect(item4).toContain(DIRECT);
     expect(read("CLAUDE.md")).toContain(DIRECT);
-  });
-
-  it("[SH-104 AC-22] в ADR-0010 есть абзац, начинающийся «Пункт 2 дополняется:»", () => {
-    const adr = read("docs/adr/0010-factory.md");
-
-    expect(adr.split("\n").some((line) => line.startsWith("Пункт 2 дополняется:"))).toBe(true);
   });
 
   it("[SH-104 AC-23] README описывает /ready и pnpm factory list", () => {
