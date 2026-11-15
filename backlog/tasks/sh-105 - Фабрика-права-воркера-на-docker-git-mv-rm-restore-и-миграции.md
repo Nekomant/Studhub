@@ -5,7 +5,7 @@ status: Review
 assignee:
   - '@claude'
 created_date: '2026-11-14T22:49:00Z'
-updated_date: '2026-11-15T20:59:00Z'
+updated_date: '2026-11-15T21:18:00Z'
 labels:
   - infra
 milestone: m-0
@@ -100,6 +100,8 @@ ordinal: 99000
 Факт: 3 ч
 
 Проверка тестов: AC-1..AC-5 и AC-7 подтверждены, нарушений правила «менять тест под код» нет; AC-6 (Ревью) и AC-8 (Ручная) не проверяются автоматически.
+
+AC-8 (живая проверка): docker build создал образ sh105-probe, docker run --rm sh105-probe true выполнен (exit 0), git rm probe.txt удалил файл; docker run -v /tmp:/t классифицируется как запрещённый правилом Bash(docker * -v*) через matchesRule из ветки. Проверка без claude -p (недоступная модель): классификация matchesRule + реальный запуск разрешённых команд. Ограничение песочницы: docker build потребовал DOCKER_BUILDKIT=0 (buildx не пишет в ~/.docker).
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
