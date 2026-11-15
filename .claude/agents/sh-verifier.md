@@ -2,7 +2,7 @@
 name: sh-verifier
 description: "Независимая проверка тестов задачи Studhub SH-NNN перед /code-review. Вызывай из сессии задачи после отчёта ГОТОВО SH-NNN, передавая только ID задачи. Агент читает критерии и план тестов, дифф ветки и тесты, ничего не меняет и возвращает отчёт ПРОВЕРКА SH-NNN."
 tools: Read, Bash, Grep, Glob
-model: sonnet
+model: deepseek-flash
 effort: high
 maxTurns: 60
 color: orange
