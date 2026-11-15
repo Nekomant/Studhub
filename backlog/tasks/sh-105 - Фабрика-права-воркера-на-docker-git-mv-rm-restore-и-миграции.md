@@ -1,11 +1,11 @@
 ---
 id: SH-105
 title: 'Фабрика: права воркера на docker, git mv/rm/restore и миграции'
-status: In Progress
+status: Review
 assignee:
   - '@claude'
 created_date: '2026-11-14T22:49:00Z'
-updated_date: '2026-11-15T20:54:00Z'
+updated_date: '2026-11-15T20:59:00Z'
 labels:
   - infra
 milestone: m-0
