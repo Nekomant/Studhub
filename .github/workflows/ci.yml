@@ -28,6 +28,9 @@ jobs:
       mode: ${{ steps.mode.outputs.mode }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          # Нужен родительский коммит для диффа HEAD^..HEAD на push (иначе shallow-клон без родителя).
+          fetch-depth: 2
 
       - name: Определение режима
         id: mode
