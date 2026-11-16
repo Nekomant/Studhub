@@ -11,7 +11,6 @@ const read = (path: string) => readFileSync(join(repoRoot, path), "utf8");
 // sub — подкоманда, перед которой README описывает флаги: `pnpm factory run <флаг>`.
 const commands: { command: string; script: string; sub?: string }[] = [
   { command: "pnpm sync", script: "scripts/sync.mjs" },
-  { command: "pnpm status", script: "scripts/status.mjs" },
   { command: "pnpm git:prune", script: "scripts/git-prune.mjs" },
   { command: "pnpm factory", script: "scripts/factory.mjs", sub: "run" },
 ];
@@ -19,7 +18,7 @@ const commands: { command: string; script: string; sub?: string }[] = [
 // Флаги берём из исходников: args.includes("--apply").
 const flagsOf = (script: string) => [...read(script).matchAll(/includes\("(--[\w-]+)"\)/g)].map((match) => match[1]);
 
-// Строки файла, где названа команда (после неё не идёт ещё слово команды: `pnpm status` не должно ловить чужое).
+// Строки файла, где названа команда (после неё не идёт ещё слово команды: `pnpm sync` не должно ловить чужое).
 const mentions = (text: string, command: string) =>
   text
     .split("\n")
