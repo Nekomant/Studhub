@@ -274,6 +274,10 @@ function makeRepo(tasks: FixtureTask[], options: RepoOptions = {}): Scenario {
   git(seed, "commit", "-q", "-m", "init");
   git(seed, "push", "-q", "origin", "main");
   git(base, "clone", "-q", origin, work);
+  // Фабрика коммитит сама (appendRetroEntry, commitMergedStatus) через git без -c: в CI глобальной
+  // идентичности нет, поэтому задаём её в конфиге клона, который наследуют worktree.
+  git(work, "config", "user.name", "t");
+  git(work, "config", "user.email", "t@example.com");
 
   writeFileSync(join(seed, "advance.txt"), "дальше\n");
   git(seed, "add", ".");
