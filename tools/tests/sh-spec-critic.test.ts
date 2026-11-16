@@ -25,10 +25,10 @@ const toolList = (value: unknown) =>
   (Array.isArray(value) ? value : String(value).split(",")).map((tool) => String(tool).trim()).filter(Boolean);
 
 describe("[SH-090 AC-1] субагент sh-spec-critic", () => {
-  it("[SH-090 AC-1] tools только Read, Bash, Grep, Glob, модель sonnet", () => {
+  it("[SH-090 AC-1] tools только Read, Bash, Grep, Glob, модель deepseek-v4-pro", () => {
     const { meta } = agentFile();
     expect(meta.name).toBe("sh-spec-critic");
-    expect(meta.model).toBe("sonnet");
+    expect(meta.model).toBe("deepseek-v4-pro");
     expect(toolList(meta.tools).sort()).toEqual(["Bash", "Glob", "Grep", "Read"]);
   });
 
@@ -182,6 +182,8 @@ describe("[SH-090 AC-3] режим spec-critic хука пропускает ч�
     "git show --stat HEAD",
     "git branch --show-current",
     "grep -rn 'AC-1' docs && node scripts/doc.mjs td 4.2",
+    "pnpm spec:check SH-090",
+    "pnpm spec:check",
   ])("[SH-090 AC-3] пропускает с кодом 0: %s", (command) => {
     const result = critic(command);
     expect(result.stderr).toBe("");
@@ -191,7 +193,6 @@ describe("[SH-090 AC-3] режим spec-critic хука пропускает ч�
   it.each([
     "pnpm test",
     "pnpm ac:check",
-    "pnpm spec:check SH-090",
     "pnpm verify",
     "pnpm exec vitest run",
     "pnpm exec vitest run tools/tests/sh-spec-critic.test.ts",
@@ -412,7 +413,7 @@ describe("[SH-090 AC-9] скилл sh-spec и документы описыва�
       "описании PR",
       "непринят",
       "не заменяет",
-      "не запускается в CI",
+      "в CI не запускается",
     ]) {
       expect(section).toContain(part);
     }
@@ -426,5 +427,23 @@ describe("[SH-090 AC-9] скилл sh-spec и документы описыва�
     expect(paragraph).toContain("spec:check");
     expect(paragraph).toMatch(/повторн/);
     expect(paragraph).toMatch(/описани[а-я]* PR/);
+  });
+});
+
+describe("[SH-107 AC-32] sh-spec-critic: сначала spec:check, при ошибках остановка", () => {
+  it("[SH-107 AC-32] шаг pnpm spec:check SH-NNN идёт раньше чтения задачи", () => {
+    const { body } = agentFile();
+    const specCheck = body.indexOf("pnpm spec:check SH-NNN");
+    const taskRead = body.indexOf("node scripts/task.mjs SH-NNN --spec");
+    expect(specCheck).toBeGreaterThanOrEqual(0);
+    expect(taskRead).toBeGreaterThanOrEqual(0);
+    expect(specCheck).toBeLessThan(taskRead);
+  });
+
+  it("[SH-107 AC-32] при ошибках вернуть и остановиться", () => {
+    const { body } = agentFile();
+    expect(body).toMatch(/при ошибк/i);
+    expect(body).toMatch(/верн[уе]/i);
+    expect(body).toMatch(/останови/i);
   });
 });

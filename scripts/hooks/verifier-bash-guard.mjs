@@ -78,7 +78,7 @@ const ALLOWED_TEXT = {
   verifier:
     "разрешены команды чтения (git diff, git log, git show, cat, grep, ls, head, tail, wc, find без -exec) и запуск тестов (pnpm test, pnpm exec vitest run)",
   "spec-critic":
-    "разрешены команды чтения (git log, git show, cat, grep, ls, head, tail, wc, find без -exec), node scripts/task.mjs и node scripts/doc.mjs; запуск тестов (pnpm, vitest) заблокирован",
+    "разрешены команды чтения (git log, git show, cat, grep, ls, head, tail, wc, find без -exec), node scripts/task.mjs, node scripts/doc.mjs и pnpm spec:check; остальные pnpm и vitest заблокированы",
 };
 const FIND_WRITE_FLAGS = new Set([
   "-delete",
@@ -361,7 +361,10 @@ function checkSegment(words, mode) {
   const [name, ...args] = words.slice(index);
   if (!name) return "команда состоит только из присваиваний";
   if (name === "git") return checkGit(args);
-  if (name === "pnpm") return mode === "spec-critic" ? "pnpm: тесты критику не нужны" : checkPnpm(args);
+  if (name === "pnpm") {
+    if (mode === "spec-critic") return args[0] === "spec:check" ? null : "pnpm: критику нужен только spec:check";
+    return checkPnpm(args);
+  }
   if (name === "vitest") {
     if (mode === "spec-critic") return "vitest: тесты критику не нужны";
     return args[0] === "run" ? checkVitest(args.slice(1)) : "vitest: разрешён только run";

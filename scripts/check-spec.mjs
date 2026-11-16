@@ -9,7 +9,8 @@
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { LEVELS, normalizeLevel, parseSections, readTasks } from "./lib/backlog-task.mjs";
+import { KNOWN_MODELS, LEVELS, normalizeLevel, parseSections, readTasks } from "./lib/backlog-task.mjs";
+import { KNOWN_RIGHTS } from "./lib/factory-tools.mjs";
 
 const REQUIRED_SECTIONS = ["Что нужно сделать", "Зачем", "Контекст", "Не входит", "Контракт", "План тестов"];
 // Статусы зависимости, при которых задачу в Ready можно брать в работу.
@@ -89,6 +90,14 @@ export function checkTask(task, byId) {
     if (OWNER_ACTION.test(item) && !/^Владелец:/.test(item))
       warnings.push(`шаг с действием владельца не начинается с «Владелец:»: ${item.slice(0, 60)}`);
   }
+
+  // SH-107: поля «Права» и «Модель» принимают только известные значения.
+  for (const right of task.rights) {
+    if (!KNOWN_RIGHTS.includes(right))
+      errors.push(`права: неизвестное значение «${right}» (известные: ${KNOWN_RIGHTS.join(", ")})`);
+  }
+  if (!KNOWN_MODELS.includes(task.model))
+    errors.push(`модель: неизвестное значение «${task.model}» (известные: ${KNOWN_MODELS.join(", ")})`);
 
   return { errors, warnings };
 }

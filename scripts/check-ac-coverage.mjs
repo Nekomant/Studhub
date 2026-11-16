@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Проверка покрытия критериев приёмки тестами (docs/process.md §8.2).
-// Для каждой задачи в статусе Review или Done из backlog/tasks ищет в файлах тестов метку
+// Для каждой задачи в статусе Merged или Done из backlog/tasks ищет в файлах тестов метку
 // `[SH-NNN AC-n]` (или `[SH-NNN AC-1, AC-3]`) на каждый критерий.
 // Метку не требуют критерии, которые по таблице «План тестов» проверяются на уровне «Ручная», «Ревью»
 // или «Скрипт»: если метки у такого критерия нет, скрипт печатает его как пропущенный. Остальные уровни (Юнит, Unit, API, E2E и любые другие)
@@ -11,7 +11,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { levelNeedsLabel, readTasks } from "./lib/backlog-task.mjs";
 
-const CHECKED_STATUSES = new Set(["Review", "Done"]);
+const CHECKED_STATUSES = new Set(["Merged", "Done"]);
 // Папки, где файлы тестов не ищем: зависимости, служебные папки и фикстуры инструментов.
 const SKIPPED_DIRS = new Set(["node_modules", "backlog", "dist", "build", "coverage"]);
 const TEST_FILE = /\.(test|spec)\.[cm]?[jt]sx?$/;
@@ -78,7 +78,7 @@ function main() {
     process.exit(1);
   }
   const checked = tasks.filter((task) => CHECKED_STATUSES.has(task.status)).length;
-  console.log(`Критерии покрыты: задач в Review и Done ${checked}.`);
+  console.log(`Критерии покрыты: задач в Merged и Done ${checked}.`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();

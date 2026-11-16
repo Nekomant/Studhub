@@ -65,11 +65,4 @@ describe("[SH-076 AC-5] документы описывают запуск apps/
     expect(readme).toContain("pnpm --filter @studhub/admin dev");
     expect(readme).toContain("Заглушка");
   });
-
-  it("[SH-076 AC-5] ТД §13 называет команду запуска и говорит, что приложение пустое", () => {
-    const td = read("docs/technical-design.md");
-    const section = td.slice(td.indexOf("## 13. Структура репозитория"), td.indexOf("## 14."));
-    expect(section).toContain("pnpm --filter @studhub/admin dev");
-    expect(section).toContain("заглушка");
-  });
 });

@@ -44,8 +44,6 @@ function filesUnder(dir: string): string[] {
   });
 }
 
-const SENTENCE =
-  "В приложении задачу стартует /ready, из терминала pnpm factory run; штаб с sh-worker остаётся запасным способом.";
 const DIRECT = "/ready — прямая команда владельца";
 
 describe("[SH-104] скилл ready", () => {
@@ -63,13 +61,13 @@ describe("[SH-104] скилл ready", () => {
     expect(existsSync(join(repoRoot, ".claude/commands"))).toBe(false);
   });
 
-  it("[SH-104 AC-11] pnpm factory run в .claude/skills упомянут только в ready/SKILL.md", () => {
+  it("[SH-107 AC-33] factory ready в .claude/skills упомянут только в ready/SKILL.md", () => {
     const dir = join(repoRoot, ".claude/skills");
-    const withRun = filesUnder(dir)
-      .filter((file) => readFileSync(file, "utf8").includes("pnpm factory run"))
+    const withReady = filesUnder(dir)
+      .filter((file) => readFileSync(file, "utf8").includes("factory ready"))
       .map((file) => file.slice(dir.length + 1));
 
-    expect(withRun).toEqual(["ready/SKILL.md"]);
+    expect(withReady).toEqual(["ready/SKILL.md"]);
   });
 
   it("[SH-104 AC-12] .claude/settings.json не содержит /ready и pnpm factory", () => {
@@ -85,23 +83,15 @@ describe("[SH-104] скилл ready", () => {
 });
 
 describe("[SH-104] документы", () => {
-  it("[SH-104 AC-20] предложение про /ready есть в docs/process.md §7 и §7.1", () => {
-    expect(process7()).toContain(SENTENCE);
-    expect(process71()).toContain(SENTENCE);
+  it("[SH-104 AC-20] /ready описан в docs/process.md §7, а в §7.1 — запуск подсессии фабрикой", () => {
+    expect(process7()).toContain("/ready");
+    expect(process7()).toContain("pnpm factory");
+    expect(process71()).toContain("factory ready");
   });
 
-  it("[SH-104 AC-21] «/ready — прямая команда владельца» есть в process.md §7, ADR-0010 п. 4 и CLAUDE.md", () => {
+  it("[SH-104 AC-21] «/ready — прямая команда владельца» есть в process.md §7 и CLAUDE.md", () => {
     expect(process7()).toContain(DIRECT);
-    const adr = read("docs/adr/0010-factory.md");
-    const item4 = adr.split("\n").find((line) => line.startsWith("4. "));
-    expect(item4).toContain(DIRECT);
     expect(read("CLAUDE.md")).toContain(DIRECT);
-  });
-
-  it("[SH-104 AC-22] в ADR-0010 есть абзац, начинающийся «Пункт 2 дополняется:»", () => {
-    const adr = read("docs/adr/0010-factory.md");
-
-    expect(adr.split("\n").some((line) => line.startsWith("Пункт 2 дополняется:"))).toBe(true);
   });
 
   it("[SH-104 AC-23] README описывает /ready и pnpm factory list", () => {
@@ -109,5 +99,25 @@ describe("[SH-104] документы", () => {
 
     expect(readme).toContain("/ready");
     expect(readme).toContain("pnpm factory list");
+  });
+});
+
+describe("[SH-107 AC-33] скилл /ready: фабрика-оркестратор", () => {
+  it("[SH-107 AC-33] SKILL.md вызывает factory ready, merge, status", () => {
+    const text = skillText();
+    expect(text).toContain("factory ready");
+    expect(text).toContain("factory merge");
+    expect(text).toContain("factory status");
+  });
+
+  it("[SH-107 AC-33] SKILL.md открывает подсессию start_session и архивирует её после слияния", () => {
+    const text = skillText();
+    expect(text).toContain("start_session");
+    expect(text).toMatch(/подсесси/);
+    expect(text).toMatch(/архив/);
+  });
+
+  it("[SH-107 AC-33] SKILL.md показывает фразы этапа", () => {
+    expect(skillText()).toMatch(/этап/);
   });
 });

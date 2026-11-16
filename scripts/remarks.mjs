@@ -1,45 +1,59 @@
 #!/usr/bin/env node
-// Печатает неразобранные попутные замечания воркеров: `pnpm remarks`.
-// Замечание лежит в заметках задачи строкой `Замечание N: <что и где, чем грозит>`.
-// Разбор записывает строку `Замечание N разобрано: <SH-NNN или «отклонено: причина»>`.
-// Флаг `--all` печатает и разобранные. Скрипт только читает файлы задач в текущей папке.
-import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+// Печатает неисправленные замечания из docs/tech-debt.md: `pnpm remarks`.
+// Запись — блок с заголовком `## SH-NNN — <название>` и полями `- **поле:** значение`.
+// Статус «исправлено…» и «отклонено…» считается разобранным; `--all` печатает и их.
+// Скрипт только читает docs/tech-debt.md.
+import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
-const OPEN = /^Замечание (\d+): (.+)$/;
-const CLOSED = /^Замечание (\d+) разобрано: (.+)$/;
+const RESOLVED = /исправлено|отклонено|решено|разобрано/i;
 
-export function parseRemarks(markdown) {
-  const id = markdown.match(/^id: (\S+)/m)?.[1];
-  const title = markdown.match(/^title: '?(.*?)'?$/m)?.[1] ?? "";
-  const notes = markdown.match(/<!-- SECTION:NOTES:BEGIN -->([\s\S]*?)<!-- SECTION:NOTES:END -->/)?.[1] ?? "";
-  const remarks = new Map();
-  for (const raw of notes.split("\n")) {
-    const line = raw.trim();
-    const open = line.match(OPEN);
-    if (open) remarks.set(open[1], { n: open[1], text: open[2], resolution: null });
-    const closed = line.match(CLOSED);
-    if (closed && remarks.has(closed[1])) remarks.get(closed[1]).resolution = closed[2];
+// Разбирает markdown файла tech-debt.md в список записей { source, title, fields }.
+export function parseDebt(markdown) {
+  const records = [];
+  let current = null;
+  for (const raw of markdown.split("\n")) {
+    const line = raw.trimEnd();
+    const heading = line.match(/^## (.+)$/);
+    if (heading) {
+      // Служебный раздел «Формат записи» не является записью.
+      if (/Формат записи/i.test(heading[1])) {
+        current = null;
+        continue;
+      }
+      current = { title: heading[1].trim(), fields: {} };
+      records.push(current);
+      continue;
+    }
+    if (!current) continue;
+    const field = line.match(/^- \*\*(.+?)\*\*:\s*(.*)$/);
+    if (field) current.fields[field[1].trim()] = field[2].trim();
   }
-  return { id, title, remarks: [...remarks.values()] };
+  return records;
 }
 
 function main() {
   const showAll = process.argv.includes("--all");
-  const dir = "backlog/tasks";
-  const lines = [];
-  let open = 0;
-  for (const file of readdirSync(dir).sort()) {
-    const { id, remarks } = parseRemarks(readFileSync(join(dir, file), "utf8"));
-    for (const r of remarks) {
-      if (r.resolution && !showAll) continue;
-      if (!r.resolution) open += 1;
-      lines.push(`${id} №${r.n}: ${r.text}${r.resolution ? `  [разобрано: ${r.resolution}]` : ""}`);
+  const markdown = readFileSync("docs/tech-debt.md", "utf8");
+  const records = parseDebt(markdown);
+  const open = [];
+  for (const record of records) {
+    const status = record.fields["статус"] ?? "";
+    if (!showAll && RESOLVED.test(status)) continue;
+    open.push(record);
+  }
+  if (open.length === 0) {
+    console.log("Замечаний нет.");
+  } else {
+    for (const record of open) {
+      const what = record.fields["что не так и где"] ?? record.fields["что не так"] ?? "";
+      const status = record.fields["статус"] ?? "";
+      console.log(record.title);
+      if (what) console.log(`  что не так: ${what}`);
+      if (status) console.log(`  статус: ${status}`);
     }
   }
-  console.log(lines.length ? lines.join("\n") : "Замечаний нет.");
-  console.log(`Неразобранных: ${open}`);
+  console.log(`Неисправленных: ${open.length}`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();

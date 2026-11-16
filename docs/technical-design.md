@@ -699,21 +699,22 @@ generate(slot, until):
 - восстановление на момент времени: `restore-check.sh --target-time <UTC>` и `restore-fetch.sh` для аварийного восстановления;
 - переход на Managed PostgreSQL — при появлении платящих пользователей (`pg_dump` / восстановление и смена строки подключения).
 
-**CI (GitHub Actions, на каждый PR):**
-- Biome (стиль и границы импортов), `tsc`;
-- Vitest: `domain`, `client-core`;
-- тесты API через HTTP на Postgres 18 в контейнере;
-- `drizzle-kit generate` не даёт новых изменений;
-- сгенерированный клиент OpenAPI актуален;
-- Playwright E2E (OAuth подменён в тестовом режиме);
-- сборка образа.
+**CI (GitHub Actions, на каждый PR и push в `main`).** Режим определяет job по списку изменённых файлов, а не по имени ветки или заголовку PR:
+
+- **Лёгкий режим** — все изменённые файлы лежат в `docs/` (кроме `docs/process.md`) или в `backlog/`. Запускаются `spec:check --changed`, проверка формата карточек и разбор документов `scripts/doc.mjs`; job-ы тестов, `image` и `deploy` пропускаются, а обязательная проверка `checks` закрывается заглушкой с тем же именем.
+- **Полный режим** — есть любой другой изменённый файл (включая `docs/process.md` и новые папки). Запускается полный набор: Biome (стиль и границы импортов), `tsc`; Vitest: `domain`, `client-core`; тесты API через HTTP на Postgres 18 в контейнере; `drizzle-kit generate` не даёт новых изменений; сгенерированный клиент OpenAPI актуален; Playwright E2E (OAuth подменён в тестовом режиме); сборка образа.
+
+Режим CI автор PR не выбирает: его задаёт только список изменённых файлов. На PR режим `--changed` в `spec:check` проверяет Ready-задачи, изменённые относительно `origin/main`.
 
 **CD (по слиянию в `main`):**
 1. образ с тегом SHA публикуется в GHCR (job `image`; на PR тот же job собирает образ без публикации);
 2. job `deploy` после зелёных `checks` и `image` копирует `infra/docker-compose.prod.yml`, `infra/Caddyfile`, `infra/deploy.sh` и папку `infra/backup` в `/srv/studhub` и вызывает `deploy.sh <SHA>` по SSH;
 3. `docker compose run --rm app migrate`;
 4. `pull app` и `up -d`, затем `caddy reload` (Caddyfile лежит на сервере файлом);
-5. проверка `https://app.studshub.ru/healthz` с повторами до 30 раз; если она не прошла, `deploy.sh` завершается с кодом 1, и job красный.
+5. проверка `https://app.studshub.ru/healthz` с повторами до 30 раз; если она не прошла, `deploy.sh` завершается с кодом 1, и job красный;
+6. шаг Done: после успешной выкладки скрипт `scripts/mark-done.mjs` находит задачи в Merged, чьи squash-коммиты (`^SH-NNN:` в `origin/main`) являются предками выложенного SHA, и открывает лёгкий PR «Done: SH-…» с автослиянием, переводя их в Done.
+
+Job `deploy` на push в `main` запускается только при изменении файлов полного режима: слияние, которое меняет только `docs/` (кроме `docs/process.md`) или `backlog/`, деплой не запускает. При красном `deploy` шаг Done не выполняется и статусы задач не меняются; отката нет.
 
 `deploy.sh` отказывается работать, если права `.env` шире `600`, и после успешной выкладки записывает тег в `APP_TAG` в `.env`. Секреты GitHub: `DEPLOY_SSH_KEY`, `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_KNOWN_HOSTS`. Образ в GHCR публикуется по `GITHUB_TOKEN`, а сервер забирает его под своим входом в реестр (`docker login ghcr.io`, токен `read:packages`).
 

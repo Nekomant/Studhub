@@ -24,10 +24,10 @@ const toolList = (value: unknown) =>
   (Array.isArray(value) ? value : String(value).split(",")).map((tool) => String(tool).trim()).filter(Boolean);
 
 describe("[SH-079 AC-1] субагент sh-verifier", () => {
-  it("[SH-079 AC-1] tools без Edit, Write, Skill, Agent и MCP, модель sonnet", () => {
+  it("[SH-079 AC-1] tools без Edit, Write, Skill, Agent и MCP, модель deepseek-flash", () => {
     const { meta } = agentFile();
     expect(meta.name).toBe("sh-verifier");
-    expect(meta.model).toBe("sonnet");
+    expect(meta.model).toBe("deepseek-flash");
     const tools = toolList(meta.tools);
     expect(tools).toContain("Read");
     expect(tools).toContain("Bash");
@@ -504,26 +504,11 @@ describe("[SH-079 AC-6] документы описывают вызов sh-veri
     return text.slice(start, end === -1 ? undefined : end);
   };
 
-  it("[SH-079 AC-6] §7.1 process.md: вызов после ГОТОВО и до /code-review, замечания sh-worker, повторная проверка", () => {
+  it("[SH-079 AC-6] §7.1 process.md: sh-verifier только при правках тестов после красного коммита", () => {
     const text = section(read("docs/process.md"), "### 7.1", "\n## 8");
     expect(text).toContain("sh-verifier");
     expect(text).toContain("sh-verifier.md");
-    const step = text.slice(text.search(/\n5\. /));
-    const verifierAt = step.indexOf("sh-verifier");
-    expect(verifierAt).toBeGreaterThan(-1);
-    expect(step.indexOf("ГОТОВО SH-NNN")).toBeLessThan(verifierAt);
-    expect(verifierAt).toBeLessThan(step.indexOf("/code-review"));
-    expect(step).toMatch(/sh-worker|агенту/);
-    expect(step).toMatch(/повтор/i);
-    expect(step).toMatch(/заметк/);
-  });
-
-  it("[SH-079 AC-6] CLAUDE.md упоминает sh-verifier, повторную проверку и порядок перед /code-review", () => {
-    const text = read("CLAUDE.md");
-    const at = text.indexOf("sh-verifier");
-    expect(at).toBeGreaterThan(-1);
-    const paragraph = text.slice(at - 600, at + 900);
-    expect(paragraph).toContain("/code-review");
-    expect(paragraph).toMatch(/повтор/i);
+    expect(text).toMatch(/правк\S* тестов после красного коммита/);
+    expect(text).not.toContain("/code-review");
   });
 });

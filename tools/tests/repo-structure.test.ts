@@ -1,6 +1,7 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import YAML from "yaml";
 
 // Полную проверку AC-1 (чистый клон → `pnpm install && pnpm check`) делаем
 // вручную, результат записан в заметках задачи. Этот тест следит, чтобы
@@ -71,5 +72,55 @@ describe("[SH-002 AC-1] структура репозитория по ТД §13
       expect(pkg.dependencies?.["@studhub/api"]).toBeUndefined();
       expect(tsconfig.references).toContainEqual({ path: "../../packages/client-core" });
     }
+  });
+});
+
+// SH-107: статусы Backlog, Definition of Done и карточки задач.
+describe("[SH-107] статусы и Definition of Done в backlog/config.yml", () => {
+  const config = () =>
+    YAML.parse(read("backlog/config.yml")) as {
+      statuses: string[];
+      definition_of_done: string[];
+    };
+
+  it("[SH-107 AC-5] статусы ровно Backlog, Ready, Merged, Done (без In Progress и Review)", () => {
+    expect(config().statuses).toEqual(["Backlog", "Ready", "Merged", "Done"]);
+  });
+
+  it("[SH-107 AC-5] ни одна задача в backlog/tasks не в статусе In Progress или Review", () => {
+    const dir = join(repoRoot, "backlog/tasks");
+    const files = readdirSync(dir).filter((name) => name.endsWith(".md"));
+    const bad = files
+      .map((name) => ({ name, text: readFileSync(join(dir, name), "utf8") }))
+      .filter(({ text }) => {
+        const match = /^status:\s*(.+)$/m.exec(text);
+        const status = (match?.[1] ?? "").trim().replace(/^["']|["']$/g, "");
+        return status === "In Progress" || status === "Review";
+      })
+      .map(({ name }) => name);
+    expect(bad).toEqual([]);
+  });
+
+  it("[SH-107 AC-6] Definition of Done: нет /code-review, есть factory next, sh-reviewer и выкладка в prod", () => {
+    const dod = config().definition_of_done.join("\n");
+    expect(dod).not.toContain("/code-review");
+    expect(dod).toMatch(/factory next/);
+    expect(dod).toMatch(/sh-reviewer/);
+    expect(dod).toMatch(/prod/);
+  });
+});
+
+// SH-107: удаление close-task и запасной вариант factory.
+describe("[SH-107] close-task и запасной вариант factory", () => {
+  it("[SH-107 AC-34] pnpm close-task удалён", () => {
+    const pkg = JSON.parse(read("package.json"));
+    expect(pkg.scripts["close-task"]).toBeUndefined();
+    expect(existsSync(join(repoRoot, "scripts/close-task.mjs"))).toBe(false);
+  });
+
+  it("[SH-107 AC-35] pnpm factory run остаётся запасным вариантом", () => {
+    const pkg = JSON.parse(read("package.json"));
+    expect(pkg.scripts.factory).toBe("node scripts/factory.mjs");
+    expect(existsSync(join(repoRoot, "scripts/factory.mjs"))).toBe(true);
   });
 });

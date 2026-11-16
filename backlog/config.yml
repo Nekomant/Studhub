@@ -1,14 +1,15 @@
 project_name: "Studhub"
 default_status: "Backlog"
-statuses: ["Backlog", "Ready", "In Progress", "Review", "Done"]
+statuses: ["Backlog", "Ready", "Merged", "Done"]
 labels: ["infra", "backend", "frontend", "db", "docs", "legal", "spike", "auth", "workspaces", "students", "schedule", "billing", "context", "materials", "messages", "reports", "analytics", "compliance", "landing", "pwa"]
 definition_of_done:
   - "Каждый критерий приёмки покрыт тестом, в названии теста есть ID критерия (AC-n), все тесты зелёные"
-  - "CI зелёный: Biome, tsc, Vitest, API-тесты, E2E, миграции и OpenAPI-клиент актуальны (с момента, когда эти проверки появились в CI)"
+  - "Проверки factory next зелёные: тесты, Biome, tsc, ac:check, красный коммит и отсутствие правок тестов после него"
+  - "Ревью sh-reviewer пройдено, замечания закрыты владельцем"
+  - "CI зелёный в полном режиме: Biome, tsc, Vitest, API-тесты, E2E, миграции и OpenAPI-клиент актуальны"
   - "Документы (use-cases, screens, technical-design, ADR) обновлены в этом же PR, если поведение или решения изменились"
   - "Новые эндпоинты покрыты тестом изоляции (чужой кабинет → 404); в логах и product_event нет ПДн; деньги только в minor units"
-  - "Пройдено ревью (/code-review и просмотр диффа владельцем), замечания закрыты"
-  - "PR слит в main через squash, изменения выложены в prod (после появления деплоя)"
+  - "PR слит в main через squash, изменения выложены в prod, задача переведена в Done шагом Done в deploy"
   - "В заметках задачи записаны оценка и фактическое время, решения по ходу работы и итоговое резюме"
 date_format: yyyy-mm-dd
 max_column_width: 20

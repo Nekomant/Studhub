@@ -1,0 +1,25 @@
+export function section(text: string, begin: string, end: string): string;
+export function parseCriteria(text: string): { index: number; text: string }[];
+export function parseAcCell(cell: string): number[];
+export function parseTestPlan(description: string): Map<number, string[]> | null;
+export function parseSections(description: string): Map<string, string>;
+export const LEVELS: string[];
+export function normalizeLevel(level: string): string | null;
+export function levelNeedsLabel(level: string): boolean;
+export const KNOWN_MODELS: string[];
+export const DEFAULT_MODEL: string;
+export function parseTask(text: string): {
+  id: string;
+  title: string;
+  priority: string;
+  status: string;
+  milestone: string;
+  dependencies: string[];
+  rights: string[];
+  affects: string[];
+  model: string;
+  description: string;
+  criteria: { index: number; text: string }[];
+  plan: Map<number, string[]> | null;
+};
+export function readTasks(root: string): Array<ReturnType<typeof parseTask> & { file: string }>;
