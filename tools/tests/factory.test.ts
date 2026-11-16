@@ -87,12 +87,7 @@ if (pair === "pr create") {
   process.stdout.write(process.env.FAKE_GH_CHECKS ?? '{"state":"SUCCESS"}');
   process.exitCode = exit;
 } else if (pair === "pr merge") {
-  cp.execFileSync("git", ["fetch", "origin"], { stdio: "ignore" });
-  const branches = cp
-    .execFileSync("git", ["for-each-ref", "--format=%(refname:short)", "refs/remotes/origin"], { encoding: "utf8" })
-    .split("\\n")
-    .filter((b) => /sh-[0-9]+-/.test(b));
-  if (branches[0]) cp.execFileSync("git", ["push", "origin", branches[0] + ":refs/heads/main"], { stdio: "ignore" });
+  cp.execFileSync("git", ["push", "origin", "HEAD:refs/heads/main"], { stdio: "ignore" });
   process.exitCode = exit;
 } else {
   process.stdout.write("{}");
